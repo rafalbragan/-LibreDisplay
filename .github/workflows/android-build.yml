@@ -39,10 +39,9 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean :app:assembleDebug --stacktrace --info 2>&1 | tee gradle-debug.log
+          ./gradlew --no-daemon clean :app:assembleDebug --stacktrace --info --console=plain 2>&1 | tee gradle-debug.log
 
-      - name: Upload Gradle reports (on failure)
-        if: ${{ steps.build_debug.outcome == 'failure' }}
+      - name: Upload debug Gradle logs and reports
         uses: actions/upload-artifact@v4
         with:
           name: gradle-reports
@@ -81,6 +80,10 @@ jobs:
       - name: Fail if debug APK was not created
         if: ${{ steps.debug_apk.outputs.exists != 'true' }}
         run: |
+          echo "=== Gradle failure summary (debug) ==="
+          grep -nE "^FAILURE:|What went wrong:|Execution failed for task|A problem occurred" gradle-debug.log || true
+          echo "=== Last 120 lines of gradle-debug.log ==="
+          tail -n 120 gradle-debug.log || true
           echo "Debug APK was not created. Check gradle-debug.log and the gradle-reports artifact."
           exit 1
 
@@ -116,10 +119,9 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean :app:assembleRelease --stacktrace --info 2>&1 | tee gradle-release.log
+          ./gradlew --no-daemon clean :app:assembleRelease --stacktrace --info --console=plain 2>&1 | tee gradle-release.log
 
-      - name: Upload Gradle reports (on failure)
-        if: ${{ steps.build_release.outcome == 'failure' }}
+      - name: Upload release Gradle logs and reports
         uses: actions/upload-artifact@v4
         with:
           name: gradle-reports-release
