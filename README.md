@@ -131,15 +131,18 @@ Output files:
 The workflow at `.github/workflows/android-build.yml` automatically:
 
 1. Runs on every push to `main` / `master`, pull requests, or manual trigger.
-2. Builds both **debug** and **release (unsigned)** APKs.
-3. Optionally signs release APK if signing secrets are configured.
-4. Uploads artifacts retained for 14 days.
+2. Always builds a **debug APK** in a dedicated job.
+3. Tries to build a **release (unsigned)** APK in a separate optional job.
+4. Optionally signs release APK if signing secrets are configured.
+5. Uploads artifacts retained for 14 days.
 
 ### Artifacts
 
 - `LibreDisplay-debug`
 - `LibreDisplay-release-unsigned`
 - `LibreDisplay-release-signed` (only when signing secrets are present)
+
+> If the optional release job fails, the debug artifact should still be available for download.
 
 ### Optional release signing via secrets
 
