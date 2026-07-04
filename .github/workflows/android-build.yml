@@ -39,7 +39,7 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean assembleDebug --stacktrace --info
+          ./gradlew --no-daemon clean :app:assembleDebug --stacktrace --info 2>&1 | tee gradle-debug.log
 
       - name: Upload Gradle reports (on failure)
         if: ${{ steps.build_debug.outcome == 'failure' }}
@@ -49,18 +49,19 @@ jobs:
           path: |
             app/build/reports/**
             app/build/outputs/logs/**
+            gradle-debug.log
           if-no-files-found: ignore
           retention-days: 14
 
       - name: List build outputs
         run: |
-          echo "=== app/build/outputs ==="
-          find app/build/outputs -maxdepth 5 -type f | sort || true
+          echo "=== app/build ==="
+          find app/build -maxdepth 8 -type f | sort || true
 
       - name: Detect debug APK
         id: debug_apk
         run: |
-          DEBUG_APK=$(find app/build/outputs -type f -path "*/apk/debug/*.apk" | sort | head -n 1)
+          DEBUG_APK=$(find app/build -type f \( -name "*debug*.apk" -o -name "*.apk" \) | sort | head -n 1)
           if [ -n "$DEBUG_APK" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "path=$DEBUG_APK" >> "$GITHUB_OUTPUT"
@@ -80,7 +81,7 @@ jobs:
       - name: Fail if debug APK was not created
         if: ${{ steps.debug_apk.outputs.exists != 'true' }}
         run: |
-          echo "Debug APK was not created. Check the Gradle log and the gradle-reports artifact."
+          echo "Debug APK was not created. Check gradle-debug.log and the gradle-reports artifact."
           exit 1
 
   release:
@@ -115,7 +116,7 @@ jobs:
         continue-on-error: true
         run: |
           chmod +x gradlew
-          ./gradlew --no-daemon clean assembleRelease --stacktrace --info
+          ./gradlew --no-daemon clean :app:assembleRelease --stacktrace --info 2>&1 | tee gradle-release.log
 
       - name: Upload Gradle reports (on failure)
         if: ${{ steps.build_release.outcome == 'failure' }}
@@ -125,18 +126,19 @@ jobs:
           path: |
             app/build/reports/**
             app/build/outputs/logs/**
+            gradle-release.log
           if-no-files-found: ignore
           retention-days: 14
 
       - name: List release build outputs
         run: |
-          echo "=== app/build/outputs ==="
-          find app/build/outputs -maxdepth 5 -type f | sort || true
+          echo "=== app/build ==="
+          find app/build -maxdepth 8 -type f | sort || true
 
       - name: Detect release APK
         id: release_apk
         run: |
-          RELEASE_APK=$(find app/build/outputs -type f -path "*/apk/release/*.apk" | sort | head -n 1)
+          RELEASE_APK=$(find app/build -type f \( -path "*/release/*.apk" -o -name "*release*.apk" \) | sort | head -n 1)
           if [ -n "$RELEASE_APK" ]; then
             echo "exists=true" >> "$GITHUB_OUTPUT"
             echo "path=$RELEASE_APK" >> "$GITHUB_OUTPUT"
