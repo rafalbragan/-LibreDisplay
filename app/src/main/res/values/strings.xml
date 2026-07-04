@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">LibreDisplay</string>
+    <string name="settings_title">Settings</string>
+    <string name="monitoring_title">Glucose Monitor</string>
+    <string name="label_email">LibreLinkUp Email</string>
+    <string name="label_password">LibreLinkUp Password</string>
+    <string name="label_region">Region</string>
+    <string name="label_refresh_interval">Refresh Interval (minutes)</string>
+    <string name="button_save">Save Settings</string>
+    <string name="button_refresh">Refresh Now</string>
+    <string name="status_ok">Status: OK</string>
+    <string name="stale_data_warning">⚠ STALE DATA</string>
+    <string name="unit_mgdl">mg/dL</string>
+    <string name="notification_channel_name">Glucose Monitoring</string>
+    <string name="notification_channel_description">Background glucose data refresh</string>
+    <string name="notification_monitoring_title">LibreDisplay Active</string>
+    <string name="notification_monitoring_text">Monitoring glucose levels…</string>
+</resources>
+
