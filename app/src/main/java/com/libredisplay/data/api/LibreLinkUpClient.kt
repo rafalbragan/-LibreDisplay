@@ -36,7 +36,7 @@ interface LibreLinkUpClient {
 }
 
 /** Domain-level exception thrown by any [LibreLinkUpClient] implementation. */
-class LibreLinkUpException(message: String, cause: Throwable? = null) :
+open class LibreLinkUpException(message: String, cause: Throwable? = null) :
     Exception(message, cause)
 
 class LibreLinkUpHttpException(
