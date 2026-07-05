@@ -14,12 +14,14 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.R
 
 /**
  * Settings screen.
@@ -40,12 +42,13 @@ fun SettingsScreen(
     val saveSuccess by viewModel.saveSuccess.collectAsState()
 
     var passwordVisible by remember { mutableStateOf(false) }
+    val saveSuccessMessage = stringResource(R.string.save_success)
 
     // Show a toast-style snackbar on successful save
     val snackbarHostState = remember { SnackbarHostState() }
     LaunchedEffect(saveSuccess) {
         if (saveSuccess) {
-            snackbarHostState.showSnackbar("Settings saved ✓")
+            snackbarHostState.showSnackbar(saveSuccessMessage)
             viewModel.clearSaveSuccess()
         }
     }
@@ -53,10 +56,10 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Settings", fontSize = 22.sp) },
+                title = { Text(stringResource(R.string.settings_title), fontSize = 22.sp) },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
@@ -79,12 +82,12 @@ fun SettingsScreen(
         ) {
 
             // ── Section: Credentials ───────────────────────────────────────
-            SectionHeader("LibreLinkUp Account")
+            SectionHeader(stringResource(R.string.section_account))
 
             OutlinedTextField(
                 value = settings.email,
                 onValueChange = viewModel::onEmailChange,
-                label = { Text("Email") },
+                label = { Text(stringResource(R.string.email)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
                 modifier = Modifier.fillMaxWidth(),
@@ -94,7 +97,7 @@ fun SettingsScreen(
             OutlinedTextField(
                 value = settings.password,
                 onValueChange = viewModel::onPasswordChange,
-                label = { Text("Password") },
+                label = { Text(stringResource(R.string.password)) },
                 singleLine = true,
                 visualTransformation = if (passwordVisible) VisualTransformation.None
                                        else PasswordVisualTransformation(),
@@ -104,7 +107,7 @@ fun SettingsScreen(
                         Icon(
                             imageVector = if (passwordVisible) Icons.Default.VisibilityOff
                                           else Icons.Default.Visibility,
-                            contentDescription = if (passwordVisible) "Hide password" else "Show password",
+                            contentDescription = if (passwordVisible) stringResource(R.string.hide_password) else stringResource(R.string.show_password),
                             tint = Color.LightGray
                         )
                     }
@@ -114,7 +117,7 @@ fun SettingsScreen(
             )
 
             // ── Section: Region ────────────────────────────────────────────
-            SectionHeader("Server Region")
+            SectionHeader(stringResource(R.string.section_region))
 
             RegionSelector(
                 selectedRegion = settings.region,
@@ -122,7 +125,7 @@ fun SettingsScreen(
             )
 
             // ── Section: Refresh ───────────────────────────────────────────
-            SectionHeader("Refresh Interval: ${settings.refreshInterval} min")
+            SectionHeader(stringResource(R.string.section_refresh_interval, settings.refreshInterval))
 
             Slider(
                 value = settings.refreshInterval.toFloat(),
@@ -137,18 +140,18 @@ fun SettingsScreen(
             )
 
             // ── Section: Options ───────────────────────────────────────────
-            SectionHeader("Options")
+            SectionHeader(stringResource(R.string.section_options))
 
             SettingsToggle(
-                label = "Kiosk Mode",
-                description = "Prevent leaving the app (requires Device Owner setup)",
+                label = stringResource(R.string.kiosk_mode),
+                description = stringResource(R.string.kiosk_mode_description),
                 checked = settings.kioskMode,
                 onCheckedChange = viewModel::onKioskModeChange
             )
 
             SettingsToggle(
-                label = "Use Mock Data",
-                description = "Use simulated glucose values (no real account needed)",
+                label = stringResource(R.string.use_mock_data),
+                description = stringResource(R.string.use_mock_data_description),
                 checked = settings.useMock,
                 onCheckedChange = viewModel::onUseMockChange
             )
@@ -163,7 +166,7 @@ fun SettingsScreen(
                     .height(64.dp),
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
             ) {
-                Text("Save Settings", fontSize = 20.sp)
+                Text(stringResource(R.string.button_save), fontSize = 20.sp)
             }
         }
     }

@@ -28,7 +28,7 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
         delay(800)
         // Accept any non-empty credentials for mock purposes
         if (email.isBlank() || password.isBlank()) {
-            throw LibreLinkUpException("Mock: email and password must not be empty")
+            throw LibreLinkUpException("Tryb testowy: e-mail i haslo nie moga byc puste")
         }
         loggedIn = true
         // NOTE: password is intentionally NOT logged anywhere
@@ -65,7 +65,7 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
     }
 
     private fun requireLoggedIn() {
-        if (!loggedIn) throw LibreLinkUpException("Mock: not logged in – call login() first")
+        if (!loggedIn) throw LibreLinkUpException("Tryb testowy: najpierw zaloguj sie")
     }
 }
 

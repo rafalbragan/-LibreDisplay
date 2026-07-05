@@ -16,7 +16,9 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.R
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.ui.theme.*
 import java.time.ZoneId
@@ -71,7 +73,7 @@ private fun LoadingContent() {
             CircularProgressIndicator(color = Color(0xFF80CBC4), strokeWidth = 6.dp)
             Spacer(Modifier.height(24.dp))
             Text(
-                "Connecting to LibreLinkUp…",
+                stringResource(R.string.loading_connecting),
                 color = Color.White,
                 fontSize = 22.sp
             )
@@ -139,7 +141,7 @@ private fun SuccessContent(
 
             // Unit
             Text(
-                text = "mg/dL",
+                text = stringResource(R.string.unit_mgdl),
                 color = ColorSubtitle,
                 fontSize = 32.sp
             )
@@ -158,7 +160,7 @@ private fun SuccessContent(
 
             // Timestamp & data age
             Text(
-                text = "Timestamp: ${state.reading.timestamp.toDisplayTime()}",
+                text = stringResource(R.string.timestamp_label, state.reading.timestamp.toDisplayTime()),
                 color = ColorSubtitle,
                 fontSize = 20.sp
             )
@@ -166,7 +168,11 @@ private fun SuccessContent(
             Spacer(Modifier.height(6.dp))
 
             Text(
-                text = "Updated ${state.dataAgeMin} minute${if (state.dataAgeMin == 1L) "" else "s"} ago",
+                text = stringResource(
+                    R.string.updated_minutes_ago,
+                    state.dataAgeMin,
+                    if (state.dataAgeMin == 1L) stringResource(R.string.minute_singular) else stringResource(R.string.minute_plural)
+                ),
                 color = ColorSubtitle,
                 fontSize = 22.sp
             )
@@ -180,7 +186,7 @@ private fun SuccessContent(
             state.error?.let { msg ->
                 Spacer(Modifier.height(12.dp))
                 Text(
-                    text = "⚠ $msg",
+                    text = stringResource(R.string.error_warning, msg),
                     color = Color(0xFFFFCC02),
                     fontSize = 16.sp,
                     textAlign = TextAlign.Center,
@@ -206,7 +212,7 @@ private fun SuccessContent(
                 IconButton(onClick = onRefresh) {
                     Icon(
                         Icons.Default.Refresh,
-                        contentDescription = "Refresh",
+                        contentDescription = stringResource(R.string.refresh),
                         tint = Color.White,
                         modifier = Modifier.size(36.dp)
                     )
@@ -215,7 +221,7 @@ private fun SuccessContent(
             IconButton(onClick = onSettings) {
                 Icon(
                     Icons.Default.Settings,
-                    contentDescription = "Settings",
+                    contentDescription = stringResource(R.string.settings),
                     tint = Color.White,
                     modifier = Modifier.size(36.dp)
                 )
@@ -252,7 +258,7 @@ private fun ErrorContent(
             )
             Spacer(Modifier.height(24.dp))
             Text(
-                text = "Cannot retrieve glucose data",
+                text = stringResource(R.string.cannot_retrieve_data),
                 color = Color.White,
                 fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
@@ -273,7 +279,7 @@ private fun ErrorContent(
                 ) {
                     Icon(Icons.Default.Refresh, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Retry", fontSize = 20.sp)
+                    Text(stringResource(R.string.retry), fontSize = 20.sp)
                 }
                 OutlinedButton(
                     onClick = onSettings,
@@ -281,7 +287,7 @@ private fun ErrorContent(
                 ) {
                     Icon(Icons.Default.Settings, contentDescription = null)
                     Spacer(Modifier.width(8.dp))
-                    Text("Settings", fontSize = 20.sp)
+                    Text(stringResource(R.string.settings), fontSize = 20.sp)
                 }
             }
         }
@@ -301,7 +307,7 @@ private fun StaleWarning() {
     ) {
         Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFCC02), modifier = Modifier.size(36.dp))
         Text(
-            text = "STALE DATA - REFRESHING",
+            text = stringResource(R.string.stale_data_refreshing),
             color = Color(0xFFFFCC02),
             fontSize = 26.sp,
             fontWeight = FontWeight.Bold
@@ -317,10 +323,10 @@ private fun java.time.Instant.toDisplayTime(): String {
 @Composable
 private fun StatusChip(reading: GlucoseReading, isStale: Boolean) {
     val (label, chipColor) = when {
-        isStale      -> "STALE"    to Color(0xFF757575)
-        reading.isLow  -> "LOW"   to Color(0xFFEF5350)
-        reading.isHigh -> "HIGH"  to Color(0xFFFF7043)
-        else           -> "OK"    to Color(0xFF43A047)
+        isStale      -> stringResource(R.string.status_stale)    to Color(0xFF757575)
+        reading.isLow  -> stringResource(R.string.status_low)   to Color(0xFFEF5350)
+        reading.isHigh -> stringResource(R.string.status_high)  to Color(0xFFFF7043)
+        else           -> stringResource(R.string.status_normal)    to Color(0xFF43A047)
     }
     Surface(
         shape = MaterialTheme.shapes.extraLarge,
@@ -328,7 +334,7 @@ private fun StatusChip(reading: GlucoseReading, isStale: Boolean) {
         modifier = Modifier.padding(top = 4.dp)
     ) {
         Text(
-            text = "Status: $label",
+            text = stringResource(R.string.status_label, label),
             color = Color.White,
             fontSize = 22.sp,
             fontWeight = FontWeight.SemiBold,

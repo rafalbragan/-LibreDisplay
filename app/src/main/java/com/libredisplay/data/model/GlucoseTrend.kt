@@ -13,12 +13,12 @@ package com.libredisplay.data.model
  *   7 = Falling fast  (↓↓)
  */
 enum class GlucoseTrend(val arrow: String, val description: String) {
-    RISING_FAST("↑↑", "Rising Fast"),
-    RISING("↑", "Rising"),
-    FLAT("→", "Stable"),
-    FALLING("↓", "Falling"),
-    FALLING_FAST("↓↓", "Falling Fast"),
-    UNKNOWN("?", "Unknown");
+    RISING_FAST("↑↑", "Szybko rośnie"),
+    RISING("↑", "Rośnie"),
+    FLAT("→", "Stabilny"),
+    FALLING("↓", "Spada"),
+    FALLING_FAST("↓↓", "Szybko spada"),
+    UNKNOWN("?", "Nieznany");
 
     companion object {
         /** Map LibreLinkUp numeric trend code to enum value. */

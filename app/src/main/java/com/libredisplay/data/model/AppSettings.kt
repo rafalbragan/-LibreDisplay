@@ -16,6 +16,6 @@ data class AppSettings(
     val region: String = "EU",
     val refreshInterval: Int = 5,
     val kioskMode: Boolean = false,
-    val useMock: Boolean = true
+    val useMock: Boolean = false
 )
 

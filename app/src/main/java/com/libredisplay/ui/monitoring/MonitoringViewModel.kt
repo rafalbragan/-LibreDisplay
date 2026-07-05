@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.libredisplay.R
 import com.libredisplay.data.repository.GlucoseRepository
 import com.libredisplay.data.repository.SettingsRepository
 import kotlinx.coroutines.Job
@@ -82,7 +83,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         try {
             val reading = glucoseRepository.fetchLatestReading()
             if (reading == null) {
-                _uiState.value = MonitoringUiState.Error("No glucose data available from LibreLinkUp")
+                _uiState.value = MonitoringUiState.Error(getApplication<Application>().getString(R.string.error_no_glucose_data))
                 return
             }
 
@@ -98,7 +99,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
         } catch (e: Exception) {
             Log.e(TAG, "Failed to fetch reading: ${e.message}")
-            val errorMsg = "Error: ${e.message ?: "Unknown error"}"
+            val errorMsg = getApplication<Application>().getString(
+                R.string.error_prefix,
+                e.message ?: "nieznany blad"
+            )
             val previous = _uiState.value
             _uiState.value = when (previous) {
                 is MonitoringUiState.Success -> previous.copy(

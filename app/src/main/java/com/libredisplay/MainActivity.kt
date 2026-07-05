@@ -50,9 +50,10 @@ class MainActivity : ComponentActivity() {
         setContent {
             LibreDisplayTheme {
                 val navController = rememberNavController()
+                val startDestination = if (settingsRepository.isConfigured()) "monitoring" else "settings"
                 NavHost(
                     navController = navController,
-                    startDestination = "monitoring"
+                    startDestination = startDestination
                 ) {
                     composable("monitoring") {
                         MonitoringScreen(

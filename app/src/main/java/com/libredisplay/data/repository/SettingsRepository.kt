@@ -32,7 +32,7 @@ class SettingsRepository(context: Context) {
         region = storage.getString(SecureStorage.KEY_REGION, "EU"),
         refreshInterval = storage.getInt(SecureStorage.KEY_REFRESH_INTERVAL, 5),
         kioskMode = storage.getBoolean(SecureStorage.KEY_KIOSK_MODE, false),
-        useMock = storage.getBoolean(SecureStorage.KEY_USE_MOCK, true)
+        useMock = storage.getBoolean(SecureStorage.KEY_USE_MOCK, false)
     )
 
     fun isConfigured(): Boolean {

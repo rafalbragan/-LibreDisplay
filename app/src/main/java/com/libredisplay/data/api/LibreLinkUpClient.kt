@@ -7,7 +7,7 @@ import com.libredisplay.data.model.GlucoseReading
  *
  * Two implementations exist:
  *  - [MockLibreLinkUpClient]  – random data, no network required (default / testing).
- *  - [RealLibreLinkUpClient]  – real LibreLinkUp API (TODO stubs, not wired to network yet).
+ *  - [RealLibreLinkUpClient]  – real LibreLinkUp API via Retrofit + OkHttp.
  */
 interface LibreLinkUpClient {
 
