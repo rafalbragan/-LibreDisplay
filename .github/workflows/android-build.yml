@@ -82,6 +82,10 @@ jobs:
         run: |
           echo "=== Gradle failure summary (debug) ==="
           grep -nE "^FAILURE:|What went wrong:|Execution failed for task|A problem occurred" gradle-debug.log || true
+          echo "=== Kotlin compile errors (debug) ==="
+          grep -nE "^e: |\berror: |Unresolved reference|Compilation error" gradle-debug.log | head -n 200 || true
+          echo "=== compileDebugKotlin context ==="
+          awk 'BEGIN{show=0} /:app:compileDebugKotlin/{show=1} show{print} /Execution failed for task '\''\:app\:compileDebugKotlin'\''/{show=0}' gradle-debug.log | tail -n 240 || true
           echo "=== Last 120 lines of gradle-debug.log ==="
           tail -n 120 gradle-debug.log || true
           echo "Debug APK was not created. Check gradle-debug.log and the gradle-reports artifact."

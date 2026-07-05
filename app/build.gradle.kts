@@ -67,6 +67,7 @@ dependencies {
     implementation(libs.androidx.credentials)
     implementation(libs.androidx.credentials.play.services.auth)
     implementation(libs.androidx.biometric)
+    implementation(libs.androidx.fragment.ktx)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }
