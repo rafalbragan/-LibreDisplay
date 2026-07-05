@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:orientation="vertical"
+    android:padding="12dp"
+    android:background="#1A1A2E">
+
+    <TextView
+        android:id="@+id/widget_value"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="--"
+        android:textSize="34sp"
+        android:textStyle="bold"
+        android:textColor="#FFFFFF" />
+
+    <TextView
+        android:id="@+id/widget_unit"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="mg/dL"
+        android:textSize="14sp"
+        android:textColor="#E0E0E0" />
+
+    <TextView
+        android:id="@+id/widget_trend"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="?"
+        android:textSize="18sp"
+        android:textColor="#80CBC4"
+        android:layout_marginTop="4dp" />
+
+    <TextView
+        android:id="@+id/widget_time"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Ostatnia aktualizacja: -"
+        android:textSize="12sp"
+        android:textColor="#BDBDBD"
+        android:layout_marginTop="8dp" />
+
+    <TextView
+        android:id="@+id/widget_error"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text=""
+        android:textSize="12sp"
+        android:textColor="#FFCC80"
+        android:layout_marginTop="6dp" />
+</LinearLayout>
+
