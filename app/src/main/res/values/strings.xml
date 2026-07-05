@@ -48,5 +48,27 @@
     <string name="error_no_glucose_data">Brak danych glukozy z LibreLinkUp</string>
     <string name="error_prefix">Blad: %1$s</string>
     <string name="stale_data_refreshing">PRZESTARZALE DANE - ODSWIEZANIE</string>
+    <string name="state_connecting">Laczenie...</string>
+    <string name="state_logging_in">Logowanie...</string>
+    <string name="state_logged_in">Zalogowano</string>
+    <string name="state_fetching_data">Pobieranie danych...</string>
+    <string name="state_last_update">Ostatnia aktualizacja: %1$s</string>
+    <string name="error_no_active_connection">Brak aktywnego polaczenia LibreLinkUp</string>
+    <string name="error_invalid_login">Nieprawidlowy login lub haslo</string>
+    <string name="error_too_many_attempts">Zbyt wiele prob polaczenia</string>
+    <string name="error_check_official_app">Sprawdz oficjalna aplikacje LibreLinkUp</string>
+    <string name="unlock_biometric">Odblokuj biometria</string>
+    <string name="save_credentials_to_manager">Zapisz dane logowania w managerze hasel</string>
+    <string name="load_credentials_from_manager">Wczytaj zapisane dane logowania</string>
+    <string name="biometric_subtitle">Uwierzytelnij, aby odblokowac zapisane dane</string>
+    <string name="biometric_not_available">Biometria niedostepna. Uzyj logowania recznego lub PIN/hasla urzadzenia.</string>
+    <string name="biometric_cancelled">Autoryzacja biometryczna anulowana</string>
+    <string name="biometric_failed">Nieudana autoryzacja biometryczna</string>
+    <string name="biometric_locked_out">Biometria zablokowana po zbyt wielu probach</string>
+    <string name="logout_and_clear_data">Wyloguj i usun zapisane dane</string>
+    <string name="observer_account_hint">Wpisz dane konta LibreLinkUp, na ktorym widzisz odczyty glukozy obserwowanej osoby.</string>
+    <string name="librelink_checklist">1. Otworz oficjalna aplikacje LibreLinkUp.\n2. Zaloguj sie tym samym kontem.\n3. Zaakceptuj ewentualne nowe warunki korzystania.\n4. Sprawdz, czy widzisz odczyty glukozy obserwowanej osoby.\n5. Sprawdz, czy zaproszenie zostalo zaakceptowane.\n6. Wroc do LibreDisplay i zaloguj sie ponownie.</string>
+    <string name="medical_disclaimer">Aplikacja pomocnicza. Decyzje medyczne podejmuj na podstawie oficjalnej aplikacji/urzadzenia i zalecen lekarza.</string>
+    <string name="widget_last_update">Ostatnia aktualizacja: %1$s</string>
 </resources>
 

@@ -44,8 +44,10 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
         applyImmersiveMode()
 
-        // ── Start background monitoring service ─────────────────────────────
-        startMonitoringService()
+        // ── Start background monitoring service only when credentials exist ──
+        if (settingsRepository.isConfigured()) {
+            startMonitoringService()
+        }
 
         setContent {
             LibreDisplayTheme {

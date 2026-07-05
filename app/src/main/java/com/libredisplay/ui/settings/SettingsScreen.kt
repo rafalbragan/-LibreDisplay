@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
@@ -20,8 +21,12 @@ import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.fragment.app.FragmentActivity
 import com.libredisplay.R
+import com.libredisplay.auth.BiometricAuthManager
+import com.libredisplay.auth.BiometricResult
 
 /**
  * Settings screen.
@@ -38,6 +43,7 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
+    val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val saveSuccess by viewModel.saveSuccess.collectAsState()
 
@@ -51,6 +57,10 @@ fun SettingsScreen(
             snackbarHostState.showSnackbar(saveSuccessMessage)
             viewModel.clearSaveSuccess()
         }
+    }
+
+    LaunchedEffect(Unit) {
+        viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
     Scaffold(
@@ -156,6 +166,18 @@ fun SettingsScreen(
                 onCheckedChange = viewModel::onUseMockChange
             )
 
+            Text(
+                text = stringResource(R.string.observer_account_hint),
+                color = Color.LightGray,
+                fontSize = 13.sp
+            )
+
+            Text(
+                text = stringResource(R.string.librelink_checklist),
+                color = Color(0xFFB0BEC5),
+                fontSize = 12.sp
+            )
+
             Spacer(Modifier.height(8.dp))
 
             // ── Save button ────────────────────────────────────────────────
@@ -167,6 +189,62 @@ fun SettingsScreen(
                 colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
             ) {
                 Text(stringResource(R.string.button_save), fontSize = 20.sp)
+            }
+
+            OutlinedButton(
+                onClick = viewModel::loadCredentialsFromManager,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.load_credentials_from_manager))
+            }
+
+            OutlinedButton(
+                onClick = viewModel::saveCredentialsInManager,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.save_credentials_to_manager))
+            }
+
+            OutlinedButton(
+                onClick = {
+                    val activity = context as? FragmentActivity
+                    if (activity == null) {
+                        viewModel.clearSaveSuccess()
+                        return@OutlinedButton
+                    }
+                    val manager = BiometricAuthManager(activity)
+                    if (!manager.canAuthenticate()) {
+                        activity.lifecycleScope.launchWhenStarted {
+                            snackbarHostState.showSnackbar(activity.getString(R.string.biometric_not_available))
+                        }
+                        return@OutlinedButton
+                    }
+                    activity.lifecycleScope.launchWhenStarted {
+                        when (
+                            manager.authenticate(
+                                title = activity.getString(R.string.unlock_biometric),
+                                subtitle = activity.getString(R.string.biometric_subtitle)
+                            )
+                        ) {
+                            BiometricResult.Success -> viewModel.loadCredentialsFromManager()
+                            BiometricResult.Cancelled -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_cancelled))
+                            BiometricResult.NotAvailable -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_not_available))
+                            BiometricResult.LockedOut -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_locked_out))
+                            is BiometricResult.Error -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_failed))
+                        }
+                    }
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text(stringResource(R.string.unlock_biometric))
+            }
+
+            OutlinedButton(
+                onClick = viewModel::logoutAndClearLocalData,
+                modifier = Modifier.fillMaxWidth(),
+                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8A80))
+            ) {
+                Text(stringResource(R.string.logout_and_clear_data))
             }
         }
     }

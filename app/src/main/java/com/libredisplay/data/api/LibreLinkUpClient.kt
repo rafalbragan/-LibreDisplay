@@ -39,3 +39,9 @@ interface LibreLinkUpClient {
 class LibreLinkUpException(message: String, cause: Throwable? = null) :
     Exception(message, cause)
 
+class LibreLinkUpHttpException(
+    val statusCode: Int,
+    val responseBody: String = "",
+    message: String = "HTTP $statusCode"
+) : LibreLinkUpException(message)
+

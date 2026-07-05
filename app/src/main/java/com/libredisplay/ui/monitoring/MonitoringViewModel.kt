@@ -7,6 +7,8 @@ import androidx.lifecycle.viewModelScope
 import com.libredisplay.R
 import com.libredisplay.data.repository.GlucoseRepository
 import com.libredisplay.data.repository.SettingsRepository
+import com.libredisplay.service.RefreshController
+import com.libredisplay.widget.WidgetUpdater
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -19,6 +21,7 @@ import java.time.temporal.ChronoUnit
 
 private const val TAG = "MonitoringViewModel"
 private const val STALE_THRESHOLD_MINUTES = 20L
+private const val REFRESH_INTERVAL_MS = 15_000L
 
 /**
  * ViewModel for the monitoring dashboard.
@@ -33,6 +36,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private val settingsRepository = SettingsRepository(application)
     private val glucoseRepository  = GlucoseRepository(settingsRepository)
+    private val widgetUpdater = WidgetUpdater(application)
+    private val refreshController = RefreshController(REFRESH_INTERVAL_MS)
 
     private val _uiState = MutableStateFlow<MonitoringUiState>(MonitoringUiState.Loading)
     val uiState: StateFlow<MonitoringUiState> = _uiState.asStateFlow()
@@ -60,10 +65,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun startPolling() {
         pollingJob = viewModelScope.launch {
-            while (isActive) {
+            refreshController.ticks().collect {
                 fetchReading()
-                val intervalMs = settingsRepository.loadSettings().refreshInterval * 60_000L
-                delay(intervalMs)
             }
         }
     }
@@ -95,6 +98,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 isRefreshing = false,
                 error = null
             )
+            widgetUpdater.updateWithReading(
+                value = reading.value,
+                unit = getApplication<Application>().getString(R.string.unit_mgdl),
+                trend = reading.trend.arrow,
+                timestamp = reading.timestamp
+            )
             Log.d(TAG, "Reading updated: ${reading.value} mg/dL, age=${ageMin}min")
 
         } catch (e: Exception) {
@@ -104,6 +113,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 e.message ?: "nieznany blad"
             )
             val previous = _uiState.value
+            widgetUpdater.updateWithError(errorMsg)
             _uiState.value = when (previous) {
                 is MonitoringUiState.Success -> previous.copy(
                     isRefreshing = false,

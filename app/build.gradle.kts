@@ -64,6 +64,9 @@ dependencies {
     implementation(libs.okhttp)
     implementation(libs.okhttp.logging)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(libs.androidx.credentials)
+    implementation(libs.androidx.credentials.play.services.auth)
+    implementation(libs.androidx.biometric)
     testImplementation(libs.junit)
     debugImplementation(libs.androidx.ui.tooling)
 }

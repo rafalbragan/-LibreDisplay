@@ -182,6 +182,15 @@ private fun SuccessContent(
             // Status
             StatusChip(reading = reading, isStale = state.isStale)
 
+            Spacer(Modifier.height(12.dp))
+            Text(
+                text = stringResource(R.string.medical_disclaimer),
+                color = Color(0xFFE0E0E0),
+                fontSize = 12.sp,
+                textAlign = TextAlign.Center,
+                modifier = Modifier.padding(horizontal = 12.dp)
+            )
+
             // Error banner (non-fatal, last reading still shown)
             state.error?.let { msg ->
                 Spacer(Modifier.height(12.dp))
