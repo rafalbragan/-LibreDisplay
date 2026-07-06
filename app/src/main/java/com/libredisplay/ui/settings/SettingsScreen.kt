@@ -1,329 +1,206 @@
 package com.libredisplay.ui.settings
 
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import android.content.ClipData
+import android.content.ClipboardManager
+import android.content.Context
+import android.content.Intent
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
-import androidx.compose.ui.Alignment
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Switch
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.lifecycle.lifecycleScope
 import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.fragment.app.FragmentActivity
-import com.libredisplay.R
-import com.libredisplay.auth.BiometricAuthManager
-import com.libredisplay.auth.BiometricResult
+import com.libredisplay.diagnostics.DiagnosticLogger
 
-/**
- * Settings screen.
- *
- * Allows the caregiver to configure their LibreLinkUp credentials, region,
- * refresh interval, and optional kiosk / mock modes.
- *
- * All values are passed to [SettingsViewModel] and persisted via encrypted storage.
- * The password field is never rendered to logs.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     onNavigateBack: () -> Unit,
+    onSaved: () -> Unit,
+    onNavigateToDiagnostics: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
-    val saveSuccess by viewModel.saveSuccess.collectAsState()
-
+    val message by viewModel.message.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
-    val saveSuccessMessage = stringResource(R.string.save_success)
 
-    // Show a toast-style snackbar on successful save
-    val snackbarHostState = remember { SnackbarHostState() }
-    LaunchedEffect(saveSuccess) {
-        if (saveSuccess) {
-            snackbarHostState.showSnackbar(saveSuccessMessage)
-            viewModel.clearSaveSuccess()
+    LaunchedEffect(message) {
+        if (message == "Ustawienia zapisane") {
+            viewModel.clearMessage()
+            onSaved()
         }
-    }
-
-    LaunchedEffect(Unit) {
-        viewModel.messages.collect { snackbarHostState.showSnackbar(it) }
     }
 
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text(stringResource(R.string.settings_title), fontSize = 22.sp) },
+                title = { Text("Ustawienia") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = stringResource(R.string.back))
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
                     }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color(0xFF1A1A2E),
-                    titleContentColor = Color.White,
-                    navigationIconContentColor = Color.White
-                )
+                }
             )
-        },
-        snackbarHost = { SnackbarHost(snackbarHostState) },
-        containerColor = Color(0xFF121212)
+        }
     ) { padding ->
         Column(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .verticalScroll(rememberScrollState())
-                .padding(horizontal = 24.dp, vertical = 16.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp)
+                .padding(16.dp)
+                .verticalScroll(rememberScrollState()),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-
-            // ── Section: Credentials ───────────────────────────────────────
-            SectionHeader(stringResource(R.string.section_account))
-
-            OutlinedTextField(
-                value = settings.email,
-                onValueChange = viewModel::onEmailChange,
-                label = { Text(stringResource(R.string.email)) },
-                singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email),
-                modifier = Modifier.fillMaxWidth(),
-                colors = textFieldColors()
-            )
-
-            OutlinedTextField(
-                value = settings.password,
-                onValueChange = viewModel::onPasswordChange,
-                label = { Text(stringResource(R.string.password)) },
-                singleLine = true,
-                visualTransformation = if (passwordVisible) VisualTransformation.None
-                                       else PasswordVisualTransformation(),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
-                trailingIcon = {
-                    IconButton(onClick = { passwordVisible = !passwordVisible }) {
-                        Icon(
-                            imageVector = if (passwordVisible) Icons.Default.VisibilityOff
-                                          else Icons.Default.Visibility,
-                            contentDescription = if (passwordVisible) stringResource(R.string.hide_password) else stringResource(R.string.show_password),
-                            tint = Color.LightGray
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Konto LibreLinkUp", fontSize = 20.sp)
+                    OutlinedTextField(
+                        value = settings.email,
+                        onValueChange = viewModel::onEmailChange,
+                        label = { Text("E-mail") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
+                    )
+                    OutlinedTextField(
+                        value = settings.password,
+                        onValueChange = viewModel::onPasswordChange,
+                        label = { Text("Hasło") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
+                        trailingIcon = {
+                            IconButton(onClick = { passwordVisible = !passwordVisible }) {
+                                Icon(
+                                    imageVector = if (passwordVisible) Icons.Default.VisibilityOff else Icons.Default.Visibility,
+                                    contentDescription = if (passwordVisible) "Ukryj hasło" else "Pokaż hasło"
+                                )
+                            }
+                        }
+                    )
+                    OutlinedTextField(
+                        value = settings.regionMode,
+                        onValueChange = { viewModel.onRegionModeChange(it.uppercase()) },
+                        label = { Text("Region logowania (EU/GLOBAL/EU2/DE/US/FR/JP/AP/CUSTOM)") },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    if (settings.regionMode.equals("CUSTOM", ignoreCase = true)) {
+                        OutlinedTextField(
+                            value = settings.customBaseUrl,
+                            onValueChange = viewModel::onCustomBaseUrlChange,
+                            label = { Text("Wlasny URL API") },
+                            modifier = Modifier.fillMaxWidth(),
+                            singleLine = true
                         )
                     }
-                },
-                modifier = Modifier.fillMaxWidth(),
-                colors = textFieldColors()
-            )
-
-            // ── Section: Region ────────────────────────────────────────────
-            SectionHeader(stringResource(R.string.section_region))
-
-            RegionSelector(
-                selectedRegion = settings.region,
-                onRegionSelected = viewModel::onRegionChange
-            )
-
-            // ── Section: Refresh ───────────────────────────────────────────
-            SectionHeader(stringResource(R.string.section_refresh_interval, settings.refreshInterval))
-
-            Slider(
-                value = settings.refreshInterval.toFloat(),
-                onValueChange = { viewModel.onRefreshIntervalChange(it.toInt()) },
-                valueRange = 1f..30f,
-                steps = 28,
-                modifier = Modifier.fillMaxWidth(),
-                colors = SliderDefaults.colors(
-                    thumbColor = Color(0xFF80CBC4),
-                    activeTrackColor = Color(0xFF80CBC4)
-                )
-            )
-
-            // ── Section: Options ───────────────────────────────────────────
-            SectionHeader(stringResource(R.string.section_options))
-
-            SettingsToggle(
-                label = stringResource(R.string.kiosk_mode),
-                description = stringResource(R.string.kiosk_mode_description),
-                checked = settings.kioskMode,
-                onCheckedChange = viewModel::onKioskModeChange
-            )
-
-            SettingsToggle(
-                label = stringResource(R.string.use_mock_data),
-                description = stringResource(R.string.use_mock_data_description),
-                checked = settings.useMock,
-                onCheckedChange = viewModel::onUseMockChange
-            )
-
-            Text(
-                text = stringResource(R.string.observer_account_hint),
-                color = Color.LightGray,
-                fontSize = 13.sp
-            )
-
-            Text(
-                text = stringResource(R.string.librelink_checklist),
-                color = Color(0xFFB0BEC5),
-                fontSize = 12.sp
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // ── Save button ────────────────────────────────────────────────
-            Button(
-                onClick = viewModel::saveSettings,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .height(64.dp),
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-            ) {
-                Text(stringResource(R.string.button_save), fontSize = 20.sp)
+                }
             }
 
-            OutlinedButton(
-                onClick = viewModel::loadCredentialsFromManager,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.load_credentials_from_manager))
-            }
-
-            OutlinedButton(
-                onClick = viewModel::saveCredentialsInManager,
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.save_credentials_to_manager))
-            }
-
-            OutlinedButton(
-                onClick = {
-                    val activity = context as? FragmentActivity
-                    if (activity == null) {
-                        viewModel.clearSaveSuccess()
-                        return@OutlinedButton
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Zakres docelowy", fontSize = 20.sp)
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        OutlinedTextField(
+                            value = settings.targetLow.toString(),
+                            onValueChange = viewModel::onTargetLowChange,
+                            label = { Text("Dolna granica") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                        OutlinedTextField(
+                            value = settings.targetHigh.toString(),
+                            onValueChange = viewModel::onTargetHighChange,
+                            label = { Text("Górna granica") },
+                            modifier = Modifier.weight(1f),
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
                     }
-                    val manager = BiometricAuthManager(activity)
-                    if (!manager.canAuthenticate()) {
-                        activity.lifecycleScope.launchWhenStarted {
-                            snackbarHostState.showSnackbar(activity.getString(R.string.biometric_not_available))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Tryb mock")
+                            Text("Działa bez realnego API i generuje 12h historii.", fontSize = 13.sp)
                         }
-                        return@OutlinedButton
+                        Switch(checked = settings.useMock, onCheckedChange = viewModel::onUseMockChange)
                     }
-                    activity.lifecycleScope.launchWhenStarted {
-                        when (
-                            manager.authenticate(
-                                title = activity.getString(R.string.unlock_biometric),
-                                subtitle = activity.getString(R.string.biometric_subtitle)
-                            )
-                        ) {
-                            BiometricResult.Success -> viewModel.loadCredentialsFromManager()
-                            BiometricResult.Cancelled -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_cancelled))
-                            BiometricResult.NotAvailable -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_not_available))
-                            BiometricResult.LockedOut -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_locked_out))
-                            is BiometricResult.Error -> snackbarHostState.showSnackbar(activity.getString(R.string.biometric_failed))
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Diagnostyka", fontSize = 20.sp)
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = onNavigateToDiagnostics, modifier = Modifier.weight(1f)) {
+                            Text("Pokaż log")
+                        }
+                        OutlinedButton(onClick = { copyLog(context) }, modifier = Modifier.weight(1f)) {
+                            Text("Kopiuj")
                         }
                     }
-                },
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(stringResource(R.string.unlock_biometric))
+                    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        OutlinedButton(onClick = { DiagnosticLogger.clear() }, modifier = Modifier.weight(1f)) {
+                            Text("Wyczyść")
+                        }
+                        Button(onClick = { shareLog(context) }, modifier = Modifier.weight(1f)) {
+                            Text("Udostępnij")
+                        }
+                    }
+                }
             }
 
-            OutlinedButton(
-                onClick = viewModel::logoutAndClearLocalData,
-                modifier = Modifier.fillMaxWidth(),
-                colors = ButtonDefaults.outlinedButtonColors(contentColor = Color(0xFFFF8A80))
-            ) {
-                Text(stringResource(R.string.logout_and_clear_data))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                OutlinedButton(onClick = viewModel::resetSession, modifier = Modifier.weight(1f)) {
+                    Text("Wyczysc zapisany token i zaloguj ponownie")
+                }
+                Button(onClick = { viewModel.saveSettings() }, modifier = Modifier.weight(1f)) {
+                    Text("Zapisz")
+                }
             }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Private helpers
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SectionHeader(text: String) {
-    Text(
-        text = text,
-        fontSize = 14.sp,
-        color = Color(0xFF80CBC4),
-        modifier = Modifier.padding(top = 8.dp)
-    )
-    HorizontalDivider(color = Color(0xFF333333))
+private fun copyLog(context: Context) {
+    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+    clipboard.setPrimaryClip(ClipData.newPlainText("LibreDisplayLog", DiagnosticLogger.readAll()))
 }
 
-@Composable
-private fun RegionSelector(
-    selectedRegion: String,
-    onRegionSelected: (String) -> Unit
-) {
-    val regions = listOf("EU", "US", "DE", "FR")
-    Row(
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        regions.forEach { region ->
-            val selected = region == selectedRegion
-            FilterChip(
-                selected = selected,
-                onClick = { onRegionSelected(region) },
-                label = { Text(region, fontSize = 18.sp) },
-                colors = FilterChipDefaults.filterChipColors(
-                    selectedContainerColor = Color(0xFF00897B),
-                    selectedLabelColor = Color.White,
-                    containerColor = Color(0xFF2A2A2A),
-                    labelColor = Color.LightGray
-                )
-            )
-        }
+private fun shareLog(context: Context) {
+    DiagnosticLogger.createShareIntent(context)?.let {
+        context.startActivity(Intent.createChooser(it, "Udostępnij log"))
     }
 }
-
-@Composable
-private fun SettingsToggle(
-    label: String,
-    description: String,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit
-) {
-    Row(
-        modifier = Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
-    ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(label, color = Color.White, fontSize = 16.sp)
-            Text(description, color = Color.Gray, fontSize = 12.sp)
-        }
-        Switch(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            colors = SwitchDefaults.colors(checkedThumbColor = Color(0xFF80CBC4))
-        )
-    }
-}
-
-@Composable
-private fun textFieldColors() = OutlinedTextFieldDefaults.colors(
-    focusedTextColor = Color.White,
-    unfocusedTextColor = Color.White,
-    focusedBorderColor = Color(0xFF80CBC4),
-    unfocusedBorderColor = Color(0xFF555555),
-    focusedLabelColor = Color(0xFF80CBC4),
-    unfocusedLabelColor = Color.Gray,
-    cursorColor = Color(0xFF80CBC4)
-)
-

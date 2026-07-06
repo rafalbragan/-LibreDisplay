@@ -6,16 +6,6 @@
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
 
-    <!-- Keep screen on -->
-    <uses-permission android:name="android.permission.WAKE_LOCK" />
-
-    <!-- Boot receiver for auto-start -->
-    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
-
-    <!-- Kiosk mode / foreground service -->
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
-    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
-
     <application
         android:name=".LibreDisplayApp"
         android:allowBackup="false"
@@ -27,50 +17,28 @@
         android:usesCleartextTraffic="false"
         tools:targetApi="31">
 
-        <!-- Main activity – fullscreen, landscape + portrait, keeps screen ON -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
-            android:launchMode="singleInstance"
             android:screenOrientation="fullSensor"
             android:theme="@style/Theme.LibreDisplay.Starting"
-            android:windowSoftInputMode="adjustResize"
-            android:configChanges="orientation|screenSize|screenLayout|keyboardHidden">
+            android:windowSoftInputMode="adjustResize">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
         </activity>
 
-        <!-- Boot receiver – starts app automatically after reboot -->
-        <receiver
-            android:name=".receiver.BootReceiver"
-            android:enabled="true"
-            android:exported="true">
-            <intent-filter>
-                <action android:name="android.intent.action.BOOT_COMPLETED" />
-                <action android:name="android.intent.action.QUICKBOOT_POWERON" />
-            </intent-filter>
-        </receiver>
 
-        <!-- Background monitoring service -->
-        <service
-            android:name=".service.MonitoringService"
-            android:enabled="true"
+        <provider
+            android:name="androidx.core.content.FileProvider"
+            android:authorities="${applicationId}.fileprovider"
             android:exported="false"
-            android:foregroundServiceType="dataSync" />
-
-        <receiver
-            android:name=".widget.LibreDisplayWidgetProvider"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-
+            android:grantUriPermissions="true">
             <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/libre_display_widget_info" />
-        </receiver>
+                android:name="android.support.FILE_PROVIDER_PATHS"
+                android:resource="@xml/diagnostic_file_paths" />
+        </provider>
 
     </application>
 </manifest>

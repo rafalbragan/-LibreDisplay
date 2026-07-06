@@ -1,19 +1,21 @@
 package com.libredisplay.data.api
 
-import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runTest
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
 
 class MockLibreLinkUpClientTest {
 
     @Test
-    fun latestReading_isWithinExpectedRange() = runBlocking {
+    fun mockClient_generatesCurrentReading_and12HourHistory() = runTest {
         val client = MockLibreLinkUpClient()
-        client.login("caregiver@example.com", "secret")
-        val reading = client.getLatestReading()
+        client.login("demo@example.com", "secret")
 
-        assertTrue("value should be >= 60", reading.value >= 60)
-        assertTrue("value should be <= 250", reading.value <= 250)
+        val reading = client.getLatestReading()!!
+
+        assertEquals(48, reading.history.size)
+        assertEquals(12.0, reading.historyHoursAvailable, 0.01)
+        assertTrue(reading.value in 75..250)
     }
 }
-

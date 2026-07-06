@@ -54,14 +54,36 @@ class SecureStorage(context: Context) {
     fun getBoolean(key: String, default: Boolean = false): Boolean =
         prefs.getBoolean(key, default)
 
+    fun contains(key: String): Boolean = prefs.contains(key)
+
+    fun clear() {
+        prefs.edit().clear().apply()
+    }
+
     companion object {
         private const val TAG = "SecureStorage"
         const val KEY_EMAIL = "email"
         const val KEY_PASSWORD = "password"   // stored encrypted – never logged
         const val KEY_REGION = "region"
+        const val KEY_REGION_MODE = "region_mode"
+        const val KEY_CUSTOM_BASE_URL = "custom_base_url"
         const val KEY_REFRESH_INTERVAL = "refresh_interval"
+        const val KEY_TARGET_LOW = "target_low"
+        const val KEY_TARGET_HIGH = "target_high"
+        const val KEY_TREND_WINDOW_MINUTES = "trend_window_minutes"
+        const val KEY_SHOW_STATISTICS = "show_statistics"
         const val KEY_KIOSK_MODE = "kiosk_mode"
         const val KEY_USE_MOCK = "use_mock"
+        const val KEY_USE_AUTH_V3 = "use_auth_v3"
+        const val KEY_NEXT_ALLOWED_LOGIN_AT = "next_allowed_login_at"
+        const val KEY_TOKEN = "token"
+        const val KEY_TOKEN_EXPIRES_AT = "token_expires_at"
+        const val KEY_USER_ID = "user_id"
+        const val KEY_ACCOUNT_ID = "account_id"
+        const val KEY_SESSION_REGION = "session_region"
+        const val KEY_SESSION_BASE_URL = "session_base_url"
+        const val KEY_TOKEN_SOURCE = "token_source"
+        // Legacy key kept temporarily to migrate existing installs.
+        const val KEY_USE_AUTH_V2 = "use_auth_v2"
     }
 }
-

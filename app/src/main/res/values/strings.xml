@@ -30,7 +30,7 @@
     <string name="refresh">Odswiez</string>
     <string name="settings">Ustawienia</string>
     <string name="cannot_retrieve_data">Nie mozna pobrac danych glukozy</string>
-    <string name="retry">Sprobuj ponownie</string>
+    <string name="retry">Ponów próbę</string>
     <string name="back">Wstecz</string>
     <string name="save_success">Ustawienia zapisane</string>
     <string name="section_account">Konto LibreLinkUp</string>
@@ -40,6 +40,10 @@
     <string name="show_password">Pokaz haslo</string>
     <string name="section_region">Region serwera</string>
     <string name="section_refresh_interval">Interwal odswiezania: %1$d min</string>
+    <string name="section_target_range">Zakres docelowy glukozy</string>
+    <string name="target_low">Dolna granica</string>
+    <string name="target_high">Gorna granica</string>
+    <string name="target_range_hint">Domyślnie 80-180 mg/dL. Ten zakres służy do obliczania Time In Range i kolorów wykresu.</string>
     <string name="section_options">Opcje</string>
     <string name="kiosk_mode">Tryb kioskowy</string>
     <string name="kiosk_mode_description">Utrudnia opuszczenie aplikacji (wymaga konfiguracji Device Owner)</string>
@@ -70,5 +74,15 @@
     <string name="librelink_checklist">1. Otworz oficjalna aplikacje LibreLinkUp.\n2. Zaloguj sie tym samym kontem.\n3. Zaakceptuj ewentualne nowe warunki korzystania.\n4. Sprawdz, czy widzisz odczyty glukozy obserwowanej osoby.\n5. Sprawdz, czy zaproszenie zostalo zaakceptowane.\n6. Wroc do LibreDisplay i zaloguj sie ponownie.</string>
     <string name="medical_disclaimer">Aplikacja pomocnicza. Decyzje medyczne podejmuj na podstawie oficjalnej aplikacji/urzadzenia i zalecen lekarza.</string>
     <string name="widget_last_update">Ostatnia aktualizacja: %1$s</string>
+    <string name="share_diagnostic_log">Udostepnij log diagnostyczny</string>
+    <string name="diagnostic_log_unavailable">Brak pliku logu diagnostycznego</string>
+    <string name="diagnostics_title">Diagnostyka</string>
+    <string name="diagnostics_refresh">Odswiez</string>
+    <string name="diagnostics_copy">Kopiuj</string>
+    <string name="diagnostics_clear">Wyczysc</string>
+    <string name="diagnostics_share">Udostepnij</string>
+    <string name="diagnostic_log_copied">Log skopiowany do schowka</string>
+    <string name="diagnostic_log_empty">Brak wpisow diagnostycznych</string>
+    <string name="diagnostic_log_path">Plik logu: %1$s</string>
 </resources>
 

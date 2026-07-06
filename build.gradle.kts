@@ -148,3 +148,24 @@ tasks.register("removeApp") {
     }
 }
 
+tasks.register("helpNoSdk") {
+    group = "help"
+    description = "Shows workflow for working without a local Android SDK."
+    doLast {
+        println("=== LibreDisplay: praca bez lokalnego Android SDK ===")
+        println("Lokalnie bez SDK nie uruchomisz: assembleDebug/installDebug/bundleRelease.")
+        println("Mozesz pracowac nad kodem i budowac APK w GitHub Actions.")
+        println("")
+        println("Kroki:")
+        println("1) git add .")
+        println("2) git commit -m \"Twoja zmiana\"")
+        println("3) git push origin master")
+        println("4) GitHub -> Actions -> Android APK Build")
+        println("5) Pobierz artefakt: LibreDisplay-debug")
+        println("")
+        println("Taski, ktore dzialaja bez SDK lokalnie:")
+        println("- checkEnvironment")
+        println("- helpNoSdk")
+    }
+}
+

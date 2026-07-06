@@ -1,71 +1,53 @@
 package com.libredisplay.data.api
 
+import com.libredisplay.data.model.GlucoseHistoryPoint
+import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
-import kotlinx.coroutines.delay
 import java.time.Instant
+import kotlin.math.sin
 import kotlin.random.Random
 
-/**
- * Mock implementation of [LibreLinkUpClient].
- *
- * Generates realistic, random glucose readings in the range 60–250 mg/dL.
- * No network requests are made. Suitable for UI development and on-device demos
- * without a real LibreLinkUp account.
- *
- * Replace this with [RealLibreLinkUpClient] once the real API integration is ready.
- */
 class MockLibreLinkUpClient : LibreLinkUpClient {
 
     private var loggedIn = false
-
-    // Simulated "current" glucose that drifts slowly over time
-    private var simulatedGlucose: Int = 110
-    private var lastReadingTime: Instant = Instant.now()
+    private var tick = 0
 
     override suspend fun login(email: String, password: String) {
-        // Simulate network latency
-        delay(800)
-        // Accept any non-empty credentials for mock purposes
-        if (email.isBlank() || password.isBlank()) {
-            throw LibreLinkUpException("Tryb testowy: e-mail i haslo nie moga byc puste")
-        }
         loggedIn = true
-        // NOTE: password is intentionally NOT logged anywhere
     }
 
     override suspend fun getConnections(): List<String> {
-        delay(400)
-        requireLoggedIn()
-        return listOf("Mock Patient – Parent")
+        require(loggedIn) { "Tryb testowy wymaga aktywnej sesji" }
+        return listOf("mock-patient")
     }
 
     override suspend fun getLatestReading(): GlucoseReading {
-        delay(600)
-        requireLoggedIn()
-
-        // Drift the simulated glucose by a random delta each call
-        val delta = Random.nextInt(-8, 9)
-        simulatedGlucose = (simulatedGlucose + delta).coerceIn(60, 250)
-
-        val trend = when {
-            delta >= 4  -> GlucoseTrend.RISING_FAST
-            delta >= 2  -> GlucoseTrend.RISING
-            delta <= -4 -> GlucoseTrend.FALLING_FAST
-            delta <= -2 -> GlucoseTrend.FALLING
-            else        -> GlucoseTrend.FLAT
+        require(loggedIn) { "Tryb testowy wymaga aktywnej sesji" }
+        tick += 1
+        val now = Instant.now()
+        val history = (0 until 48).map { index ->
+            val reversed = 47 - index
+            val timestamp = now.minusSeconds(reversed * 15L * 60L)
+            val base = 145.0 + (sin((tick + index) / 4.0) * 28.0)
+            val noise = ((index + tick) % 5) - 2
+            val value = (base + noise).toInt().coerceIn(75, 250)
+            val delta = sin((tick + index) / 5.0) * 3.5
+            GlucoseHistoryPoint(
+                value = value,
+                timestamp = timestamp,
+                trend = GlucoseTrend.fromSlope(delta)
+            )
         }
-
-        lastReadingTime = Instant.now()
+        val current = history.last()
+        val stats = GlucoseHistoryStats.from(history, 80, 180)
         return GlucoseReading.of(
-            value = simulatedGlucose,
-            timestamp = lastReadingTime,
-            trend = trend
+            value = current.value,
+            timestamp = current.timestamp,
+            trend = current.trend,
+            history = history,
+            stats = stats,
+            historyHoursAvailable = 12.0
         )
     }
-
-    private fun requireLoggedIn() {
-        if (!loggedIn) throw LibreLinkUpException("Tryb testowy: najpierw zaloguj sie")
-    }
 }
-

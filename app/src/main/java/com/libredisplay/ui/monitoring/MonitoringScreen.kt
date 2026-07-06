@@ -1,354 +1,389 @@
 package com.libredisplay.ui.monitoring
 
-import androidx.compose.animation.*
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.*
+import android.content.res.Configuration
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.BugReport
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.*
-import androidx.compose.runtime.*
+import androidx.compose.material3.Button
+import androidx.compose.material3.Card
+import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.Scaffold
+import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
+import androidx.compose.material3.TopAppBar
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.libredisplay.R
+import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
-import com.libredisplay.ui.theme.*
-import java.time.ZoneId
-import java.time.format.DateTimeFormatter
+import java.time.Duration
+import java.time.Instant
+import kotlin.math.roundToInt
 
-/**
- * Full-screen monitoring dashboard.
- *
- * Layout intent: maximum readability for elderly users – huge numbers,
- * coloured background, single-glance status.
- */
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MonitoringScreen(
+    refreshNonce: Int,
     onNavigateToSettings: () -> Unit,
+    onNavigateToDiagnostics: () -> Unit,
     viewModel: MonitoringViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    val configuration = LocalConfiguration.current
+    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
-    Box(modifier = Modifier.fillMaxSize()) {
-
-        when (val s = state) {
-            is MonitoringUiState.Loading -> LoadingContent()
-
-            is MonitoringUiState.Success -> SuccessContent(
-                state = s,
-                onRefresh = viewModel::refresh,
-                onSettings = onNavigateToSettings
-            )
-
-            is MonitoringUiState.Error -> ErrorContent(
-                message = s.message,
-                onRefresh = viewModel::refresh,
-                onSettings = onNavigateToSettings
-            )
-        }
+    LaunchedEffect(refreshNonce) {
+        viewModel.onScreenVisible(refreshNonce)
     }
-}
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Loading
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun LoadingContent() {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(Color(0xFF121212)),
-        contentAlignment = Alignment.Center
-    ) {
-        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-            CircularProgressIndicator(color = Color(0xFF80CBC4), strokeWidth = 6.dp)
-            Spacer(Modifier.height(24.dp))
-            Text(
-                stringResource(R.string.loading_connecting),
-                color = Color.White,
-                fontSize = 22.sp
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text("LibreDisplay") },
+                actions = {
+                    IconButton(onClick = { viewModel.refreshNow() }) {
+                        Icon(Icons.Default.Refresh, contentDescription = "Odśwież")
+                    }
+                    IconButton(onClick = onNavigateToDiagnostics) {
+                        Icon(Icons.Default.BugReport, contentDescription = "Diagnostyka")
+                    }
+                    IconButton(onClick = onNavigateToSettings) {
+                        Icon(Icons.Default.Settings, contentDescription = "Ustawienia")
+                    }
+                }
             )
         }
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Success
-// ─────────────────────────────────────────────────────────────────────────────
-
-@Composable
-private fun SuccessContent(
-    state: MonitoringUiState.Success,
-    onRefresh: () -> Unit,
-    onSettings: () -> Unit
-) {
-    val reading = state.reading
-    val bgColor = when {
-        state.isStale     -> ColorStaleBackground
-        reading.isLow     -> ColorLowBackground
-        reading.isHigh    -> ColorHighBackground
-        else              -> ColorInRangeBackground
-    }
-
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(bgColor)
-    ) {
-        // ── Main reading area ──────────────────────────────────────────────
-        Column(
+    ) { padding ->
+        Surface(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(24.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
+                .padding(padding)
         ) {
-
-            // Stale data warning
-            AnimatedVisibility(
-                visible = state.isStale,
-                enter = fadeIn() + expandVertically(),
-                exit = fadeOut() + shrinkVertically()
-            ) {
-                StaleWarning()
-            }
-
-            // Trend arrow
-            Text(
-                text = reading.trend.arrow,
-                color = ColorOnDark,
-                fontSize = 80.sp,
-                fontWeight = FontWeight.Light
-            )
-
-            // Glucose value – enormous for elderly readability
-            Text(
-                text = "${reading.value}",
-                color = ColorOnDark,
-                fontSize = 160.sp,
-                fontWeight = FontWeight.Bold,
-                lineHeight = 160.sp
-            )
-
-            // Unit
-            Text(
-                text = stringResource(R.string.unit_mgdl),
-                color = ColorSubtitle,
-                fontSize = 32.sp
-            )
-
-            Spacer(Modifier.height(16.dp))
-
-            // Trend description
-            Text(
-                text = reading.trend.description,
-                color = ColorOnDark,
-                fontSize = 40.sp,
-                fontWeight = FontWeight.Medium
-            )
-
-            Spacer(Modifier.height(24.dp))
-
-            // Timestamp & data age
-            Text(
-                text = stringResource(R.string.timestamp_label, state.reading.timestamp.toDisplayTime()),
-                color = ColorSubtitle,
-                fontSize = 20.sp
-            )
-
-            Spacer(Modifier.height(6.dp))
-
-            Text(
-                text = stringResource(
-                    R.string.updated_minutes_ago,
-                    state.dataAgeMin,
-                    if (state.dataAgeMin == 1L) stringResource(R.string.minute_singular) else stringResource(R.string.minute_plural)
-                ),
-                color = ColorSubtitle,
-                fontSize = 22.sp
-            )
-
-            Spacer(Modifier.height(8.dp))
-
-            // Status
-            StatusChip(reading = reading, isStale = state.isStale)
-
-            Spacer(Modifier.height(12.dp))
-            Text(
-                text = stringResource(R.string.medical_disclaimer),
-                color = Color(0xFFE0E0E0),
-                fontSize = 12.sp,
-                textAlign = TextAlign.Center,
-                modifier = Modifier.padding(horizontal = 12.dp)
-            )
-
-            // Error banner (non-fatal, last reading still shown)
-            state.error?.let { msg ->
-                Spacer(Modifier.height(12.dp))
-                Text(
-                    text = stringResource(R.string.error_warning, msg),
-                    color = Color(0xFFFFCC02),
-                    fontSize = 16.sp,
-                    textAlign = TextAlign.Center,
-                    modifier = Modifier.padding(horizontal = 16.dp)
-                )
+            when {
+                !state.isConfigured -> EmptyConfigurationState(onNavigateToSettings)
+                state.isLoading && state.reading == null -> LoadingState()
+                isLandscape -> MonitoringLandscape(state = state, viewModel = viewModel)
+                else -> MonitoringPortrait(state = state, viewModel = viewModel)
             }
         }
+    }
+}
 
-        // ── Action buttons (top-right corner) ─────────────────────────────
-        Row(
+@Composable
+private fun MonitoringPortrait(
+    state: MonitoringUiState,
+    viewModel: MonitoringViewModel
+) {
+    val reading = state.reading
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(16.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        if (reading != null) {
+            CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
+            FreshnessCard(reading.timestamp)
+            StatsRow(
+                stats = reading.stats,
+                min12h = state.min12h,
+                max12h = state.max12h,
+                historyStatus = state.historyStatus
+            )
+            HistorySection(reading = reading, targetLow = state.settings.targetLow, targetHigh = state.settings.targetHigh)
+        }
+        ErrorPanel(
+            errorMessage = state.errorMessage,
+            canRetry = state.canRetry,
+            cooldownSeconds = state.retryCooldownSecondsRemaining,
+            viewModel = viewModel
+        )
+    }
+}
+
+@Composable
+private fun MonitoringLandscape(
+    state: MonitoringUiState,
+    viewModel: MonitoringViewModel
+) {
+    val reading = state.reading
+    Row(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(16.dp),
+        horizontalArrangement = Arrangement.spacedBy(16.dp)
+    ) {
+        Column(
             modifier = Modifier
-                .align(Alignment.TopEnd)
-                .padding(16.dp),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                .width(320.dp)
+                .fillMaxHeight(),
+            verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            if (state.isRefreshing) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(36.dp),
-                    color = Color.White,
-                    strokeWidth = 3.dp
+            if (reading != null) {
+                CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
+                FreshnessCard(reading.timestamp)
+                StatsColumn(
+                    stats = reading.stats,
+                    min12h = state.min12h,
+                    max12h = state.max12h,
+                    historyStatus = state.historyStatus
                 )
-            } else {
-                IconButton(onClick = onRefresh) {
-                    Icon(
-                        Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.refresh),
-                        tint = Color.White,
-                        modifier = Modifier.size(36.dp)
+            }
+            ErrorPanel(
+                errorMessage = state.errorMessage,
+                canRetry = state.canRetry,
+                cooldownSeconds = state.retryCooldownSecondsRemaining,
+                viewModel = viewModel
+            )
+        }
+        if (reading != null) {
+            Card(
+                modifier = Modifier.weight(1f),
+                colors = CardDefaults.cardColors(containerColor = Color(0xFF111827))
+            ) {
+                Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    HistoryHeader(reading)
+                    GlucoseChart(
+                        points = reading.history,
+                        targetLow = state.settings.targetLow,
+                        targetHigh = state.settings.targetHigh,
+                        modifier = Modifier.fillMaxWidth()
                     )
                 }
             }
-            IconButton(onClick = onSettings) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = stringResource(R.string.settings),
-                    tint = Color.White,
-                    modifier = Modifier.size(36.dp)
-                )
-            }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Error (no cached reading)
-// ─────────────────────────────────────────────────────────────────────────────
-
 @Composable
-private fun ErrorContent(
-    message: String,
-    onRefresh: () -> Unit,
-    onSettings: () -> Unit
-) {
-    Box(
-        modifier = Modifier
-            .fillMaxSize()
-            .background(ColorStaleBackground),
-        contentAlignment = Alignment.Center
+private fun CurrentGlucoseCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
+    val cardColor = when {
+        reading.value < targetLow -> Color(0xFF7F1D1D)
+        reading.value > targetHigh -> Color(0xFF7C2D12)
+        else -> Color(0xFF14532D)
+    }
+    Card(
+        colors = CardDefaults.cardColors(containerColor = cardColor),
+        modifier = Modifier.fillMaxWidth()
     ) {
         Column(
-            horizontalAlignment = Alignment.CenterHorizontally,
-            modifier = Modifier.padding(32.dp)
+            modifier = Modifier.padding(24.dp),
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
-            Icon(
-                Icons.Default.Warning,
-                contentDescription = null,
-                tint = Color(0xFFFFCC02),
-                modifier = Modifier.size(80.dp)
-            )
-            Spacer(Modifier.height(24.dp))
+            Text("Aktualna glukoza", color = Color.White.copy(alpha = 0.8f), fontSize = 20.sp)
             Text(
-                text = stringResource(R.string.cannot_retrieve_data),
+                text = "${reading.value} mg/dL",
                 color = Color.White,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.Center
+                fontSize = 52.sp,
+                fontWeight = FontWeight.Bold
             )
-            Spacer(Modifier.height(12.dp))
             Text(
-                text = message,
-                color = Color.LightGray,
-                fontSize = 18.sp,
-                textAlign = TextAlign.Center
+                text = "${reading.trend.arrow} ${reading.trend.description}",
+                color = Color.White,
+                fontSize = 26.sp,
+                fontWeight = FontWeight.SemiBold
             )
-            Spacer(Modifier.height(32.dp))
-            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                Button(
-                    onClick = onRefresh,
-                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF00897B))
-                ) {
-                    Icon(Icons.Default.Refresh, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.retry), fontSize = 20.sp)
-                }
-                OutlinedButton(
-                    onClick = onSettings,
-                    colors = ButtonDefaults.outlinedButtonColors(contentColor = Color.White)
-                ) {
-                    Icon(Icons.Default.Settings, contentDescription = null)
-                    Spacer(Modifier.width(8.dp))
-                    Text(stringResource(R.string.settings), fontSize = 20.sp)
-                }
+        }
+    }
+}
+
+@Composable
+private fun FreshnessCard(timestamp: Instant) {
+    val minutes = Duration.between(timestamp, Instant.now()).toMinutes().coerceAtLeast(0)
+    val color = when {
+        minutes <= 5 -> Color(0xFF166534)
+        minutes <= 10 -> Color(0xFF9A3412)
+        else -> Color(0xFF991B1B)
+    }
+    Card(colors = CardDefaults.cardColors(containerColor = color), modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = "Dane sprzed $minutes min",
+            modifier = Modifier.padding(18.dp),
+            color = Color.White,
+            fontSize = 22.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+    }
+}
+
+@Composable
+private fun StatsRow(
+    stats: GlucoseHistoryStats,
+    min12h: String?,
+    max12h: String?,
+    historyStatus: HistoryStatus
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+            StatTile("MIN 12 h", min12h?.plus(" mg/dL") ?: "—")
+            StatTile("MAX 12 h", max12h?.plus(" mg/dL") ?: "—")
+        }
+        StatTile("TIR", "${stats.timeInRangePercent}%")
+        HistoryStatusText(historyStatus)
+    }
+}
+
+@Composable
+private fun StatsColumn(
+    stats: GlucoseHistoryStats,
+    min12h: String?,
+    max12h: String?,
+    historyStatus: HistoryStatus
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+        StatTile("MIN 12 h", min12h?.plus(" mg/dL") ?: "—")
+        StatTile("MAX 12 h", max12h?.plus(" mg/dL") ?: "—")
+        StatTile("TIR", "${stats.timeInRangePercent}%")
+        HistoryStatusText(historyStatus)
+    }
+}
+
+@Composable
+private fun HistoryStatusText(historyStatus: HistoryStatus) {
+    when (historyStatus) {
+        HistoryStatus.Loading -> Text("Wczytywanie historii 12 h...", color = Color(0xFFCBD5E1), fontSize = 14.sp)
+        HistoryStatus.Available -> Unit
+        HistoryStatus.Empty -> Text("Brak historii 12 h", color = Color(0xFFCBD5E1), fontSize = 14.sp)
+        is HistoryStatus.Error -> Text(historyStatus.message, color = Color(0xFFFCA5A5), fontSize = 14.sp)
+    }
+}
+
+@Composable
+private fun StatTile(title: String, value: String) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827))) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Text(title, color = Color(0xFF9CA3AF), fontSize = 16.sp)
+            Text(value, color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+        }
+    }
+}
+
+@Composable
+private fun HistorySection(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            HistoryHeader(reading)
+            if (reading.history.isNotEmpty()) {
+                GlucoseChart(
+                    points = reading.history,
+                    targetLow = targetLow,
+                    targetHigh = targetHigh,
+                    modifier = Modifier.fillMaxWidth()
+                )
+            } else {
+                Text("Brak danych historycznych z endpointu graph.", color = Color.White)
             }
         }
     }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// Sub-composables
-// ─────────────────────────────────────────────────────────────────────────────
-
 @Composable
-private fun StaleWarning() {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(bottom = 16.dp)
-    ) {
-        Icon(Icons.Default.Warning, contentDescription = null, tint = Color(0xFFFFCC02), modifier = Modifier.size(36.dp))
-        Text(
-            text = stringResource(R.string.stale_data_refreshing),
-            color = Color(0xFFFFCC02),
-            fontSize = 26.sp,
-            fontWeight = FontWeight.Bold
-        )
+private fun HistoryHeader(reading: GlucoseReading) {
+    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        Text("Historia glukozy - 12 godzin", color = Color.White, fontSize = 22.sp, fontWeight = FontWeight.Bold)
+        if (reading.historyHoursAvailable in 0.1..11.9) {
+            Text(
+                "Dostępne dane: ${reading.historyHoursAvailable.roundToInt()} godzin",
+                color = Color(0xFFCBD5E1),
+                fontSize = 15.sp
+            )
+        }
     }
-}
-
-private fun java.time.Instant.toDisplayTime(): String {
-    val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")
-    return formatter.format(atZone(ZoneId.systemDefault()))
 }
 
 @Composable
-private fun StatusChip(reading: GlucoseReading, isStale: Boolean) {
-    val (label, chipColor) = when {
-        isStale      -> stringResource(R.string.status_stale)    to Color(0xFF757575)
-        reading.isLow  -> stringResource(R.string.status_low)   to Color(0xFFEF5350)
-        reading.isHigh -> stringResource(R.string.status_high)  to Color(0xFFFF7043)
-        else           -> stringResource(R.string.status_normal)    to Color(0xFF43A047)
-    }
-    Surface(
-        shape = MaterialTheme.shapes.extraLarge,
-        color = chipColor,
-        modifier = Modifier.padding(top = 4.dp)
-    ) {
-        Text(
-            text = stringResource(R.string.status_label, label),
-            color = Color.White,
-            fontSize = 22.sp,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)
-        )
+private fun ErrorPanel(errorMessage: String?, canRetry: Boolean, cooldownSeconds: Long, viewModel: MonitoringViewModel) {
+    if (errorMessage == null) return
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3F1D1D)), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(18.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            Text(errorMessage, color = Color.White, fontSize = 18.sp)
+            if (cooldownSeconds > 0) {
+                Text(
+                    "Kolejna probe mozna wykonac za ${formatCooldown(cooldownSeconds)}",
+                    color = Color.White.copy(alpha = 0.85f)
+                )
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                if (canRetry) {
+                    Button(onClick = { viewModel.connectManually() }, enabled = cooldownSeconds <= 0) {
+                        Text("Połącz z LibreLinkUp")
+                    }
+                }
+                OutlinedButton(onClick = { viewModel.stopPolling() }) {
+                    Text("Zatrzymaj")
+                }
+            }
+            Text(
+                "Aplikacja wykona tylko jedną próbę. Nie będzie automatycznie ponawiać logowania.",
+                color = Color.White.copy(alpha = 0.85f)
+            )
+        }
     }
 }
 
+private fun formatCooldown(seconds: Long): String {
+    val minutes = (seconds / 60).toInt()
+    val secs = (seconds % 60).toInt()
+    return "%02d:%02d".format(minutes, secs)
+}
+
+@Composable
+private fun LoadingState() {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            CircularProgressIndicator()
+            Text("Łączenie z LibreLinkUp…", fontSize = 20.sp)
+        }
+    }
+}
+
+@Composable
+private fun EmptyConfigurationState(onNavigateToSettings: () -> Unit) {
+    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+        Card(modifier = Modifier.padding(24.dp)) {
+            Column(
+                modifier = Modifier.padding(24.dp),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(16.dp)
+            ) {
+                Text(
+                    "Wprowadź dane LibreLinkUp albo włącz tryb mock.",
+                    textAlign = TextAlign.Center,
+                    fontSize = 22.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                Button(onClick = onNavigateToSettings) {
+                    Text("Otwórz ustawienia")
+                }
+            }
+        }
+    }
+}

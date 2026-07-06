@@ -4,6 +4,14 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
+import org.gradle.api.tasks.compile.AbstractCompile
+
+fun String.toBuildConfigString(): String = "\"" + this.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
+
+val libreApiBaseUrl = (System.getenv("LIBRE_API_BASE_URL") ?: "https://api-eu.libreview.io").trim().ifBlank { "https://api-eu.libreview.io" }
+val libreLinkUpVersion = (System.getenv("LIBRE_LINKUP_VERSION") ?: "4.17.0").trim().ifBlank { "4.17.0" }
+val librePatientId = (System.getenv("LIBRE_PATIENT_ID") ?: "").trim()
+
 android {
     namespace = "com.libredisplay"
     compileSdk = 35
@@ -14,6 +22,9 @@ android {
         targetSdk = 35
         versionCode = 1
         versionName = "1.0.0"
+        buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
+        buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
+        buildConfigField("String", "LIBRE_PATIENT_ID", librePatientId.toBuildConfigString())
     }
 
     buildTypes {
@@ -41,6 +52,12 @@ android {
 
     buildFeatures {
         compose = true
+        buildConfig = true
+    }
+
+
+    testOptions {
+        unitTests.isReturnDefaultValues = true
     }
 }
 
@@ -69,6 +86,14 @@ dependencies {
     implementation(libs.androidx.biometric)
     implementation(libs.androidx.fragment.ktx)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.okhttp.mockwebserver)
     debugImplementation(libs.androidx.ui.tooling)
 }
 
+tasks.withType<AbstractCompile>().configureEach {
+    exclude(
+        "**/data/api/v3/**",
+        "**/data/api/v2/**"
+    )
+}

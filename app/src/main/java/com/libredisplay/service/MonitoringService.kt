@@ -1,50 +1,42 @@
 package com.libredisplay.service
 
 import android.app.Notification
-import android.app.NotificationManager
 import android.app.PendingIntent
 import android.app.Service
-import android.content.Context
 import android.content.Intent
 import android.os.IBinder
-import android.util.Log
 import androidx.core.app.NotificationCompat
+import com.libredisplay.LibreDisplayApp
 import com.libredisplay.LibreDisplayApp.Companion.MONITORING_CHANNEL_ID
 import com.libredisplay.MainActivity
 import com.libredisplay.R
-import com.libredisplay.data.repository.GlucoseRepository
-import com.libredisplay.data.repository.SettingsRepository
+import com.libredisplay.data.api.stopsAutomaticPolling
+import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.widget.WidgetUpdater
-import kotlinx.coroutines.*
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
 
 private const val TAG = "MonitoringService"
 private const val NOTIFICATION_ID = 1001
 
-/**
- * Foreground service that keeps glucose data fresh even when the activity
- * is in the background.
- *
- * The service posts a persistent notification so Android does not kill it.
- * The actual data fetch is delegated to [GlucoseRepository].
- */
 class MonitoringService : Service() {
 
     private val scope = CoroutineScope(Dispatchers.IO + SupervisorJob())
     private val widgetUpdater by lazy { WidgetUpdater(applicationContext) }
-
-    private lateinit var settingsRepository: SettingsRepository
-    private lateinit var glucoseRepository: GlucoseRepository
+    private val app by lazy { application as LibreDisplayApp }
 
     override fun onCreate() {
         super.onCreate()
-        settingsRepository = SettingsRepository(applicationContext)
-        glucoseRepository  = GlucoseRepository(settingsRepository)
         startForeground(NOTIFICATION_ID, buildNotification())
         startPollingLoop()
     }
 
-    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int =
-        START_STICKY   // Restart if killed by the OS
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int = START_STICKY
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -53,13 +45,11 @@ class MonitoringService : Service() {
         super.onDestroy()
     }
 
-    // ── Private ───────────────────────────────────────────────────────────────
-
     private fun startPollingLoop() {
         scope.launch {
             while (isActive) {
                 try {
-                    val reading = glucoseRepository.fetchLatestReading()
+                    val reading = app.glucoseRepository.fetchLatestReading()
                     if (reading != null) {
                         widgetUpdater.updateWithReading(
                             value = reading.value,
@@ -68,12 +58,17 @@ class MonitoringService : Service() {
                             timestamp = reading.timestamp
                         )
                     }
-                    Log.d(TAG, "Background fetch successful")
                 } catch (e: Exception) {
-                    Log.e(TAG, "Background fetch failed: ${e.message}")
+                    DiagnosticLogger.logError(TAG, "Background fetch failed: ${e.message}")
+                    DiagnosticLogger.logException(TAG, e, "MonitoringService background fetch exception")
                     widgetUpdater.updateWithError(e.message ?: getString(R.string.error_check_official_app))
+                    if (e.stopsAutomaticPolling()) {
+                        DiagnosticLogger.logError(TAG, "MonitoringService polling stopped after critical error. Waiting for manual retry.")
+                        stopSelf()
+                        break
+                    }
                 }
-                delay(15_000L)
+                delay(app.settingsRepository.loadSettings().refreshInterval * 1000L)
             }
         }
     }
@@ -94,4 +89,3 @@ class MonitoringService : Service() {
             .build()
     }
 }
-
