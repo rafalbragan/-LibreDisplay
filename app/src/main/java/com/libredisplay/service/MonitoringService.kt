@@ -10,8 +10,9 @@ import com.libredisplay.LibreDisplayApp
 import com.libredisplay.LibreDisplayApp.Companion.MONITORING_CHANNEL_ID
 import com.libredisplay.MainActivity
 import com.libredisplay.R
-import com.libredisplay.data.api.stopsAutomaticPolling
 import com.libredisplay.diagnostics.DiagnosticLogger
+import com.libredisplay.ui.monitoring.PollingFailureClassifier
+import com.libredisplay.ui.monitoring.PollingFailureType
 import com.libredisplay.widget.WidgetUpdater
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -61,14 +62,23 @@ class MonitoringService : Service() {
                 } catch (e: Exception) {
                     DiagnosticLogger.logError(TAG, "Background fetch failed: ${e.message}")
                     DiagnosticLogger.logException(TAG, e, "MonitoringService background fetch exception")
-                    widgetUpdater.updateWithError(e.message ?: getString(R.string.error_check_official_app))
-                    if (e.stopsAutomaticPolling()) {
-                        DiagnosticLogger.logError(TAG, "MonitoringService polling stopped after critical error. Waiting for manual retry.")
-                        stopSelf()
-                        break
+                    when (PollingFailureClassifier.classify(e)) {
+                        PollingFailureType.AUTHENTICATION_REQUIRED -> {
+                            widgetUpdater.updateWithError("Wymagane reczne ponowne polaczenie")
+                            DiagnosticLogger.logError(TAG, "MonitoringService polling stopped: authentication required")
+                            stopSelf()
+                            break
+                        }
+
+                        PollingFailureType.TRANSIENT_NETWORK,
+                        PollingFailureType.SERVER_UNAVAILABLE,
+                        PollingFailureType.RESPONSE_DECODING,
+                        PollingFailureType.UNKNOWN -> {
+                            widgetUpdater.updateWithError(getString(R.string.error_check_official_app))
+                        }
                     }
                 }
-                delay(app.settingsRepository.loadSettings().refreshInterval * 1000L)
+                delay(app.settingsRepository.loadSettings().refreshInterval.coerceIn(30, 300) * 1000L)
             }
         }
     }

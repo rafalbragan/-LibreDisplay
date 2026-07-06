@@ -45,8 +45,47 @@ data class MonitoringUiState(
     val retryCooldownSecondsRemaining: Long = 0,
     val isPolling: Boolean = false,
     val lastUpdatedAt: Instant? = null,
-    val connectionState: ConnectionState = ConnectionState.Idle
+    val connectionState: ConnectionState = ConnectionState.Idle,
+    val authenticationState: AuthenticationState = AuthenticationState.AuthenticationRequired,
+    val dataConnectionState: DataConnectionState = DataConnectionState.Offline(null),
+    val pollingStatus: PollingStatus = PollingStatus.Active,
+    val lastSuccessfulFetchAt: Instant? = null,
+    val lastMeasurementTimestamp: Instant? = null,
+    val isDataStale: Boolean = false,
+    val consecutivePollingFailures: Int = 0,
+    val nextPollingRetryAt: Instant? = null,
+    val staleInfoMessage: String? = null
 )
+
+enum class AuthenticationState {
+    Authenticated,
+    AuthenticationRequired
+}
+
+sealed interface DataConnectionState {
+    data object Live : DataConnectionState
+    data class Stale(
+        val lastSuccessfulUpdate: Instant,
+        val consecutiveFailures: Int
+    ) : DataConnectionState
+    data class Offline(
+        val lastSuccessfulUpdate: Instant?
+    ) : DataConnectionState
+}
+
+sealed interface PollingStatus {
+    data object Active : PollingStatus
+    data class TemporarilyOffline(
+        val consecutiveFailures: Int,
+        val nextRetryAt: Instant
+    ) : PollingStatus
+    data class AuthenticationRequired(
+        val message: String
+    ) : PollingStatus
+    data class ServerUnavailable(
+        val nextRetryAt: Instant
+    ) : PollingStatus
+}
 
 sealed interface HistoryStatus {
     data object Loading : HistoryStatus

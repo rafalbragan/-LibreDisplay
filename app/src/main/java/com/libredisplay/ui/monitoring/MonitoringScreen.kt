@@ -112,6 +112,7 @@ private fun MonitoringPortrait(
         if (reading != null) {
             CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
             FreshnessCard(reading.timestamp)
+            StaleInfoCard(state.staleInfoMessage)
             StatsRow(
                 stats = reading.stats,
                 min12h = state.min12h,
@@ -150,6 +151,7 @@ private fun MonitoringLandscape(
             if (reading != null) {
                 CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
                 FreshnessCard(reading.timestamp)
+                StaleInfoCard(state.staleInfoMessage)
                 StatsColumn(
                     stats = reading.stats,
                     min12h = state.min12h,
@@ -180,6 +182,19 @@ private fun MonitoringLandscape(
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun StaleInfoCard(message: String?) {
+    if (message.isNullOrBlank()) return
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2937)), modifier = Modifier.fillMaxWidth()) {
+        Text(
+            text = message,
+            modifier = Modifier.padding(12.dp),
+            color = Color(0xFFE5E7EB),
+            fontSize = 14.sp
+        )
     }
 }
 

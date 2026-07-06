@@ -8,7 +8,7 @@ data class AppSettings(
     val region: String = "EU",
     val regionMode: String = "EU",
     val customBaseUrl: String = "",
-    val refreshInterval: Int = 15,
+    val refreshInterval: Int = 60,
     val targetLow: Int = 80,
     val targetHigh: Int = 180,
     val trendWindowMinutes: Int = DisplaySettings.DEFAULT_TREND_WINDOW_MINUTES,

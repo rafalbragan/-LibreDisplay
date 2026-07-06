@@ -15,7 +15,7 @@ class SettingsRepository(context: Context) {
         storage.putString(SecureStorage.KEY_REGION, settings.region.uppercase())
         storage.putString(SecureStorage.KEY_REGION_MODE, settings.regionMode.uppercase())
         storage.putString(SecureStorage.KEY_CUSTOM_BASE_URL, settings.customBaseUrl.trim())
-        storage.putInt(SecureStorage.KEY_REFRESH_INTERVAL, settings.refreshInterval.coerceAtLeast(15))
+        storage.putInt(SecureStorage.KEY_REFRESH_INTERVAL, settings.refreshInterval.coerceIn(30, 300))
         storage.putInt(SecureStorage.KEY_TARGET_LOW, settings.targetLow.coerceIn(40, 300))
         storage.putInt(SecureStorage.KEY_TARGET_HIGH, settings.targetHigh.coerceIn(60, 400))
         storage.putInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, settings.trendWindowMinutes)
@@ -32,7 +32,7 @@ class SettingsRepository(context: Context) {
             region = storage.getString(SecureStorage.KEY_REGION, "EU").ifBlank { "EU" },
             regionMode = storage.getString(SecureStorage.KEY_REGION_MODE, "EU").ifBlank { "EU" },
             customBaseUrl = storage.getString(SecureStorage.KEY_CUSTOM_BASE_URL),
-            refreshInterval = storage.getInt(SecureStorage.KEY_REFRESH_INTERVAL, 15).coerceAtLeast(15),
+            refreshInterval = storage.getInt(SecureStorage.KEY_REFRESH_INTERVAL, 60).coerceIn(30, 300),
             targetLow = storage.getInt(SecureStorage.KEY_TARGET_LOW, 80).coerceIn(40, 300),
             targetHigh = storage.getInt(SecureStorage.KEY_TARGET_HIGH, 180).coerceIn(60, 400),
             trendWindowMinutes = storage.getInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, 3),
@@ -116,7 +116,7 @@ class SettingsRepository(context: Context) {
         return copy(
             targetLow = low,
             targetHigh = high,
-            refreshInterval = refreshInterval.coerceAtLeast(15),
+            refreshInterval = refreshInterval.coerceIn(30, 300),
             regionMode = regionMode.ifBlank { "EU" }.uppercase().let { if (it == "AUTO") "EU" else it },
             region = region.ifBlank { "EU" }.uppercase(),
             customBaseUrl = customBaseUrl.trim()

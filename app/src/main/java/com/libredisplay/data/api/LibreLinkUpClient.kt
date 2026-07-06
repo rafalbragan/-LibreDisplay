@@ -187,7 +187,7 @@ class RetrofitLibreLinkUpClient(
         }
         DiagnosticLogger.logInfo(
             "LibreLinkUpClient",
-            "Graph patientId=$activePatientId historyCount=${history.size} $historyRange unit=${normalized.unit}"
+            "Graph historyCount=${history.size} $historyRange unit=${normalized.unit}"
         )
         DiagnosticStatus.setGetLatestGraph("OK")
 
