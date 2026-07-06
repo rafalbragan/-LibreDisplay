@@ -27,6 +27,7 @@ class LibreDisplayApp : Application() {
         super.onCreate()
         DiagnosticLogger.init(this)
         DiagnosticLogger.startNewSession(this)
+        installGlobalCrashHandler()
         settingsRepository = SettingsRepository(applicationContext)
         val initialSettings = settingsRepository.loadSettings()
         productionClient = RetrofitLibreLinkUpClient(initialRegion = initialSettings.loginRegionSelection())
@@ -41,6 +42,20 @@ class LibreDisplayApp : Application() {
             productionClient = productionClient
         )
         createNotificationChannel()
+    }
+
+    private fun installGlobalCrashHandler() {
+        val previous = Thread.getDefaultUncaughtExceptionHandler()
+        Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
+            runCatching {
+                DiagnosticLogger.logError(
+                    "LibreDisplayApp",
+                    "FATAL APP CRASH thread=${thread.name} exceptionClass=${throwable::class.java.name} message=${throwable.message.orEmpty()}"
+                )
+                DiagnosticLogger.logException("LibreDisplayApp", throwable, "FATAL APP CRASH stacktrace")
+            }
+            previous?.uncaughtException(thread, throwable)
+        }
     }
 
     private fun createNotificationChannel() {

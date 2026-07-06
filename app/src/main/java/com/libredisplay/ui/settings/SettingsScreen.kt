@@ -44,6 +44,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.diagnostics.DiagnosticLogger
+import androidx.compose.ui.graphics.Color
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -112,6 +113,27 @@ fun SettingsScreen(
                             }
                         }
                     )
+
+                    // Password validation warnings
+                    if (settings.password.isNotEmpty()) {
+                        val hasLeadingWhitespace = settings.password.first().isWhitespace()
+                        val hasTrailingWhitespace = settings.password.last().isWhitespace()
+                        val hasNewLine = settings.password.contains('\n') || settings.password.contains('\r')
+
+                        if (hasNewLine) {
+                            Text(
+                                "Hasło zawiera znak nowej linii. Usuń go przed zapisaniem.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFDC2626)
+                            )
+                        } else if (hasLeadingWhitespace || hasTrailingWhitespace) {
+                            Text(
+                                "Hasło zawiera spację lub biały znak na początku albo końcu. Zostanie usunięty przed logowaniem.",
+                                fontSize = 12.sp,
+                                color = Color(0xFFFB923C)
+                            )
+                        }
+                    }
                     OutlinedTextField(
                         value = settings.regionMode,
                         onValueChange = { viewModel.onRegionModeChange(it.uppercase()) },

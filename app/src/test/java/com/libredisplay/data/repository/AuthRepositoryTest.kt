@@ -32,14 +32,13 @@ class AuthRepositoryTest {
     }
 
     @Test
-    fun ensureAuthenticated_trimsEmail_butKeepsPasswordExactly() = runTest {
+    fun ensureAuthenticated_trimsEmail_andTrimsPassword() = runTest {
         val fakeClient = FakeAuthClient()
-        val password = " Pa$$ w0rd\\n!@# "
         val repository = AuthRepository(
             settingsProvider = {
                 AppSettings(
                     email = " user@example.com ",
-                    password = password,
+                    password = " secret ",
                     regionMode = "AUTO"
                 )
             },
@@ -49,7 +48,7 @@ class AuthRepositoryTest {
         repository.ensureAuthenticated(force = true)
 
         assertEquals("user@example.com", fakeClient.lastEmail)
-        assertEquals(password, fakeClient.lastPassword)
+        assertEquals("secret", fakeClient.lastPassword)
         assertEquals("EU", fakeClient.lastRegion)
     }
 
@@ -270,6 +269,8 @@ class AuthRepositoryTest {
             emailNormalized = false,
             emailWasChangedByNormalization = true,
             maskedNormalizedEmail = "m***@gmail.com",
+            passwordOriginalLength = 6,
+            passwordNormalizedLength = 6,
             passwordCharCount = 6,
             passwordCodePointCount = 6,
             passwordUtf8ByteCount = 6,
@@ -287,6 +288,68 @@ class AuthRepositoryTest {
         }
 
         assertEquals(0, fakeClient.loginCalls)
+    }
+
+    @Test
+    fun credentialsSnapshot_normalizesPasswordByTrimming() {
+        val settings = AppSettings(
+            email = " User@Example.com ",
+            password = " myPassword123 ",
+            regionMode = "EU"
+        )
+        val snapshot = CredentialsSnapshot.fromSettings(settings)
+
+        assertEquals("user@example.com", snapshot.email)
+        assertEquals("myPassword123", snapshot.password)
+        assertEquals(15, snapshot.passwordOriginalLength)
+        assertEquals(13, snapshot.passwordNormalizedLength)
+        assertTrue(snapshot.hasLeadingWhitespace)
+        assertTrue(snapshot.hasTrailingWhitespace)
+        assertFalse(snapshot.containsNewLine)
+    }
+
+    @Test
+    fun credentialsSnapshot_preservesInternalSpacesInPassword() {
+        val settings = AppSettings(
+            email = "user@example.com",
+            password = "my Password 123",
+            regionMode = "EU"
+        )
+        val snapshot = CredentialsSnapshot.fromSettings(settings)
+
+        assertEquals("my Password 123", snapshot.password)
+        assertEquals(15, snapshot.passwordOriginalLength)
+        assertEquals(15, snapshot.passwordNormalizedLength)
+        assertFalse(snapshot.hasLeadingWhitespace)
+        assertFalse(snapshot.hasTrailingWhitespace)
+        assertFalse(snapshot.containsNewLine)
+    }
+
+    @Test
+    fun credentialsSnapshot_detecetsLeadingWhitespace() {
+        val settings = AppSettings(
+            email = "user@example.com",
+            password = "  secret",
+            regionMode = "EU"
+        )
+        val snapshot = CredentialsSnapshot.fromSettings(settings)
+
+        assertEquals("secret", snapshot.password)
+        assertTrue(snapshot.hasLeadingWhitespace)
+        assertFalse(snapshot.hasTrailingWhitespace)
+    }
+
+    @Test
+    fun credentialsSnapshot_detectsNewLineInPassword() {
+        val settings = AppSettings(
+            email = "user@example.com",
+            password = "secret\npassword",
+            regionMode = "EU"
+        )
+        val snapshot = CredentialsSnapshot.fromSettings(settings)
+
+        assertTrue(snapshot.containsNewLine)
+        assertEquals("secret\npassword", snapshot.password)
     }
 
     private class FakeAuthClient : AuthCapableLibreLinkUpClient {

@@ -10,7 +10,7 @@ import kotlinx.coroutines.flow.flow
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class RefreshController(
-    private val intervalMs: Long = 15_000L
+    private val intervalMs: Long = 60_000L
 ) {
     private val enabled = MutableStateFlow(true)
 
@@ -29,7 +29,6 @@ class RefreshController(
             emptyFlow()
         } else {
             flow {
-                emit(Unit)
                 while (true) {
                     delay(intervalMs)
                     emit(Unit)

@@ -4,6 +4,7 @@ import com.google.gson.JsonElement
 import com.google.gson.JsonObject
 import com.libredisplay.data.api.LibreLinkUpClient
 import com.libredisplay.data.api.LibreLinkUpException
+import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.diagnostics.DiagnosticLogger
@@ -26,12 +27,17 @@ class LibreLinkUpClientV3(
         )
     }
 
-    override suspend fun getConnections(): List<String> {
+    override suspend fun getConnections(): List<LibreConnectionPerson> {
         val current = session ?: throw LibreLinkUpException("V3 session missing. Call login() first.")
-        return listOf(current.patientId)
+        return listOf(
+            LibreConnectionPerson(
+                patientId = current.patientId,
+                displayName = "Osoba 1"
+            )
+        )
     }
 
-    override suspend fun getLatestReading(): GlucoseReading? {
+    override suspend fun getLatestReading(patientId: String?): GlucoseReading? {
         val current = session ?: throw LibreLinkUpException("V3 session missing. Call login() first.")
         val graph = authV3.fetchGraph(current)
         return parseGraph(graph)

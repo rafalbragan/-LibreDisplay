@@ -4,18 +4,33 @@ import android.content.Context
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.storage.SecureStorage
+import com.libredisplay.diagnostics.DiagnosticLogger
 
 class SettingsRepository(context: Context) {
 
     private val storage = SecureStorage(context)
 
     fun saveSettings(settings: AppSettings) {
-        storage.putString(SecureStorage.KEY_EMAIL, settings.email.trim())
-        storage.putString(SecureStorage.KEY_PASSWORD, settings.password)
+        val normalizedEmail = settings.email.trim().lowercase()
+        val normalizedPassword = settings.password.trim()
+        val originalPassword = settings.password
+        val storedSelectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() }
+
+        val passwordHadLeadingWhitespace = originalPassword.isNotEmpty() && originalPassword.first().isWhitespace()
+        val passwordHadTrailingWhitespace = originalPassword.isNotEmpty() && originalPassword.last().isWhitespace()
+        val passwordHadNewLine = originalPassword.contains('\n') || originalPassword.contains('\r')
+
+        DiagnosticLogger.logInfo(
+            "SettingsRepository",
+            "Settings saved: emailLengthOriginal=${settings.email.length} emailLengthNormalized=${normalizedEmail.length} passwordLengthOriginal=${originalPassword.length} passwordLengthNormalized=${normalizedPassword.length} passwordHadLeadingWhitespace=$passwordHadLeadingWhitespace passwordHadTrailingWhitespace=$passwordHadTrailingWhitespace passwordHadNewLine=$passwordHadNewLine"
+        )
+
+        storage.putString(SecureStorage.KEY_EMAIL, normalizedEmail)
+        storage.putString(SecureStorage.KEY_PASSWORD, normalizedPassword)
         storage.putString(SecureStorage.KEY_REGION, settings.region.uppercase())
         storage.putString(SecureStorage.KEY_REGION_MODE, settings.regionMode.uppercase())
         storage.putString(SecureStorage.KEY_CUSTOM_BASE_URL, settings.customBaseUrl.trim())
-        storage.putInt(SecureStorage.KEY_REFRESH_INTERVAL, settings.refreshInterval.coerceAtLeast(15))
+        storage.putInt(SecureStorage.KEY_REFRESH_INTERVAL, settings.refreshInterval.coerceIn(30, 300))
         storage.putInt(SecureStorage.KEY_TARGET_LOW, settings.targetLow.coerceIn(40, 300))
         storage.putInt(SecureStorage.KEY_TARGET_HIGH, settings.targetHigh.coerceIn(60, 400))
         storage.putInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, settings.trendWindowMinutes)
@@ -23,6 +38,7 @@ class SettingsRepository(context: Context) {
         storage.putBoolean(SecureStorage.KEY_KIOSK_MODE, settings.kioskMode)
         storage.putBoolean(SecureStorage.KEY_USE_MOCK, settings.useMock)
         storage.putBoolean(SecureStorage.KEY_USE_AUTH_V3, true)
+        storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, storedSelectedPatientId.orEmpty())
     }
 
     fun loadSettings(): AppSettings {
@@ -32,13 +48,14 @@ class SettingsRepository(context: Context) {
             region = storage.getString(SecureStorage.KEY_REGION, "EU").ifBlank { "EU" },
             regionMode = storage.getString(SecureStorage.KEY_REGION_MODE, "EU").ifBlank { "EU" },
             customBaseUrl = storage.getString(SecureStorage.KEY_CUSTOM_BASE_URL),
-            refreshInterval = storage.getInt(SecureStorage.KEY_REFRESH_INTERVAL, 15).coerceAtLeast(15),
+            refreshInterval = storage.getInt(SecureStorage.KEY_REFRESH_INTERVAL, 60).coerceIn(30, 300),
             targetLow = storage.getInt(SecureStorage.KEY_TARGET_LOW, 80).coerceIn(40, 300),
             targetHigh = storage.getInt(SecureStorage.KEY_TARGET_HIGH, 180).coerceIn(60, 400),
             trendWindowMinutes = storage.getInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, 3),
             showStatistics = storage.getBoolean(SecureStorage.KEY_SHOW_STATISTICS, true),
             kioskMode = storage.getBoolean(SecureStorage.KEY_KIOSK_MODE, false),
             useMock = storage.getBoolean(SecureStorage.KEY_USE_MOCK, false),
+            selectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() },
             useAuthV3 = true
         ).normalized()
     }
@@ -73,6 +90,15 @@ class SettingsRepository(context: Context) {
 
     fun saveNormalizedEmail(email: String) {
         storage.putString(SecureStorage.KEY_EMAIL, email)
+    }
+
+    fun saveSelectedPatientId(patientId: String?) {
+        val normalizedPatientId = patientId?.trim().takeIf { !it.isNullOrBlank() }.orEmpty()
+        storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, normalizedPatientId)
+        DiagnosticLogger.logInfo(
+            "SettingsRepository",
+            "selectedPatientId saved patientIdPrefix=${normalizedPatientId.take(6)}"
+        )
     }
 
     fun tokenDiagnostics(): TokenDiagnostics {
@@ -116,10 +142,11 @@ class SettingsRepository(context: Context) {
         return copy(
             targetLow = low,
             targetHigh = high,
-            refreshInterval = refreshInterval.coerceAtLeast(15),
+            refreshInterval = refreshInterval.coerceIn(30, 300),
             regionMode = regionMode.ifBlank { "EU" }.uppercase().let { if (it == "AUTO") "EU" else it },
             region = region.ifBlank { "EU" }.uppercase(),
-            customBaseUrl = customBaseUrl.trim()
+            customBaseUrl = customBaseUrl.trim(),
+            selectedPatientId = selectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
         )
     }
 }

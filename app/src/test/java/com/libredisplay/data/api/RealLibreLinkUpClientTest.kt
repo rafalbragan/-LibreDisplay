@@ -208,6 +208,34 @@ class RealLibreLinkUpClientTest {
     }
 
     @Test
+    fun connections_parseDisplayNamesAndSkipMissingPatientId() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(listOf(Response.success(json("""
+                {
+                  "data": [
+                    {"patientId":"patient-1","firstName":"Mama","lastName":"Kowalska"},
+                    {"patientId":"patient-2","firstName":"Tata"},
+                    {"firstName":"Pomin"}
+                  ]
+                }
+            """))))
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        val persons = client.getConnections()
+
+        assertEquals(2, persons.size)
+        assertEquals("patient-1", persons[0].patientId)
+        assertEquals("Mama Kowalska", persons[0].displayName)
+        assertEquals("patient-2", persons[1].patientId)
+        assertEquals("Tata", persons[1].displayName)
+    }
+
+    @Test
     fun graph_changedStructure_isStillParsed() = runTest {
         val http = FakeHttp(
             loginResponses = ArrayDeque(listOf(Response.success(json("""

@@ -13,11 +13,11 @@ class RealLibreLinkUpClientV2(
         delegate.login(email, password, region)
     }
 
-    override suspend fun getConnections(): List<String> {
+    override suspend fun getConnections(): List<com.libredisplay.data.model.LibreConnectionPerson> {
         return delegate.getConnections()
     }
 
-    override suspend fun getLatestReading(): GlucoseReading? {
-        return delegate.getLatestReading()
+    override suspend fun getLatestReading(patientId: String?): GlucoseReading? {
+        return delegate.getLatestReading(patientId)
     }
 }

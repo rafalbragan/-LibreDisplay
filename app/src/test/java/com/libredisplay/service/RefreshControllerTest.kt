@@ -17,17 +17,25 @@ import org.junit.Test
 class RefreshControllerTest {
 
     @Test
-    fun ticks_emitsImmediatelyOnStart() = runTest {
+    fun ticks_delaysFirstEmissionUntilConfiguredInterval() = runTest {
         val controller = RefreshController(intervalMs = 1_000L)
         val firstTick = async { controller.ticks().first() }
 
+        runCurrent()
+        assertFalse(firstTick.isCompleted)
+
+        advanceTimeBy(999)
+        runCurrent()
+        assertFalse(firstTick.isCompleted)
+
+        advanceTimeBy(1)
         runCurrent()
 
         assertTrue(firstTick.isCompleted)
     }
 
     @Test
-    fun ticks_emitsAtConfiguredIntervalAfterInitialTick() = runTest {
+    fun ticks_emitsAtConfiguredInterval() = runTest {
         val controller = RefreshController(intervalMs = 1_000L)
         val emissionTimes = mutableListOf<Long>()
 
@@ -38,11 +46,11 @@ class RefreshControllerTest {
         }
 
         runCurrent()
-        advanceTimeBy(2_000)
+        advanceTimeBy(3_000)
         runCurrent()
         job.join()
 
-        assertEquals(listOf(0L, 1_000L, 2_000L), emissionTimes)
+        assertEquals(listOf(1_000L, 2_000L, 3_000L), emissionTimes)
     }
 
     @Test
@@ -60,10 +68,13 @@ class RefreshControllerTest {
         }
 
         runCurrent()
-        advanceTimeBy(3_000)
+        advanceTimeBy(1_000)
         runCurrent()
-        assertEquals(listOf(0L), emissionTimes)
-        assertFalse(job.isCompleted)
+        assertEquals(listOf(1_000L), emissionTimes)
+
+        advanceTimeBy(2_000)
+        runCurrent()
+        assertEquals(listOf(1_000L), emissionTimes)
 
         controller.resume()
         runCurrent()
@@ -71,6 +82,6 @@ class RefreshControllerTest {
         runCurrent()
         job.join()
 
-        assertEquals(listOf(0L, 3_000L, 4_000L), emissionTimes)
+        assertEquals(listOf(1_000L, 4_000L, 5_000L), emissionTimes)
     }
 }

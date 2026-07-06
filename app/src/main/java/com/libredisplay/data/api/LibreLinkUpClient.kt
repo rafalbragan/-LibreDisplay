@@ -3,6 +3,7 @@ package com.libredisplay.data.api
 import com.google.gson.JsonArray
 import com.google.gson.JsonElement
 import com.google.gson.JsonObject
+import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
@@ -18,8 +19,8 @@ import java.util.concurrent.atomic.AtomicLong
 
 interface LibreLinkUpClient {
     suspend fun login(email: String, password: String)
-    suspend fun getConnections(): List<String>
-    suspend fun getLatestReading(): GlucoseReading?
+    suspend fun getConnections(): List<LibreConnectionPerson>
+    suspend fun getLatestReading(patientId: String? = null): GlucoseReading?
 }
 
 interface AuthCapableLibreLinkUpClient {
@@ -33,8 +34,7 @@ interface AuthCapableLibreLinkUpClient {
 class RetrofitLibreLinkUpClient(
     private val initialRegion: String = "EU",
     private val http: LibreLinkUpHttp = OkHttpLibreLinkUpHttp(),
-    private val apiBaseUrlOverride: String? = LibreLinkUpConfig.baseUrlOverrideOrNull(),
-    private val preferredPatientId: String? = LibreLinkUpConfig.preferredPatientId()
+    private val apiBaseUrlOverride: String? = LibreLinkUpConfig.baseUrlOverrideOrNull()
 ) : LibreLinkUpClient, AuthCapableLibreLinkUpClient {
 
     private var session: LibreLinkUpSession? = null
@@ -59,41 +59,42 @@ class RetrofitLibreLinkUpClient(
         patientId = null
     }
 
-    override suspend fun getConnections(): List<String> {
+    override suspend fun getConnections(): List<LibreConnectionPerson> {
         val activeSession = session ?: throw LibreLinkUpException("Brak aktywnej sesji LibreLinkUp")
         val connectionsBody = executeJsonStep(step = "CONNECTIONS") {
             http.getConnections(activeSession.baseUrl, activeSession.token, activeSession.accountIdHash)
         }
 
-        val patientIds = extractPatientIds(connectionsBody)
-        if (patientIds.isEmpty()) {
-            throw NonRetryableLibreLinkUpException("Brak patientId w odpowiedzi connections")
-        }
-
-        val configuredPatient = preferredPatientId?.takeIf { it.isNotBlank() }
-        val selectedPatient = when {
-            configuredPatient == null -> patientIds.first()
-            patientIds.contains(configuredPatient) -> configuredPatient
-            else -> throw NonRetryableLibreLinkUpException("Skonfigurowany LIBRE_PATIENT_ID nie istnieje na liscie connections")
-        }
-
-        patientId = selectedPatient
+        val persons = extractConnectionPersons(connectionsBody)
         DiagnosticLogger.logInfo(
             "LibreLinkUpClient",
-            "Connections count=${patientIds.size} selectedPatientId=$selectedPatient preferredConfigured=${configuredPatient != null}"
+            "CONNECTIONS PARSED count=${persons.size}"
         )
+        persons.forEachIndexed { index, person ->
+            DiagnosticLogger.logInfo(
+                "LibreLinkUpClient",
+                "PERSON FOUND index=$index name=${person.displayName} patientIdPrefix=${person.patientId.take(6)}"
+            )
+        }
+        if (persons.isEmpty()) {
+            throw NonRetryableLibreLinkUpException("Nie znaleziono aktywnych osób w LibreLinkUp.")
+        }
         DiagnosticStatus.setGetConnections("OK")
-        return patientIds
+        return persons
     }
 
-    override suspend fun getLatestReading(): GlucoseReading {
+    override suspend fun getLatestReading(patientId: String?): GlucoseReading? {
         val activeSession = session ?: throw LibreLinkUpException("Brak aktywnej sesji LibreLinkUp")
-        val activePatientId = patientId ?: getConnections().firstOrNull()
+        val activePatientId = patientId
+            ?: this.patientId
+            ?: getConnections().firstOrNull()?.patientId
             ?: throw NonRetryableLibreLinkUpException("Brak patientId do pobrania wykresu")
+
+        this.patientId = activePatientId
 
         DiagnosticLogger.logInfo(
             "LibreLinkUpClient",
-            "GRAPH REQUEST START patientIdPresent=${activePatientId.isNotBlank()}"
+            "GRAPH REQUEST START patientIdPrefix=${activePatientId.take(6)}"
         )
 
         val graphResponse = http.getGraph(
@@ -187,7 +188,7 @@ class RetrofitLibreLinkUpClient(
         }
         DiagnosticLogger.logInfo(
             "LibreLinkUpClient",
-            "Graph patientId=$activePatientId historyCount=${history.size} $historyRange unit=${normalized.unit}"
+            "Graph historyCount=${history.size} $historyRange unit=${normalized.unit}"
         )
         DiagnosticStatus.setGetLatestGraph("OK")
 
@@ -388,13 +389,27 @@ class RetrofitLibreLinkUpClient(
         return raw.trim().toIntOrNull()
     }
 
-    private fun extractPatientIds(body: JsonObject): List<String> {
+    private fun extractConnectionPersons(body: JsonObject): List<LibreConnectionPerson> {
         return body.arrayAt("data")
-            ?.mapNotNull {
-                it.takeIf(JsonElement::isJsonObject)
+            ?.mapIndexedNotNull { index, element ->
+                element.takeIf(JsonElement::isJsonObject)
                     ?.asJsonObject
-                    ?.stringAt("patientId")
-                    ?.takeIf(String::isNotBlank)
+                    ?.let { connection ->
+                        val patientId = connection.stringAt("patientId")?.takeIf(String::isNotBlank)
+                        if (patientId == null) {
+                            DiagnosticLogger.logWarning(
+                                "LibreLinkUpClient",
+                                "CONNECTION SKIPPED reason=missing patientId index=$index"
+                            )
+                            return@mapIndexedNotNull null
+                        }
+                        LibreConnectionPerson.fromNames(
+                            patientId = patientId,
+                            firstName = connection.stringAt("firstName"),
+                            lastName = connection.stringAt("lastName"),
+                            index = index
+                        )
+                    }
             }
             .orEmpty()
             .distinct()

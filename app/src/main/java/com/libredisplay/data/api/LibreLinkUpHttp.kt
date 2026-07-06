@@ -196,6 +196,7 @@ class OkHttpLibreLinkUpHttp(
         } else {
             runCatching { String(previewBytes, Charsets.UTF_8) }.getOrDefault("")
         }
+        val sanitizedBody = sanitizeResponseBodyForLogs(step = step, body = responseBody)
         val responseHeaders = mapOf(
             "Retry-After" to (safeResponse.header("Retry-After") ?: ""),
             "Date" to (safeResponse.header("Date") ?: ""),
@@ -206,7 +207,7 @@ class OkHttpLibreLinkUpHttp(
         DiagnosticLogger.logResponse(
             step = step,
             httpCode = safeResponse.code,
-            responseBody = responseBody,
+            responseBody = sanitizedBody,
             headers = responseHeaders,
             responseContentType = responseContentType,
             responseByteCount = previewBytes.size,
@@ -217,7 +218,7 @@ class OkHttpLibreLinkUpHttp(
             responseBodyLooksLikeJson = responseBodyLooksLikeJson,
             responseDecoded = !responseBodyLooksLikeGzip && (responseWasGzipEncoded || initialBodyLooksLikeGzip)
         )
-        DiagnosticStatus.setResponse(step = step, httpCode = safeResponse.code, responseBody = responseBody)
+        DiagnosticStatus.setResponse(step = step, httpCode = safeResponse.code, responseBody = sanitizedBody)
 
         safeResponse
     }
@@ -234,6 +235,13 @@ class OkHttpLibreLinkUpHttp(
     companion object {
         private const val INTERNAL_STEP_HEADER = "X-LibreDisplay-Step"
         private const val MAX_LOG_BYTES = 64 * 1024
+    }
+}
+
+private fun sanitizeResponseBodyForLogs(step: String, body: String): String {
+    return when (step.uppercase()) {
+        "LOGIN", "CONNECTIONS", "GRAPH" -> "<omitted:sensitive ${step.uppercase()} body>"
+        else -> body
     }
 }
 

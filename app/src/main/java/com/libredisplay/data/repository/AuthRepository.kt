@@ -82,7 +82,7 @@ class AuthRepository(
 
                 DiagnosticLogger.logInfo(
                     "AuthRepository",
-                    "Login attempt region=${snapshot.region} emailOriginalLength=${snapshot.emailOriginalLength} emailNormalizedLength=${snapshot.email.length} emailWasChangedByNormalization=${snapshot.emailWasChangedByNormalization} emailNormalized=${snapshot.emailNormalized} maskedNormalizedEmail=${snapshot.maskedNormalizedEmail} passwordCharCount=${snapshot.passwordCharCount} passwordCodePointCount=${snapshot.passwordCodePointCount} passwordUtf8ByteCount=${snapshot.passwordUtf8ByteCount} hasLeadingWhitespace=${snapshot.hasLeadingWhitespace} hasTrailingWhitespace=${snapshot.hasTrailingWhitespace} containsNewLine=${snapshot.containsNewLine} currentAndStoredPasswordEqual=${snapshot.currentAndStoredPasswordEqual}"
+                    "Login attempt region=${snapshot.region} emailOriginalLength=${snapshot.emailOriginalLength} emailNormalizedLength=${snapshot.email.length} emailWasChangedByNormalization=${snapshot.emailWasChangedByNormalization} emailNormalized=${snapshot.emailNormalized} maskedNormalizedEmail=${snapshot.maskedNormalizedEmail} passwordOriginalLength=${snapshot.passwordOriginalLength} passwordNormalizedLength=${snapshot.passwordNormalizedLength} passwordCharCount=${snapshot.passwordCharCount} passwordCodePointCount=${snapshot.passwordCodePointCount} passwordUtf8ByteCount=${snapshot.passwordUtf8ByteCount} hasLeadingWhitespace=${snapshot.hasLeadingWhitespace} hasTrailingWhitespace=${snapshot.hasTrailingWhitespace} containsNewLine=${snapshot.containsNewLine} currentAndStoredPasswordEqual=${snapshot.currentAndStoredPasswordEqual}"
                 )
 
                 if (snapshot.email != snapshot.normalizedEmailForCheck) {
@@ -197,6 +197,8 @@ data class CredentialsSnapshot(
     val emailNormalized: Boolean,
     val emailWasChangedByNormalization: Boolean,
     val maskedNormalizedEmail: String,
+    val passwordOriginalLength: Int,
+    val passwordNormalizedLength: Int,
     val passwordCharCount: Int,
     val passwordCodePointCount: Int,
     val passwordUtf8ByteCount: Int,
@@ -210,22 +212,26 @@ data class CredentialsSnapshot(
         fun fromSettings(settings: AppSettings): CredentialsSnapshot {
             val originalEmail = settings.email
             val normalizedEmail = originalEmail.trim().lowercase(Locale.ROOT)
-            val password = settings.password
+            val originalPassword = settings.password
+            val normalizedPassword = originalPassword.trim()
+
             return CredentialsSnapshot(
                 email = normalizedEmail,
                 normalizedEmailForCheck = normalizedEmail.trim().lowercase(Locale.ROOT),
-                password = password,
+                password = normalizedPassword,
                 region = settings.loginRegionSelection().ifBlank { "EU" },
                 emailOriginalLength = originalEmail.length,
                 emailNormalized = normalizedEmail == normalizedEmail.trim().lowercase(Locale.ROOT),
                 emailWasChangedByNormalization = originalEmail != normalizedEmail,
                 maskedNormalizedEmail = maskEmail(normalizedEmail),
-                passwordCharCount = password.length,
-                passwordCodePointCount = password.codePointCount(0, password.length),
-                passwordUtf8ByteCount = password.toByteArray(Charsets.UTF_8).size,
-                hasLeadingWhitespace = password.isNotEmpty() && password.first().isWhitespace(),
-                hasTrailingWhitespace = password.isNotEmpty() && password.last().isWhitespace(),
-                containsNewLine = password.contains('\n') || password.contains('\r'),
+                passwordOriginalLength = originalPassword.length,
+                passwordNormalizedLength = normalizedPassword.length,
+                passwordCharCount = normalizedPassword.length,
+                passwordCodePointCount = normalizedPassword.codePointCount(0, normalizedPassword.length),
+                passwordUtf8ByteCount = normalizedPassword.toByteArray(Charsets.UTF_8).size,
+                hasLeadingWhitespace = originalPassword.isNotEmpty() && originalPassword.first().isWhitespace(),
+                hasTrailingWhitespace = originalPassword.isNotEmpty() && originalPassword.last().isWhitespace(),
+                containsNewLine = originalPassword.contains('\n') || originalPassword.contains('\r'),
                 currentAndStoredPasswordEqual = true,
                 isConfigured = settings.isConfigured() && !settings.useMock
             )

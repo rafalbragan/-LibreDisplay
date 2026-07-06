@@ -75,6 +75,7 @@ class SecureStorage(context: Context) {
         const val KEY_KIOSK_MODE = "kiosk_mode"
         const val KEY_USE_MOCK = "use_mock"
         const val KEY_USE_AUTH_V3 = "use_auth_v3"
+        const val KEY_SELECTED_PATIENT_ID = "selected_patient_id"
         const val KEY_NEXT_ALLOWED_LOGIN_AT = "next_allowed_login_at"
         const val KEY_TOKEN = "token"
         const val KEY_TOKEN_EXPIRES_AT = "token_expires_at"
