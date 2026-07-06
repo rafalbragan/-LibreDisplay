@@ -1,0 +1,22 @@
+# Gradle
+.gradle/
+build/
+**/build/
+
+# Android / local SDK config
+local.properties
+.android-sdk/
+
+# IntelliJ / Android Studio
+.idea/
+*.iml
+
+# Logs and temporary files
+*.log
+*.err
+.tmp_ll_research/
+
+# OS files
+.DS_Store
+Thumbs.db
+
