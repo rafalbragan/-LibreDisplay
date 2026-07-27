@@ -43,7 +43,6 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
-import com.libredisplay.data.model.LibreConnectionPerson
 import java.time.Duration
 import java.time.Instant
 import kotlin.math.roundToInt
@@ -110,27 +109,16 @@ private fun MonitoringPortrait(
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
-        PersonSwitcher(
-            persons = state.availablePersons,
-            selectedPatientId = state.selectedPatientId,
-            selectedPersonName = state.selectedPersonName,
-            onPersonSelected = viewModel::onPersonSelected
-        )
         if (reading != null) {
             CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
             FreshnessCard(reading.timestamp)
-            StaleInfoCard(state.staleInfoMessage)
             StatsRow(
                 stats = reading.stats,
                 min12h = state.min12h,
                 max12h = state.max12h,
                 historyStatus = state.historyStatus
             )
-            if (state.selectedPatientId != null) {
-                HistorySection(reading = reading, targetLow = state.settings.targetLow, targetHigh = state.settings.targetHigh)
-            } else {
-                Text("Wybrana osoba", color = Color(0xFFCBD5E1), fontSize = 14.sp)
-            }
+            HistorySection(reading = reading, targetLow = state.settings.targetLow, targetHigh = state.settings.targetHigh)
         }
         ErrorPanel(
             errorMessage = state.errorMessage,
@@ -159,16 +147,9 @@ private fun MonitoringLandscape(
                 .fillMaxHeight(),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
-            PersonSwitcher(
-                persons = state.availablePersons,
-                selectedPatientId = state.selectedPatientId,
-                selectedPersonName = state.selectedPersonName,
-                onPersonSelected = viewModel::onPersonSelected
-            )
             if (reading != null) {
                 CurrentGlucoseCard(reading, state.settings.targetLow, state.settings.targetHigh)
                 FreshnessCard(reading.timestamp)
-                StaleInfoCard(state.staleInfoMessage)
                 StatsColumn(
                     stats = reading.stats,
                     min12h = state.min12h,
@@ -183,7 +164,7 @@ private fun MonitoringLandscape(
                 viewModel = viewModel
             )
         }
-        if (reading != null && state.selectedPatientId != null) {
+        if (reading != null) {
             Card(
                 modifier = Modifier.weight(1f),
                 colors = CardDefaults.cardColors(containerColor = Color(0xFF111827))
@@ -196,65 +177,6 @@ private fun MonitoringLandscape(
                         targetHigh = state.settings.targetHigh,
                         modifier = Modifier.fillMaxWidth()
                     )
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun StaleInfoCard(message: String?) {
-    if (message.isNullOrBlank()) return
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2937)), modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = message,
-            modifier = Modifier.padding(12.dp),
-            color = Color(0xFFE5E7EB),
-            fontSize = 14.sp
-        )
-    }
-}
-
-@Composable
-private fun PersonSwitcher(
-    persons: List<LibreConnectionPerson>,
-    selectedPatientId: String?,
-    selectedPersonName: String?,
-    onPersonSelected: (String) -> Unit
-) {
-    if (persons.isEmpty()) return
-
-    val selectedLabel = selectedPersonName ?: "Wybrana osoba"
-    val effectiveSelectedId = selectedPatientId?.takeIf { id -> persons.any { it.patientId == id } }
-
-    if (persons.size == 1) {
-        Text(
-            text = "Osoba: ${selectedPersonName ?: persons.first().displayName}",
-            color = Color(0xFFCBD5E1),
-            fontSize = 14.sp
-        )
-        return
-    }
-
-    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-        Text("$selectedLabel", color = Color(0xFFCBD5E1), fontSize = 14.sp)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-            persons.take(3).forEach { person ->
-                val selected = person.patientId == effectiveSelectedId
-                if (selected) {
-                    Button(
-                        onClick = { onPersonSelected(person.patientId) },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(person.displayName, maxLines = 1)
-                    }
-                } else {
-                    OutlinedButton(
-                        onClick = { onPersonSelected(person.patientId) },
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Text(person.displayName, maxLines = 1)
-                    }
                 }
             }
         }

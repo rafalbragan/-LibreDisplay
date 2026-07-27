@@ -3,7 +3,6 @@ package com.libredisplay.ui.monitoring
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
-import com.libredisplay.data.model.LibreConnectionPerson
 import java.time.Instant
 
 sealed interface ConnectionState {
@@ -33,9 +32,6 @@ data class MonitoringUiState(
     val isConfigured: Boolean = false,
     val isLoading: Boolean = false,
     val reading: GlucoseReading? = null,
-    val availablePersons: List<LibreConnectionPerson> = emptyList(),
-    val selectedPatientId: String? = null,
-    val selectedPersonName: String? = null,
     val currentGlucose: String = "",
     val currentTimestamp: String = "",
     val minutesAgo: Int? = null,
@@ -49,49 +45,8 @@ data class MonitoringUiState(
     val retryCooldownSecondsRemaining: Long = 0,
     val isPolling: Boolean = false,
     val lastUpdatedAt: Instant? = null,
-    val connectionState: ConnectionState = ConnectionState.Idle,
-    val authenticationState: AuthenticationState = AuthenticationState.AuthenticationRequired,
-    val dataConnectionState: DataConnectionState = DataConnectionState.Offline(null),
-    val pollingStatus: PollingStatus = PollingStatus.Active,
-    val lastSuccessfulFetchAt: Instant? = null,
-    val lastMeasurementTimestamp: Instant? = null,
-    val isDataStale: Boolean = false,
-    val consecutivePollingFailures: Int = 0,
-    val nextPollingRetryAt: Instant? = null,
-    val staleInfoMessage: String? = null
-){
-    fun shouldShowPersonSwitcher(): Boolean = availablePersons.size > 1
-}
-
-enum class AuthenticationState {
-    Authenticated,
-    AuthenticationRequired
-}
-
-sealed interface DataConnectionState {
-    data object Live : DataConnectionState
-    data class Stale(
-        val lastSuccessfulUpdate: Instant,
-        val consecutiveFailures: Int
-    ) : DataConnectionState
-    data class Offline(
-        val lastSuccessfulUpdate: Instant?
-    ) : DataConnectionState
-}
-
-sealed interface PollingStatus {
-    data object Active : PollingStatus
-    data class TemporarilyOffline(
-        val consecutiveFailures: Int,
-        val nextRetryAt: Instant
-    ) : PollingStatus
-    data class AuthenticationRequired(
-        val message: String
-    ) : PollingStatus
-    data class ServerUnavailable(
-        val nextRetryAt: Instant
-    ) : PollingStatus
-}
+    val connectionState: ConnectionState = ConnectionState.Idle
+)
 
 sealed interface HistoryStatus {
     data object Loading : HistoryStatus
