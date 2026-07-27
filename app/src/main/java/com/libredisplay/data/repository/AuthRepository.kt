@@ -115,6 +115,7 @@ class AuthRepository(
                 }
             } finally {
                 DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT EXIT")
+                DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT CLEAR")
             }
         }
     }
@@ -123,10 +124,16 @@ class AuthRepository(
         if (loginMutex.isLocked) {
             DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT WAITING")
         }
+        DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT ENTER")
         return loginMutex.withLock {
-            if (client.hasActiveSession()) return@withLock true
-            tryImportPersistedSession()
-            client.hasActiveSession()
+            try {
+                if (client.hasActiveSession()) return@withLock true
+                tryImportPersistedSession()
+                client.hasActiveSession()
+            } finally {
+                DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT EXIT")
+                DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT CLEAR")
+            }
         }
     }
 

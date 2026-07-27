@@ -4,12 +4,19 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
@@ -22,6 +29,7 @@ import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.diagnostics.DiagnosticLogger
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 internal data class ChartPointSample(
@@ -93,13 +101,72 @@ internal fun selectYAxisLabels(
     maxY: Int,
     maxLabels: Int = 5
 ): List<Int> {
-    return listOf(minY, targetLow, targetHigh, maxY)
-        .distinct()
+    if (maxLabels <= 0) return emptyList()
+    if (minY >= maxY) return listOf(minY)
+
+    val span = (maxY - minY).coerceAtLeast(1)
+    val step = when {
+        span <= 40 -> 10
+        span <= 80 -> 20
+        span <= 160 -> 40
+        else -> 50
+    }
+    val alignedStart = (minY / step) * step
+    val alignedEnd = ((maxY + step - 1) / step) * step
+
+    val labels = mutableSetOf<Int>()
+    var value = alignedStart
+    while (value <= alignedEnd) {
+        if (value in minY..maxY) labels += value
+        value += step
+    }
+    labels += minY
+    labels += maxY
+    labels += targetLow.coerceIn(minY, maxY)
+    labels += targetHigh.coerceIn(minY, maxY)
+
+    return labels
+        .toList()
         .sorted()
-        .take(maxLabels)
+        .let { sorted ->
+            if (sorted.size <= maxLabels) return@let sorted
+            val first = sorted.first()
+            val last = sorted.last()
+            val middle = sorted.filter { it != first && it != last }
+            val limitedMiddle = middle
+                .chunked((middle.size.toFloat() / (maxLabels - 2).coerceAtLeast(1)).coerceAtLeast(1f).roundToInt())
+                .mapNotNull { chunk -> chunk.firstOrNull() }
+                .take((maxLabels - 2).coerceAtLeast(0))
+            (listOf(first) + limitedMiddle + listOf(last)).distinct().sorted()
+        }
 }
 
 internal fun isValidChartCoordinate(x: Float, y: Float): Boolean = x.isFinite() && y.isFinite()
+
+internal fun findNearestPointIndexByX(points: List<Offset>, tapX: Float): Int? {
+    if (points.isEmpty()) return null
+    var bestIndex = 0
+    var bestDistance = Float.MAX_VALUE
+    points.forEachIndexed { index, point ->
+        val distance = abs(point.x - tapX)
+        if (distance < bestDistance) {
+            bestDistance = distance
+            bestIndex = index
+        }
+    }
+    return bestIndex
+}
+
+internal fun placeCurrentValueLabel(point: Offset, chartLeft: Float, chartRight: Float, topY: Float): Offset {
+    val rightPreferredX = point.x + 10f
+    val fallbackLeftX = point.x - 76f
+    val x = if (rightPreferredX + 72f <= chartRight) {
+        rightPreferredX
+    } else {
+        fallbackLeftX.coerceAtLeast(chartLeft)
+    }
+    return Offset(x = x, y = topY)
+}
 
 internal fun prepareChartData(points: List<GlucoseHistoryPoint>): PreparedChartData {
     val prepared = points.mapNotNull { point ->
@@ -137,17 +204,63 @@ fun GlucoseChart(
     points: List<GlucoseHistoryPoint>,
     targetLow: Int,
     targetHigh: Int,
+    selectedPoint: GlucoseHistoryPoint? = null,
+    onPointSelected: ((GlucoseHistoryPoint) -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
     val labelStyle = TextStyle(color = Color(0xFFCBD5E1), fontSize = 11.sp)
     val valueStyle = TextStyle(color = Color.White, fontSize = 12.sp)
     val timeFormatter = DateTimeFormatter.ofPattern("HH:mm").withZone(ZoneId.systemDefault())
+    var canvasWidth by remember { mutableStateOf(0f) }
+    var canvasHeight by remember { mutableStateOf(0f) }
 
     Canvas(
         modifier = modifier
             .fillMaxWidth()
             .height(260.dp)
+            .onSizeChanged {
+                canvasWidth = it.width.toFloat()
+                canvasHeight = it.height.toFloat()
+            }
+            .pointerInput(points, canvasWidth, canvasHeight, targetLow, targetHigh) {
+                detectTapGestures { tapOffset ->
+                    if (canvasWidth <= 0f || canvasHeight <= 0f) return@detectTapGestures
+                    val area = calculateChartArea(
+                        canvasWidth = canvasWidth,
+                        canvasHeight = canvasHeight,
+                        leftPadding = 56f,
+                        topPadding = 16f,
+                        rightPadding = 28f,
+                        bottomPadding = 34f
+                    ) ?: return@detectTapGestures
+
+                    val prepared = prepareChartData(points)
+                    if (prepared.points.isEmpty()) return@detectTapGestures
+                    val minTime = prepared.points.first().epochMillis.toFloat()
+                    val maxTime = prepared.points.last().epochMillis.toFloat().coerceAtLeast(minTime + 1f)
+                    val offsets = prepared.points.map { sample ->
+                        val fraction = (sample.epochMillis.toFloat() - minTime) / (maxTime - minTime)
+                        Offset(area.left + fraction * area.width, 0f)
+                    }
+                    val nearestIndex = findNearestPointIndexByX(offsets, tapOffset.x) ?: return@detectTapGestures
+                    val selectedSample = prepared.points[nearestIndex]
+                    val validReadings = points.mapNotNull { reading ->
+                        val epochMillis = runCatching { reading.timestamp.toEpochMilli() }.getOrNull()
+                        if (epochMillis == null) null else epochMillis to reading
+                    }.sortedBy { it.first }
+                    val selectedReading = validReadings
+                        .firstOrNull { it.first == selectedSample.epochMillis }
+                        ?.second
+                        ?: return@detectTapGestures
+
+                    DiagnosticLogger.logInfo(
+                        "GlucoseChart",
+                        "CHART POINT SELECTED timestamp=${selectedReading.timestamp} value=${selectedReading.value}"
+                    )
+                    onPointSelected?.invoke(selectedReading)
+                }
+            }
     ) {
         fun drawSafeTextLabel(
             text: String,
@@ -180,7 +293,9 @@ fun GlucoseChart(
             val layout = textMeasurer.measure(
                 text = AnnotatedString(text),
                 style = style,
-                constraints = constraints
+                constraints = constraints,
+                softWrap = false,
+                maxLines = 1
             )
 
             drawText(
@@ -223,7 +338,14 @@ fun GlucoseChart(
         val minTime = sorted.first().epochMillis.toFloat()
         val maxTime = sorted.last().epochMillis.toFloat().coerceAtLeast(minTime + 1f)
 
-        val area = calculateChartArea(size.width, size.height)
+        val area = calculateChartArea(
+            canvasWidth = size.width,
+            canvasHeight = size.height,
+            leftPadding = 56f,
+            topPadding = 16f,
+            rightPadding = 28f,
+            bottomPadding = 34f
+        )
         if (area == null) {
             DiagnosticLogger.logWarning("GlucoseChart", "CHART RENDER SKIPPED reason=invalid chart area")
             return@Canvas
@@ -303,7 +425,8 @@ fun GlucoseChart(
             )
         }
 
-        val yLabels = selectYAxisLabels(yScaleMin, targetLow, targetHigh, yScaleMax)
+        val yLabels = selectYAxisLabels(yScaleMin, targetLow, targetHigh, yScaleMax, maxLabels = 6)
+        DiagnosticLogger.logInfo("GlucoseChart", "CHART Y AXIS labels=$yLabels")
         var renderedYLabels = 0
         yLabels.forEach { value ->
             val y = yFor(value).coerceIn(chartTop, chartBottom)
@@ -316,7 +439,7 @@ fun GlucoseChart(
             val rendered = drawSafeTextLabel(
                 text = value.toString(),
                 style = labelStyle,
-                preferredTopLeft = Offset(8f, y - 8f),
+                preferredTopLeft = Offset(4f, y - 7f),
                 boundsLeft = 0f,
                 boundsTop = chartTop,
                 boundsRight = chartLeft - 8f,
@@ -327,14 +450,15 @@ fun GlucoseChart(
         }
         DiagnosticLogger.logInfo("GlucoseChart", "CHART Y LABELS count=$renderedYLabels")
 
-        val xLabelIndices = selectXAxisLabelIndices(plottedPoints.size)
+        val xLabelIndices = selectXAxisLabelIndices(plottedPoints.size, maxLabels = 5)
+        DiagnosticLogger.logInfo("GlucoseChart", "CHART X AXIS labels=$xLabelIndices")
         var renderedXLabels = 0
         xLabelIndices.forEach { index ->
             val (point, position) = plottedPoints[index]
             val rendered = drawSafeTextLabel(
                 text = timeFormatter.format(java.time.Instant.ofEpochMilli(point.epochMillis)),
                 style = labelStyle,
-                preferredTopLeft = Offset(position.x - 18f, chartBottom + 4f),
+                preferredTopLeft = Offset(position.x - 20f, chartBottom + 6f),
                 boundsLeft = chartLeft,
                 boundsTop = chartBottom + 4f,
                 boundsRight = chartRight,
@@ -346,10 +470,33 @@ fun GlucoseChart(
         DiagnosticLogger.logInfo("GlucoseChart", "CHART X LABELS count=$renderedXLabels")
 
         plottedPoints.lastOrNull()?.let { (latestPoint, latestOffset) ->
+            DiagnosticLogger.logInfo(
+                "GlucoseChart",
+                "CHART CURRENT POINT value=${latestPoint.value} timestamp=${java.time.Instant.ofEpochMilli(latestPoint.epochMillis)}"
+            )
+
+            val emphasized = selectedPoint?.timestamp?.toEpochMilli() == latestPoint.epochMillis
+            drawCircle(
+                color = Color.White,
+                radius = if (emphasized) 10f else 8f,
+                center = latestOffset
+            )
+            drawCircle(
+                color = Color(0xFF0F172A),
+                radius = if (emphasized) 6f else 4f,
+                center = latestOffset
+            )
+
+            val labelTopLeft = placeCurrentValueLabel(
+                point = latestOffset,
+                chartLeft = chartLeft,
+                chartRight = chartRight,
+                topY = (latestOffset.y - 18f).coerceIn(chartTop, chartBottom - 12f)
+            )
             drawSafeTextLabel(
                 text = "${latestPoint.value} mg/dL",
                 style = valueStyle,
-                preferredTopLeft = Offset(latestOffset.x - 24f, latestOffset.y - 24f),
+                preferredTopLeft = labelTopLeft,
                 boundsLeft = chartLeft,
                 boundsTop = chartTop,
                 boundsRight = chartRight,

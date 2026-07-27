@@ -3,8 +3,10 @@ package com.libredisplay.data.repository
 import android.content.Context
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.HbA1cSettings
 import com.libredisplay.data.storage.SecureStorage
 import com.libredisplay.diagnostics.DiagnosticLogger
+import java.time.LocalDate
 
 class SettingsRepository(context: Context) {
 
@@ -101,6 +103,50 @@ class SettingsRepository(context: Context) {
         )
     }
 
+    fun loadHbA1cSettings(patientId: String?): HbA1cSettings {
+        val suffix = patientStorageSuffix(patientId)
+        val labValue = storage.getString(SecureStorage.KEY_HBA1C_LAB_PERCENT_PREFIX + suffix)
+            .replace(',', '.')
+            .toDoubleOrNull()
+        val labDate = storage.getString(SecureStorage.KEY_HBA1C_LAB_DATE_PREFIX + suffix)
+            .takeIf { it.isNotBlank() }
+            ?.let { raw -> runCatching { LocalDate.parse(raw) }.getOrNull() }
+        val target = storage.getString(SecureStorage.KEY_HBA1C_TARGET_PERCENT_PREFIX + suffix)
+            .replace(',', '.')
+            .toDoubleOrNull()
+            ?.coerceIn(5.0, 12.0)
+            ?: 7.5
+        return HbA1cSettings(
+            patientId = patientId,
+            labHbA1cPercent = labValue,
+            labHbA1cDate = labDate,
+            targetHbA1cPercent = target
+        )
+    }
+
+    fun saveHbA1cSettings(settings: HbA1cSettings) {
+        val suffix = patientStorageSuffix(settings.patientId)
+        val normalizedLab = settings.labHbA1cPercent
+            ?.takeIf { it.isFinite() }
+            ?.coerceIn(3.5, 20.0)
+        val normalizedTarget = settings.targetHbA1cPercent
+            .takeIf { it.isFinite() }
+            ?.coerceIn(5.0, 12.0)
+            ?: 7.5
+        storage.putString(
+            SecureStorage.KEY_HBA1C_LAB_PERCENT_PREFIX + suffix,
+            normalizedLab?.toString().orEmpty()
+        )
+        storage.putString(
+            SecureStorage.KEY_HBA1C_LAB_DATE_PREFIX + suffix,
+            settings.labHbA1cDate?.toString().orEmpty()
+        )
+        storage.putString(
+            SecureStorage.KEY_HBA1C_TARGET_PERCENT_PREFIX + suffix,
+            normalizedTarget.toString()
+        )
+    }
+
     fun tokenDiagnostics(): TokenDiagnostics {
         val tokenPresent = storage.getString(SecureStorage.KEY_TOKEN).isNotBlank()
         val source = storage.getString(SecureStorage.KEY_TOKEN_SOURCE).ifBlank { if (tokenPresent) "current" else "none" }
@@ -148,6 +194,10 @@ class SettingsRepository(context: Context) {
             customBaseUrl = customBaseUrl.trim(),
             selectedPatientId = selectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
         )
+    }
+
+    private fun patientStorageSuffix(patientId: String?): String {
+        return patientId?.trim().takeIf { !it.isNullOrBlank() } ?: "global"
     }
 }
 

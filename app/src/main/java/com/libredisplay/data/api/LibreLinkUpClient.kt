@@ -347,13 +347,23 @@ class RetrofitLibreLinkUpClient(
     ): JsonObject {
         if (!response.isSuccessful) {
             val rawBody = runCatching { response.errorBody()?.string().orEmpty() }.getOrDefault("")
-            val headerRetry = parseRetryAfterHeader(response.headers()["Retry-After"])
+            val retryResolution = resolveRetryAfterSeconds(
+                statusCode = response.code(),
+                headerRetryAfter = response.headers()["Retry-After"],
+                rawBody = rawBody
+            )
+            if (response.code() == 429) {
+                DiagnosticLogger.logInfo(
+                    "LibreLinkUpClient",
+                    "RATE LIMIT parsedRetryAfterSeconds=${retryResolution?.seconds ?: 30} source=${retryResolution?.source ?: "default.429"}"
+                )
+            }
             DiagnosticStatus.setLastError("$step HTTP ${response.code()}")
             throw LibreLinkUpHttpException(
                 statusCode = response.code(),
                 responseBody = rawBody,
-                retryAfterSeconds = headerRetry ?: extractRetryAfterSeconds(rawBody),
-                lockoutInfo = parseLockoutInfo(rawBody, response.code(), headerRetry ?: extractRetryAfterSeconds(rawBody)),
+                retryAfterSeconds = retryResolution?.seconds,
+                lockoutInfo = parseLockoutInfo(rawBody, response.code(), retryResolution?.seconds),
                 message = "HTTP ${response.code()}"
             )
         }
@@ -366,11 +376,22 @@ class RetrofitLibreLinkUpClient(
         val logicalStatus = body.intAt("status")
         if (logicalStatus in setOf(400, 401, 403, 429, 430, 500)) {
             val rawBody = body.toString()
+            val retryResolution = resolveRetryAfterSeconds(
+                statusCode = logicalStatus ?: response.code(),
+                headerRetryAfter = null,
+                rawBody = rawBody
+            )
+            if (logicalStatus == 429) {
+                DiagnosticLogger.logInfo(
+                    "LibreLinkUpClient",
+                    "RATE LIMIT parsedRetryAfterSeconds=${retryResolution?.seconds ?: 30} source=${retryResolution?.source ?: "default.429"}"
+                )
+            }
             throw LibreLinkUpHttpException(
                 statusCode = logicalStatus ?: response.code(),
                 responseBody = rawBody,
-                retryAfterSeconds = extractRetryAfterSeconds(rawBody),
-                lockoutInfo = parseLockoutInfo(rawBody, logicalStatus, extractRetryAfterSeconds(rawBody)),
+                retryAfterSeconds = retryResolution?.seconds,
+                lockoutInfo = parseLockoutInfo(rawBody, logicalStatus, retryResolution?.seconds),
                 message = "HTTP ${logicalStatus ?: response.code()}"
             )
         }
@@ -386,7 +407,51 @@ class RetrofitLibreLinkUpClient(
 
     private fun parseRetryAfterHeader(raw: String?): Int? {
         if (raw.isNullOrBlank()) return null
-        return raw.trim().toIntOrNull()
+        return raw.trim().toIntOrNull()?.takeIf { it > 0 }
+    }
+
+    private fun resolveRetryAfterSeconds(
+        statusCode: Int,
+        headerRetryAfter: String?,
+        rawBody: String
+    ): RetryAfterResolution? {
+        val header = parseRetryAfterHeader(headerRetryAfter)
+        if (header != null) {
+            return RetryAfterResolution(seconds = header, source = "header.Retry-After")
+        }
+
+        val body = parseRetryAfterFromBody(rawBody)
+        if (body != null) {
+            return body
+        }
+
+        return if (statusCode == 429) {
+            RetryAfterResolution(seconds = 30, source = "default.429")
+        } else {
+            null
+        }
+    }
+
+    private fun parseRetryAfterFromBody(rawBody: String): RetryAfterResolution? {
+        if (rawBody.isBlank()) return null
+        return runCatching {
+            val root = JsonParser.parseString(rawBody).asJsonObject
+            val retryAfterSnake = root.intAt("retry_after")
+                ?: root.objectAt("error")?.intAt("retry_after")
+                ?: root.objectAt("data")?.intAt("retry_after")
+            if (retryAfterSnake != null && retryAfterSnake > 0) {
+                return@runCatching RetryAfterResolution(retryAfterSnake, "body.retry_after")
+            }
+
+            val retryAfterCamel = root.intAt("retryAfter")
+                ?: root.objectAt("error")?.intAt("retryAfter")
+                ?: root.objectAt("data")?.intAt("retryAfter")
+            if (retryAfterCamel != null && retryAfterCamel > 0) {
+                return@runCatching RetryAfterResolution(retryAfterCamel, "body.retryAfter")
+            }
+
+            null
+        }.getOrNull()
     }
 
     private fun extractConnectionPersons(body: JsonObject): List<LibreConnectionPerson> {
@@ -563,6 +628,11 @@ class RetrofitLibreLinkUpClient(
         }.getOrNull()
     }
 }
+
+private data class RetryAfterResolution(
+    val seconds: Int,
+    val source: String
+)
 
 private data class HistoryMappingResult(
     val rawCount: Int,

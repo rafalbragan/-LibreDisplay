@@ -84,6 +84,9 @@ class SecureStorage(context: Context) {
         const val KEY_SESSION_REGION = "session_region"
         const val KEY_SESSION_BASE_URL = "session_base_url"
         const val KEY_TOKEN_SOURCE = "token_source"
+        const val KEY_HBA1C_LAB_PERCENT_PREFIX = "hba1c_lab_percent_"
+        const val KEY_HBA1C_LAB_DATE_PREFIX = "hba1c_lab_date_"
+        const val KEY_HBA1C_TARGET_PERCENT_PREFIX = "hba1c_target_percent_"
         // Legacy key kept temporarily to migrate existing installs.
         const val KEY_USE_AUTH_V2 = "use_auth_v2"
     }

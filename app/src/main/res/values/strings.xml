@@ -84,5 +84,25 @@
     <string name="diagnostic_log_copied">Log skopiowany do schowka</string>
     <string name="diagnostic_log_empty">Brak wpisow diagnostycznych</string>
     <string name="diagnostic_log_path">Plik logu: %1$s</string>
+    <string name="section_hba1c">HbA1c</string>
+    <string name="hba1c_scope_for_selected_person">Dane zapisywane dla aktualnie wybranej osoby.</string>
+    <string name="label_hba1c_lab_value">Laboratoryjne HbA1c (%)</string>
+    <string name="label_hba1c_lab_date">Data badania (RRRR-MM-DD)</string>
+    <string name="hba1c_lab_date_format_hint">Przyklad: 2026-07-15</string>
+    <string name="label_hba1c_target">Cel HbA1c (%)</string>
+    <string name="kpi_hba1c_title">HbA1c</string>
+    <string name="kpi_gmi_title">GMI</string>
+    <string name="kpi_hba1c_laboratory">Laboratoryjne</string>
+    <string name="kpi_hba1c_estimated_from_sensor">Szacowane z sensora</string>
+    <string name="kpi_hba1c_not_replacement">Nie zastepuje HbA1c</string>
+    <string name="kpi_hba1c_too_little_data">Za malo danych</string>
+    <string name="kpi_hba1c_too_little_data_reliable">Za malo danych do wiarygodnej oceny</string>
+    <string name="kpi_hba1c_status_below_goal">Ponizej celu</string>
+    <string name="kpi_hba1c_status_near_goal">Blisko celu</string>
+    <string name="kpi_hba1c_status_above_goal">Powyzej celu</string>
+    <string name="kpi_hba1c_target_label">Cel: &lt; %1$.1f%%</string>
+    <string name="kpi_hba1c_date_label">Data: %1$s</string>
+    <string name="kpi_hba1c_content_description">Laboratoryjne HbA1c %1$s procent, cel ponizej %2$s procent</string>
+    <string name="kpi_gmi_content_description">GMI %1$s procent, wartosc szacowana z sensora, nie zastepuje HbA1c</string>
 </resources>
 

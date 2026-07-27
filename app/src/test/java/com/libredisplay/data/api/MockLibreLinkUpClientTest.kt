@@ -18,4 +18,21 @@ class MockLibreLinkUpClientTest {
         assertEquals(12.0, reading.historyHoursAvailable, 0.01)
         assertTrue(reading.value in 75..250)
     }
+
+    @Test
+    fun mockClient_exposesTwoPersons_andSupportsPersonSpecificReadings() = runTest {
+        val client = MockLibreLinkUpClient()
+        client.login("demo@example.com", "secret")
+
+        val persons = client.getConnections()
+        val mamaReading = client.getLatestReading(persons[0].patientId)
+        val tataReading = client.getLatestReading(persons[1].patientId)
+
+        assertTrue(persons.size >= 2)
+        assertEquals("Mama", persons[0].displayName)
+        assertEquals("Tata", persons[1].displayName)
+        assertTrue(mamaReading != null)
+        assertTrue(tataReading != null)
+        assertTrue((mamaReading?.value ?: 0) != (tataReading?.value ?: 0) || mamaReading?.trend != tataReading?.trend)
+    }
 }

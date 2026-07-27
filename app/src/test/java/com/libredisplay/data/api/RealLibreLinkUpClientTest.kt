@@ -158,6 +158,75 @@ class RealLibreLinkUpClientTest {
     }
 
     @Test
+    fun http429_parsesRetryAfterFromBody_whenHeaderMissing() = runTest {
+        val error = """{"status":429,"retry_after":30}"""
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(Response.error(429, error.toResponseBody("application/json".toMediaType())))
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpHttpException")
+        } catch (ex: LibreLinkUpHttpException) {
+            assertEquals(429, ex.statusCode)
+            assertEquals(30, ex.retryAfterSeconds)
+        }
+    }
+
+    @Test
+    fun http429_parsesRetryAfterFromBodyCamelCase_whenSnakeCaseMissing() = runTest {
+        val error = """{"status":429,"retryAfter":45}"""
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(Response.error(429, error.toResponseBody("application/json".toMediaType())))
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpHttpException")
+        } catch (ex: LibreLinkUpHttpException) {
+            assertEquals(429, ex.statusCode)
+            assertEquals(45, ex.retryAfterSeconds)
+        }
+    }
+
+    @Test
+    fun http429_usesDefaultRetryAfter30_whenHeaderAndBodyMissing() = runTest {
+        val error = """{"status":429,"error_name":"rate_limited"}"""
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(Response.error(429, error.toResponseBody("application/json".toMediaType())))
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpHttpException")
+        } catch (ex: LibreLinkUpHttpException) {
+            assertEquals(429, ex.statusCode)
+            assertEquals(30, ex.retryAfterSeconds)
+        }
+    }
+
+    @Test
     fun missingOrMalformedJwt_doesNotRelogin_orRetryRequest() = runTest {
         val malformedJwt = """{"error":{"message":"missing or malformed jwt"}}"""
         val http = FakeHttp(

@@ -43,6 +43,8 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.compose.ui.res.stringResource
+import com.libredisplay.R
 import com.libredisplay.diagnostics.DiagnosticLogger
 import androidx.compose.ui.graphics.Color
 
@@ -56,6 +58,7 @@ fun SettingsScreen(
 ) {
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
+    val hba1cSettings by viewModel.hba1cSettings.collectAsState()
     val message by viewModel.message.collectAsState()
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -179,6 +182,41 @@ fun SettingsScreen(
                         }
                         Switch(checked = settings.useMock, onCheckedChange = viewModel::onUseMockChange)
                     }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text(stringResource(R.string.section_hba1c), fontSize = 20.sp)
+                    Text(
+                        text = stringResource(R.string.hba1c_scope_for_selected_person),
+                        fontSize = 13.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                    OutlinedTextField(
+                        value = hba1cSettings.labHbA1cPercent?.toString().orEmpty(),
+                        onValueChange = viewModel::onLabHbA1cPercentChange,
+                        label = { Text(stringResource(R.string.label_hba1c_lab_value)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
+                    OutlinedTextField(
+                        value = hba1cSettings.labHbA1cDate?.toString().orEmpty(),
+                        onValueChange = viewModel::onLabHbA1cDateChange,
+                        label = { Text(stringResource(R.string.label_hba1c_lab_date)) },
+                        supportingText = { Text(stringResource(R.string.hba1c_lab_date_format_hint)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = hba1cSettings.targetHbA1cPercent.toString(),
+                        onValueChange = viewModel::onTargetHbA1cPercentChange,
+                        label = { Text(stringResource(R.string.label_hba1c_target)) },
+                        modifier = Modifier.fillMaxWidth(),
+                        singleLine = true,
+                        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal)
+                    )
                 }
             }
 

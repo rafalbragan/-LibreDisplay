@@ -43,6 +43,15 @@ class GlucoseRepository(
         return reading
     }
 
+    suspend fun fetchMonitoringSnapshotFromActiveSession(preferredPatientId: String? = null): MonitoringSnapshot {
+        val settings = settingsProvider()
+        return fetchMonitoringSnapshotFromClient(
+            client = productionClient,
+            preferredPatientId = preferredPatientId,
+            storedPatientId = settings.selectedPatientId
+        )
+    }
+
     suspend fun fetchMonitoringSnapshot(preferredPatientId: String? = null): MonitoringSnapshot {
         val settings = settingsProvider()
         return if (settings.useMock) {
