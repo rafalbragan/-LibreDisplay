@@ -34,6 +34,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private val app = application as LibreDisplayApp
     private val settingsRepository = app.settingsRepository
     private val glucoseRepository = app.glucoseRepository
+    private val glucoseSyncRepository = app.glucoseSyncRepository
     private val connectMutex = Mutex()
     private val fetchMutex = Mutex()
     private val attemptCounter = AtomicLong(0)
@@ -116,6 +117,24 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
         viewModelScope.launch {
+            val localSnapshot = glucoseRepository.loadLatestMonitoringSnapshotFromLocal(settings.selectedPatientId)
+            if (localSnapshot != null) {
+                transitionState(ConnectionState.Connected)
+                _uiState.update {
+                    it.applyDashboardSnapshot(localSnapshot).copy(
+                        isLoading = false,
+                        errorMessage = null,
+                        canRetry = false,
+                        dataConnectionState = DataConnectionState.Stale(localSnapshot.reading.timestamp, 0),
+                        pollingStatus = PollingStatus.Active,
+                        lastSuccessfulFetchAt = localSnapshot.reading.timestamp,
+                        lastMeasurementTimestamp = localSnapshot.reading.timestamp,
+                        isDataStale = true,
+                        staleInfoMessage = "Dane z lokalnej historii. Ostatnia synchronizacja: ${localSnapshot.reading.timestamp}"
+                    )
+                }
+            }
+
             runCatching {
                 glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull()
             }.onSuccess { snapshotOrNull ->
@@ -144,6 +163,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     )
                 }
                 startPolling()
+                viewModelScope.launch(viewModelExceptionHandler) {
+                    glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.APP_START)
+                }
             }.onFailure { throwable ->
                 glucoseRepository.resetSession()
                 if (throwable is LibreLinkUpHttpException && throwable.statusCode in setOf(401, 403)) {
@@ -167,7 +189,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     fun refreshNow() {
         if (_uiState.value.connectionState != ConnectionState.Connected) return
-        viewModelScope.launch { pollOnce(force = true, source = "manual-refresh") }
+        viewModelScope.launch(viewModelExceptionHandler) {
+            glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.MANUAL)
+            pollOnce(force = true, source = "manual-refresh")
+        }
     }
 
     fun retryAfterError() {
@@ -221,6 +246,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     fun onPersonSelected(patientId: String) {
         val normalized = patientId.trim()
         if (normalized.isBlank()) return
+        val previous = _uiState.value.selectedPatientId
+        if (previous == normalized) return
+        DiagnosticLogger.logInfo(
+            "MonitoringViewModel",
+            "PERSON SWITCH old=${previous?.take(6) ?: "none"} new=${normalized.take(6)}"
+        )
         settingsRepository.saveSelectedPatientId(normalized)
         _uiState.update { current ->
             val selectedName = current.availablePersons.firstOrNull { it.patientId == normalized }?.displayName
@@ -234,6 +265,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         }
         if (_uiState.value.connectionState == ConnectionState.Connected) {
             viewModelScope.launch(viewModelExceptionHandler) {
+                glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.PERSON_SWITCH)
                 pollOnce(force = true, source = "person-switch")
             }
         }
@@ -685,6 +717,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun MonitoringUiState.applyDashboardSnapshot(snapshot: MonitoringSnapshot): MonitoringUiState {
         val persons = snapshot.persons.take(3)
+        DiagnosticLogger.logInfo("MonitoringViewModel", "PERSONS LOADED count=${persons.size}")
         val selected = persons.firstOrNull { it.patientId == snapshot.selectedPerson.patientId }
             ?: persons.firstOrNull()
             ?: snapshot.selectedPerson

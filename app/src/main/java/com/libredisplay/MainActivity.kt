@@ -12,12 +12,14 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import com.libredisplay.ui.monitoring.MonitoringScreen
+import com.libredisplay.ui.analytics.AnalyticsScreen
 import com.libredisplay.ui.settings.DiagnosticScreen
 import com.libredisplay.ui.settings.SettingsScreen
 import com.libredisplay.ui.theme.LibreDisplayTheme
 
 enum class AppScreen {
     Monitoring,
+    Analytics,
     Settings,
     Diagnostics
 }
@@ -44,7 +46,12 @@ class MainActivity : ComponentActivity() {
                     AppScreen.Monitoring -> MonitoringScreen(
                         refreshNonce = refreshNonce,
                         onNavigateToSettings = { currentScreen = AppScreen.Settings },
-                        onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics }
+                        onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
+                        onNavigateToAnalytics = { currentScreen = AppScreen.Analytics }
+                    )
+
+                    AppScreen.Analytics -> AnalyticsScreen(
+                        onNavigateBack = { currentScreen = AppScreen.Monitoring }
                     )
 
                     AppScreen.Settings -> SettingsScreen(

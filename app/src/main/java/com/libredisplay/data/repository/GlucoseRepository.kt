@@ -18,11 +18,16 @@ class GlucoseRepository(
     private val settingsProvider: () -> AppSettings,
     private val authRepository: AuthRepository,
     private val productionClient: RetrofitLibreLinkUpClient,
-    private val mockClient: LibreLinkUpClient = MockLibreLinkUpClient()
+    private val mockClient: LibreLinkUpClient = MockLibreLinkUpClient(),
+    private val localHistoryRepository: LocalGlucoseHistoryRepository? = null
 ) {
 
     suspend fun fetchLatestReading(): GlucoseReading? {
-        return fetchMonitoringSnapshot().reading
+        return runCatching { fetchMonitoringSnapshot().reading }
+            .getOrElse {
+                val localSnapshot = loadLatestMonitoringSnapshotFromLocal()
+                localSnapshot?.reading
+            }
     }
 
     suspend fun fetchLatestReadingWithSnapshot(snapshot: CredentialsSnapshot): GlucoseReading {
@@ -70,8 +75,14 @@ class GlucoseRepository(
             return fetchMonitoringSnapshotFromClient(mockClient, preferredPatientId, settings.selectedPatientId)
         }
         val hasSession = authRepository.ensureSessionFromStorageOnly()
-        if (!hasSession) return null
+        if (!hasSession) {
+            return loadLatestMonitoringSnapshotFromLocal(preferredPatientId ?: settings.selectedPatientId)
+        }
         return fetchMonitoringSnapshotFromClient(productionClient, preferredPatientId, settings.selectedPatientId)
+    }
+
+    suspend fun loadLatestMonitoringSnapshotFromLocal(preferredPatientId: String? = null): MonitoringSnapshot? {
+        return localHistoryRepository?.loadLatestMonitoringSnapshot(preferredPatientId)
     }
 
     suspend fun fetchMonitoringSnapshotWithSnapshot(
@@ -122,7 +133,19 @@ class GlucoseRepository(
             "GlucoseRepository",
             "Reading value=${reading.value} trend=${reading.trend.arrow} history=${reading.history.size}"
         )
-        return MonitoringSnapshot(persons = persons, selectedPerson = selectedPerson, reading = reading)
+        val snapshot = MonitoringSnapshot(persons = persons, selectedPerson = selectedPerson, reading = reading)
+        localHistoryRepository?.upsertObservedPersons(persons, java.time.Instant.now())
+        localHistoryRepository?.insertReadings(
+            patientId = selectedPerson.patientId,
+            points = (reading.history + listOf(
+                com.libredisplay.data.model.GlucoseHistoryPoint(
+                    value = reading.value,
+                    timestamp = reading.timestamp,
+                    trend = reading.trend
+                )
+            )).distinctBy { it.timestamp }
+        )
+        return snapshot
     }
 
     private fun resolveSelectedPerson(
