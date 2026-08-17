@@ -32,5 +32,14 @@ interface GlucoseReadingDao {
 
     @Query("DELETE FROM glucose_readings WHERE timestamp < :cutoff")
     suspend fun deleteOlderThan(cutoff: Instant): Int
+
+    @Query("DELETE FROM glucose_readings")
+    suspend fun deleteAllReadings(): Int
+
+    @Query("DELETE FROM glucose_readings WHERE patientId = :patientId")
+    suspend fun deleteReadingsForPerson(patientId: String): Int
+
+    @Query("DELETE FROM glucose_readings WHERE source = 'DemoMode' OR patientId LIKE 'demo-person-%'")
+    suspend fun deleteDemoReadings(): Int
 }
 

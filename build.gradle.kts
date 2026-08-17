@@ -26,7 +26,7 @@ tasks.register("checkEnvironment") {
     group = "verification"
     description = "Shows Java/Gradle/SDK info and checks adb/device availability."
     doLast {
-        println("=== LibreDisplay Environment Check ===")
+        println("=== LibreCare Environment Check ===")
         val javaHomeEnv = System.getenv("JAVA_HOME") ?: "NOT SET"
         val androidHomeEnv = System.getenv("ANDROID_HOME") ?: "NOT SET"
         val androidSdkRootEnv = System.getenv("ANDROID_SDK_ROOT") ?: "NOT SET"
@@ -101,12 +101,12 @@ tasks.register("showDevices") {
 tasks.register("showLogs") {
     notCompatibleWithConfigurationCache("Uses interactive adb logcat process.")
     group = "device"
-    description = "Starts filtered logcat for LibreDisplay, AndroidRuntime and System.err tags."
+    description = "Starts filtered logcat for LibreCare, AndroidRuntime and System.err tags."
     doLast {
         val cmd = if (isWindows()) {
-            arrayOf("cmd", "/c", "adb", "logcat", "LibreDisplay:D", "AndroidRuntime:E", "System.err:W", "*:S")
+            arrayOf("cmd", "/c", "adb", "logcat", "LibreCare:D", "AndroidRuntime:E", "System.err:W", "*:S")
         } else {
-            arrayOf("adb", "logcat", "LibreDisplay:D", "AndroidRuntime:E", "System.err:W", "*:S")
+            arrayOf("adb", "logcat", "LibreCare:D", "AndroidRuntime:E", "System.err:W", "*:S")
         }
         exec {
             commandLine(*cmd)
@@ -134,7 +134,7 @@ tasks.register("installAndRun") {
 tasks.register("removeApp") {
     notCompatibleWithConfigurationCache("Uses adb command execution.")
     group = "device"
-    description = "Uninstalls LibreDisplay application from connected device."
+    description = "Uninstalls LibreCare application from connected device."
     doLast {
         val cmd = if (isWindows()) {
             arrayOf("cmd", "/c", "adb", "uninstall", appId)
@@ -152,7 +152,7 @@ tasks.register("helpNoSdk") {
     group = "help"
     description = "Shows workflow for working without a local Android SDK."
     doLast {
-        println("=== LibreDisplay: praca bez lokalnego Android SDK ===")
+        println("=== LibreCare: praca bez lokalnego Android SDK ===")
         println("Lokalnie bez SDK nie uruchomisz: assembleDebug/installDebug/bundleRelease.")
         println("Mozesz pracowac nad kodem i budowac APK w GitHub Actions.")
         println("")
@@ -161,7 +161,7 @@ tasks.register("helpNoSdk") {
         println("2) git commit -m \"Twoja zmiana\"")
         println("3) git push origin master")
         println("4) GitHub -> Actions -> Android APK Build")
-        println("5) Pobierz artefakt: LibreDisplay-debug")
+        println("5) Pobierz artefakt: LibreCare-debug")
         println("")
         println("Taski, ktore dzialaja bez SDK lokalnie:")
         println("- checkEnvironment")

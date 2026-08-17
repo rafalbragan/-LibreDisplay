@@ -24,6 +24,7 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import kotlin.math.ceil
 import kotlin.math.max
 import java.time.Duration
 import java.time.Instant
@@ -47,7 +48,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private val _uiState = MutableStateFlow(
         MonitoringUiState(
             settings = settingsRepository.loadSettings(),
-            isConfigured = settingsRepository.isConfigured()
+            isConfigured = settingsRepository.isConfigured(),
+            isDemoMode = settingsRepository.loadSettings().useMock
         )
     )
     val uiState: StateFlow<MonitoringUiState> = _uiState.asStateFlow()
@@ -59,6 +61,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private var lastRefreshNonce: Int? = null
     private var networkAvailable: Boolean = true
     private var failureStartAt: Instant? = null
+    private var rateLimitUntilEpochMillis: Long = settingsRepository.loadRateLimitUntilEpochMillis()
 
     init {
         connectivityProvider.start { available ->
@@ -84,6 +87,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         if (lastRefreshNonce == refreshNonce) return
         lastRefreshNonce = refreshNonce
         reloadSettings()
+        reconcileRateLimitState()
         bootstrapUsingPersistedTokenOnly()
     }
 
@@ -95,6 +99,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             current.copy(
                 settings = settings,
                 isConfigured = settings.isConfigured(),
+                isDemoMode = settings.useMock,
                 errorMessage = null,
                 canRetry = settings.isConfigured(),
                 retryCooldownSecondsRemaining = authCooldownSeconds(),
@@ -190,7 +195,6 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     fun refreshNow() {
         if (_uiState.value.connectionState != ConnectionState.Connected) return
         viewModelScope.launch(viewModelExceptionHandler) {
-            glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.MANUAL)
             pollOnce(force = true, source = "manual-refresh")
         }
     }
@@ -203,6 +207,14 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         DiagnosticLogger.logInfo("MonitoringViewModel", "USER CLICKED RETRY")
         val lockedRemaining = activeRateLimitRemainingSeconds()
         if (lockedRemaining > 0) {
+            DiagnosticLogger.logWarning("RATE_LIMIT", "Rate limit detected")
+            if (rateLimitUntilEpochMillis > 0L) {
+                DiagnosticLogger.logInfo(
+                    "RATE_LIMIT",
+                    "Retry allowed at timestamp: ${Instant.ofEpochMilli(rateLimitUntilEpochMillis)}"
+                )
+            }
+            DiagnosticLogger.logInfo("RATE_LIMIT", "Remaining seconds: $lockedRemaining")
             DiagnosticLogger.logWarning(
                 "MonitoringViewModel",
                 "RETRY BLOCKED reason=rate limit active remainingSeconds=$lockedRemaining"
@@ -248,6 +260,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         if (normalized.isBlank()) return
         val previous = _uiState.value.selectedPatientId
         if (previous == normalized) return
+        val selectedPerson = _uiState.value.availablePersons.firstOrNull { it.patientId == normalized }
+        val selectedDisplayName = selectedPerson?.displayName ?: _uiState.value.selectedPersonName.orEmpty()
+        DiagnosticLogger.logInfo("PERSON", "Switched selected person to: $selectedDisplayName / $normalized")
         DiagnosticLogger.logInfo(
             "MonitoringViewModel",
             "PERSON SWITCH old=${previous?.take(6) ?: "none"} new=${normalized.take(6)}"
@@ -255,17 +270,28 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         settingsRepository.saveSelectedPatientId(normalized)
         _uiState.update { current ->
             val selectedName = current.availablePersons.firstOrNull { it.patientId == normalized }?.displayName
+            val selectedCurrent = current.availablePersons.firstOrNull { it.patientId == normalized }
             current.copy(
                 selectedPatientId = normalized,
-                selectedPersonName = selectedName ?: current.selectedPersonName,
+                selectedPersonFirstName = selectedCurrent?.firstName,
+                selectedPersonLastName = selectedCurrent?.lastName,
+                selectedPersonFullName = selectedName ?: selectedDisplayName.ifBlank { current.selectedPersonFullName },
+                selectedPersonName = selectedName ?: selectedDisplayName.ifBlank { current.selectedPersonName },
                 isLoading = true,
-                reading = null,
                 historyStatus = HistoryStatus.Loading
             )
         }
-        if (_uiState.value.connectionState == ConnectionState.Connected) {
-            viewModelScope.launch(viewModelExceptionHandler) {
-                glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.PERSON_SWITCH)
+        viewModelScope.launch(viewModelExceptionHandler) {
+            glucoseRepository.loadLatestMonitoringSnapshotFromLocal(normalized)?.let { localSnapshot ->
+                _uiState.update {
+                    it.applyDashboardSnapshot(localSnapshot).copy(
+                        isLoading = false,
+                        isDataStale = true,
+                        staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
+                    )
+                }
+            }
+            if (_uiState.value.connectionState == ConnectionState.Connected) {
                 pollOnce(force = true, source = "person-switch")
             }
         }
@@ -425,10 +451,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             }
 
             _uiState.value = _uiState.value.copy(isLoading = true)
+            val selectedId = _uiState.value.selectedPatientId
+            val selectedName = _uiState.value.selectedPersonName.orEmpty()
+            DiagnosticLogger.logInfo("DATA", "Refreshing glucose data for person: $selectedName / ${selectedId ?: "unknown"}")
             DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH START reason=$source")
             runCatching {
-                val selectedId = _uiState.value.selectedPatientId
-                glucoseRepository.fetchMonitoringSnapshotFromActiveSession(preferredPatientId = selectedId)
+                glucoseRepository.fetchMonitoringSnapshot(preferredPatientId = selectedId)
             }.onSuccess { monitoringSnapshot ->
                 val previousFailures = _uiState.value.consecutivePollingFailures
                 val downtime = failureStartAt?.let { Duration.between(it, Instant.now()).seconds.coerceAtLeast(0) } ?: 0L
@@ -663,8 +691,27 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         cooldownJob?.cancel()
         cooldownJob = viewModelScope.launch(viewModelExceptionHandler) {
             while (true) {
-                val remaining = max(authCooldownSeconds(), activeRateLimitRemainingSeconds())
-                _uiState.update { it.copy(retryCooldownSecondsRemaining = remaining, canRetry = remaining <= 0 && it.isConfigured) }
+                val authRemaining = authCooldownSeconds()
+                val rateLimitRemaining = activeRateLimitRemainingSeconds()
+                if (rateLimitRemaining <= 0L) {
+                    clearRateLimitUntilEpochMillis()
+                }
+                val remaining = max(authRemaining, rateLimitRemaining)
+                _uiState.update { current ->
+                    val rateLimitedMessage = if (rateLimitRemaining > 0) {
+                        rateLimitMessage(rateLimitRemaining)
+                    } else if (current.errorMessage.isRateLimitMessage()) {
+                        null
+                    } else {
+                        current.errorMessage
+                    }
+                    current.copy(
+                        retryCooldownSecondsRemaining = remaining,
+                        canRetry = remaining <= 0 && current.isConfigured,
+                        errorMessage = rateLimitedMessage
+                    )
+                }
+                DiagnosticLogger.logInfo("RATE_LIMIT", "Remaining seconds: $rateLimitRemaining")
                 if (remaining <= 0) break
                 delay(1000)
             }
@@ -717,6 +764,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun MonitoringUiState.applyDashboardSnapshot(snapshot: MonitoringSnapshot): MonitoringUiState {
         val persons = snapshot.persons.take(3)
+        DiagnosticLogger.logInfo("PERSON", "Available people loaded")
         DiagnosticLogger.logInfo("MonitoringViewModel", "PERSONS LOADED count=${persons.size}")
         val selected = persons.firstOrNull { it.patientId == snapshot.selectedPerson.patientId }
             ?: persons.firstOrNull()
@@ -728,6 +776,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         return withReading(snapshot.reading).copy(
             availablePersons = persons,
             selectedPatientId = selected.patientId,
+            selectedPersonFirstName = selected.firstName,
+            selectedPersonLastName = selected.lastName,
+            selectedPersonFullName = selected.displayName,
             selectedPersonName = selected.displayName,
             labHbA1cPercent = hba1cSettings.labHbA1cPercent,
             labHbA1cDate = hba1cSettings.labHbA1cDate,
@@ -739,12 +790,17 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private fun handleRateLimitFailure(throwable: Throwable) {
         val httpException = throwable.findLibreHttpException()
         val retryAfterSeconds = (httpException?.retryAfterSeconds ?: 30).coerceAtLeast(1)
-        val retryAt = Instant.now().plusSeconds(retryAfterSeconds.toLong())
+        val nowMillis = System.currentTimeMillis()
+        val retryAtMillis = nowMillis + retryAfterSeconds * 1000L
+        setRateLimitUntilEpochMillis(retryAtMillis)
+        val retryAt = Instant.ofEpochMilli(retryAtMillis)
+        DiagnosticLogger.logWarning("RATE_LIMIT", "Rate limit detected")
+        DiagnosticLogger.logInfo("RATE_LIMIT", "Retry allowed at timestamp: $retryAt")
         transitionState(ConnectionState.Locked(retryAt = retryAt, retryAfterSeconds = retryAfterSeconds))
         stopPollingInternal("rate limited")
         DiagnosticLogger.logWarning("MonitoringViewModel", "AUTO RETRY DISABLED")
 
-        val remaining = max(authCooldownSeconds(), activeRateLimitRemainingSeconds(retryAt = retryAt))
+        val remaining = max(authCooldownSeconds(), activeRateLimitRemainingSeconds(nowMillis = nowMillis))
         _uiState.update {
             it.copy(
                 isLoading = false,
@@ -758,23 +814,57 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         startCooldownCountdown()
     }
 
-    private fun activeRateLimitRemainingSeconds(now: Instant = Instant.now(), retryAt: Instant? = currentRetryAt()): Long {
-        val value = retryAt ?: return 0L
-        return Duration.between(now, value).seconds.coerceAtLeast(0)
-    }
-
-    private fun currentRetryAt(): Instant? {
-        val state = _uiState.value.connectionState as? ConnectionState.Locked ?: return null
-        return state.retryAt
+    private fun activeRateLimitRemainingSeconds(nowMillis: Long = System.currentTimeMillis()): Long {
+        val untilMillis = rateLimitUntilEpochMillis
+        if (untilMillis <= 0L) return 0L
+        val remainingMillis = untilMillis - nowMillis
+        if (remainingMillis <= 0L) return 0L
+        return ceil(remainingMillis / 1000.0).toLong().coerceAtLeast(0L)
     }
 
     private fun rateLimitMessage(remainingSeconds: Long): String {
-        return "LibreLinkUp tymczasowo ograniczyl liczbe zapytan. Sprobuj ponownie za $remainingSeconds s."
+        return "Too many login attempts. Try again in $remainingSeconds seconds."
     }
 
     private fun Throwable.isRateLimit(): Boolean {
         val http = findLibreHttpException() ?: return false
-        return http.statusCode == 429
+        return http.statusCode in setOf(429, 430)
+    }
+
+    private fun setRateLimitUntilEpochMillis(epochMillis: Long) {
+        rateLimitUntilEpochMillis = epochMillis
+        settingsRepository.saveRateLimitUntilEpochMillis(epochMillis)
+    }
+
+    private fun clearRateLimitUntilEpochMillis() {
+        if (rateLimitUntilEpochMillis == 0L) return
+        rateLimitUntilEpochMillis = 0L
+        settingsRepository.clearRateLimitUntilEpochMillis()
+    }
+
+    private fun reconcileRateLimitState() {
+        val rateLimitRemaining = activeRateLimitRemainingSeconds()
+        val authRemaining = authCooldownSeconds()
+        if (rateLimitRemaining <= 0L) {
+            clearRateLimitUntilEpochMillis()
+        }
+        val remaining = max(authRemaining, rateLimitRemaining)
+        _uiState.update { current ->
+            current.copy(
+                retryCooldownSecondsRemaining = remaining,
+                canRetry = remaining <= 0 && current.isConfigured,
+                errorMessage = if (rateLimitRemaining > 0L) {
+                    rateLimitMessage(rateLimitRemaining)
+                } else if (current.errorMessage.isRateLimitMessage()) {
+                    null
+                } else {
+                    current.errorMessage
+                }
+            )
+        }
+        if (remaining > 0L) {
+            startCooldownCountdown()
+        }
     }
 
     private fun Throwable.findLibreHttpException(): LibreLinkUpHttpException? {
@@ -839,6 +929,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         connectivityProvider.stop()
         super.onCleared()
     }
+}
+
+private fun String?.isRateLimitMessage(): Boolean {
+    return this?.startsWith("Too many login attempts.", ignoreCase = true) == true
 }
 
 private class FetchInProgressException : RuntimeException("Fetch already in progress")

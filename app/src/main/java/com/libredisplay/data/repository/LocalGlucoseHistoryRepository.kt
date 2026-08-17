@@ -44,6 +44,7 @@ class LocalGlucoseHistoryRepository(
         patientId: String,
         points: List<GlucoseHistoryPoint>,
         source: String = "LibreLinkUp",
+        sourceAccountId: String? = null,
         now: Instant = Instant.now()
     ): InsertSummary {
         if (points.isEmpty()) return InsertSummary(inserted = 0, duplicates = 0)
@@ -57,6 +58,7 @@ class LocalGlucoseHistoryRepository(
                 trendArrow = point.trend.arrow,
                 trendLabel = point.trend.description,
                 source = source,
+                sourceAccountId = sourceAccountId,
                 receivedAt = now,
                 isValid = true,
                 rawTrendCode = null,
@@ -73,6 +75,20 @@ class LocalGlucoseHistoryRepository(
         val cutoff = now.minus(days, ChronoUnit.DAYS)
         return glucoseReadingDao.deleteOlderThan(cutoff)
     }
+
+    suspend fun deleteLocalGlucoseHistory(): Int = glucoseReadingDao.deleteAllReadings()
+
+    suspend fun deleteReadingsForPerson(patientId: String): Int = glucoseReadingDao.deleteReadingsForPerson(patientId)
+
+    suspend fun deleteObservedPeople(): Int = observedPersonDao.deleteAllPeople()
+
+    suspend fun deleteDemoData(): Int {
+        val deletedReadings = glucoseReadingDao.deleteDemoReadings()
+        val deletedPeople = observedPersonDao.deleteDemoPeople()
+        return deletedReadings + deletedPeople
+    }
+
+    suspend fun deleteAllSyncRuns(): Int = syncRunDao.deleteAll()
 
     suspend fun saveSyncRun(syncRun: SyncRunEntity): Long {
         return syncRunDao.insert(syncRun)

@@ -47,16 +47,16 @@ class GlucoseRepositoryTest {
         mockClient.login("mock@libredisplay.local", "mock")
 
         val persons = mockClient.getConnections()
-        val mama = persons.first { it.displayName == "Mama" }
-        val tata = persons.first { it.displayName == "Tata" }
+        val anna = persons.first { it.displayName == "Anna Kowalska" }
+        val jan = persons.first { it.displayName == "Jan Kowalski" }
 
-        val mamaReading = mockClient.getLatestReading(mama.patientId)
-        val tataReading = mockClient.getLatestReading(tata.patientId)
+        val annaReading = mockClient.getLatestReading(anna.patientId)
+        val janReading = mockClient.getLatestReading(jan.patientId)
 
-        assertEquals(2, persons.size)
-        assertTrue(mamaReading != null)
-        assertTrue(tataReading != null)
-        assertFalse(mamaReading?.value == tataReading?.value && mamaReading?.trend == tataReading?.trend)
+        assertEquals(3, persons.size)
+        assertTrue(annaReading != null)
+        assertTrue(janReading != null)
+        assertFalse(annaReading?.value == janReading?.value && annaReading?.trend == janReading?.trend)
     }
 
     @Test

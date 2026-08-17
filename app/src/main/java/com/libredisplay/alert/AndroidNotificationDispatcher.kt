@@ -13,8 +13,8 @@ class AndroidNotificationDispatcher(
     fun dispatch(alert: GlucoseAlert) {
         val manager = context.getSystemService(Context.NOTIFICATION_SERVICE) as NotificationManager
         val notification = NotificationCompat.Builder(context, ALERT_CHANNEL_ID)
-            .setSmallIcon(android.R.drawable.stat_notify_error)
-            .setContentTitle("LibreDisplay")
+            .setSmallIcon(R.drawable.ic_stat_librecare)
+            .setContentTitle(context.getString(R.string.app_name))
             .setContentText(GlucoseAlertMessaging.messageFor(alert.level) ?: "Alert glukozy")
             .setPriority(NotificationCompat.PRIORITY_HIGH)
             .setAutoCancel(true)

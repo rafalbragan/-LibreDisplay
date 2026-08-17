@@ -5,7 +5,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-Write-Host "== LibreDisplay Android SDK setup =="
+Write-Host "== LibreCare Android SDK setup =="
 Write-Host "Target SDK dir: $SdkDir"
 
 New-Item -ItemType Directory -Path $SdkDir -Force | Out-Null

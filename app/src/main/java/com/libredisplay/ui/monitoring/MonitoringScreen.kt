@@ -50,6 +50,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -57,6 +58,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.R
 import com.libredisplay.analytics.GlucoseMetricsCalculator
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.LibreConnectionPerson
@@ -108,6 +110,7 @@ fun MonitoringScreen(
                 selectedPatientId = state.selectedPatientId,
                 selectedName = state.selectedPersonName,
                 connectionState = state.connectionState,
+                isDemoMode = state.isDemoMode,
                 onSelectPatient = viewModel::onPersonSelected,
                 onRefresh = viewModel::refreshNow,
                 onOpenAnalytics = onNavigateToAnalytics,
@@ -136,6 +139,10 @@ fun MonitoringScreen(
                             horizontalArrangement = Arrangement.spacedBy(16.dp)
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                                if (state.isDemoMode) {
+                                    DemoModeBanner()
+                                }
+                                SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
                                 if (reading != null) {
                                     CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
                                     RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
@@ -155,6 +162,10 @@ fun MonitoringScreen(
                         }
                     } else {
                         Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                            if (state.isDemoMode) {
+                                DemoModeBanner()
+                            }
+                            SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
                             if (reading != null) {
                                 CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
                                 RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
@@ -178,6 +189,28 @@ fun MonitoringScreen(
     }
 }
 
+@Composable
+private fun SelectedPersonHeader(selectedName: String?) {
+    val fullName = selectedName?.trim().takeIf { !it.isNullOrBlank() } ?: return
+    Card(
+        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Text("Monitoring", color = DashboardSecondaryText, fontSize = 12.sp)
+            Text(
+                text = fullName,
+                color = DashboardPrimaryText,
+                fontSize = 28.sp,
+                fontWeight = FontWeight.Bold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DashboardTopBar(
@@ -185,6 +218,7 @@ private fun DashboardTopBar(
     selectedPatientId: String?,
     selectedName: String?,
     connectionState: ConnectionState,
+    isDemoMode: Boolean,
     onSelectPatient: (String) -> Unit,
     onRefresh: () -> Unit,
     onOpenAnalytics: () -> Unit,
@@ -193,7 +227,12 @@ private fun DashboardTopBar(
     TopAppBar(
         title = {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("LibreDisplay", fontWeight = FontWeight.SemiBold, color = DashboardPrimaryText)
+                Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold, color = DashboardPrimaryText)
+                if (isDemoMode) {
+                    Badge(containerColor = AccentWarning.copy(alpha = 0.24f), contentColor = AccentWarning) {
+                        Text("DEMO", fontSize = 10.sp)
+                    }
+                }
                 PatientSelectorChip(
                     persons = persons,
                     selectedPatientId = selectedPatientId,
@@ -215,6 +254,20 @@ private fun DashboardTopBar(
             }
         }
     )
+}
+
+@Composable
+private fun DemoModeBanner() {
+    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2E18)), modifier = Modifier.fillMaxWidth()) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Demo Mode", color = Color(0xFFFDE68A), fontWeight = FontWeight.Bold)
+            Text(
+                "Demo Mode uses simulated glucose data. Do not use it for medical decisions.",
+                color = Color(0xFFF8FAFC),
+                fontSize = 12.sp
+            )
+        }
+    }
 }
 
 @Composable

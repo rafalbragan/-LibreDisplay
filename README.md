@@ -1,6 +1,6 @@
-# LibreDisplay
+# LibreCare
 
-LibreDisplay uses a **non-official** LibreLinkUp/LibreView API integration. API responses can change over time, so the client includes defensive parsing, region discovery, and safe diagnostics.
+LibreCare uses a **non-official** LibreLinkUp/LibreView API integration. API responses can change over time, so the client includes defensive parsing, region discovery, and safe diagnostics.
 
 ## Environment configuration
 

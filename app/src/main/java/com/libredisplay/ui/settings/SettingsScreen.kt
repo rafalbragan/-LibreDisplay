@@ -54,6 +54,8 @@ fun SettingsScreen(
     onNavigateBack: () -> Unit,
     onSaved: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
+    onNavigateToPrivacyData: () -> Unit,
+    onNavigateToAbout: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -177,10 +179,23 @@ fun SettingsScreen(
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Tryb mock")
-                            Text("Działa bez realnego API i generuje 12h historii.", fontSize = 13.sp)
+                            Text("Demo Mode")
+                            Text("No real login required. Uses simulated glucose data.", fontSize = 13.sp)
                         }
                         Switch(checked = settings.useMock, onCheckedChange = viewModel::onUseMockChange)
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                    Text("Privacy", fontSize = 20.sp)
+                    Text("Manage local data, session, and account privacy controls.", fontSize = 13.sp)
+                    OutlinedButton(onClick = onNavigateToPrivacyData, modifier = Modifier.fillMaxWidth()) {
+                        Text("Open Privacy & Data")
+                    }
+                    OutlinedButton(onClick = onNavigateToAbout, modifier = Modifier.fillMaxWidth()) {
+                        Text("About LibreCare")
                     }
                 }
             }
@@ -256,7 +271,7 @@ fun SettingsScreen(
 
 private fun copyLog(context: Context) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("LibreDisplayLog", DiagnosticLogger.readAll()))
+    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", DiagnosticLogger.readAll()))
 }
 
 private fun shareLog(context: Context) {

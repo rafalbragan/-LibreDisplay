@@ -21,6 +21,7 @@ data class GlucoseReadingEntity(
     val trendArrow: String?,
     val trendLabel: String?,
     val source: String = "LibreLinkUp",
+    val sourceAccountId: String? = null,
     val receivedAt: Instant,
     val isValid: Boolean = true,
     val rawTrendCode: String? = null,

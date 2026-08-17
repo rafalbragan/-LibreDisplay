@@ -6,12 +6,15 @@ import android.app.NotificationManager
 import android.content.Context
 import android.os.Build
 import androidx.room.Room
+import com.libredisplay.BuildConfig
+import com.libredisplay.data.local.ALL_MIGRATIONS
 import com.libredisplay.data.local.LibreDisplayDatabase
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.repository.AuthRepository
 import com.libredisplay.data.repository.GlucoseSyncRepository
 import com.libredisplay.data.repository.GlucoseRepository
 import com.libredisplay.data.repository.LocalGlucoseHistoryRepository
+import com.libredisplay.data.repository.PrivacyRepository
 import com.libredisplay.data.repository.SettingsLoginStateStore
 import com.libredisplay.data.repository.SettingsRepository
 import com.libredisplay.diagnostics.DiagnosticLogger
@@ -33,6 +36,8 @@ class LibreDisplayApp : Application() {
         private set
     lateinit var glucoseSyncRepository: GlucoseSyncRepository
         private set
+    lateinit var privacyRepository: PrivacyRepository
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -48,11 +53,25 @@ class LibreDisplayApp : Application() {
             loginStateStore = SettingsLoginStateStore(settingsRepository)
         )
 
+        DiagnosticLogger.logInfo("DB", "Opening Room database")
+        DiagnosticLogger.logInfo("DB", "Current database version: ${LibreDisplayDatabase.DB_VERSION}")
+        DiagnosticLogger.logInfo("DB", "Registered migrations: ${ALL_MIGRATIONS.minOfOrNull { it.startVersion } ?: "?"} to ${ALL_MIGRATIONS.maxOfOrNull { it.endVersion } ?: "?"}")
+
         database = Room.databaseBuilder(
             applicationContext,
             LibreDisplayDatabase::class.java,
-            "libredisplay.db"
-        ).fallbackToDestructiveMigration().build()
+            LibreDisplayDatabase.DB_NAME
+        )
+            .addMigrations(*ALL_MIGRATIONS)
+            .apply {
+                if (BuildConfig.DEBUG) {
+                    // Only allow destructive recreation in debug builds as a last resort
+                    fallbackToDestructiveMigration()
+                }
+            }
+            .build()
+
+        DiagnosticLogger.logInfo("DB", "Database opened successfully")
 
         localGlucoseHistoryRepository = LocalGlucoseHistoryRepository(
             observedPersonDao = database.observedPersonDao(),
@@ -74,6 +93,13 @@ class LibreDisplayApp : Application() {
             localRepository = localGlucoseHistoryRepository
         )
 
+        privacyRepository = PrivacyRepository(
+            settingsRepository = settingsRepository,
+            authRepository = authRepository,
+            localHistoryRepository = localGlucoseHistoryRepository,
+            patientSettingsDao = database.patientSettingsDao()
+        )
+
         LibreDisplaySyncScheduler.schedule(this)
         createNotificationChannel()
     }
@@ -83,10 +109,10 @@ class LibreDisplayApp : Application() {
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
                 DiagnosticLogger.logError(
-                    "LibreDisplayApp",
+                    "LibreCareApp",
                     "FATAL APP CRASH thread=${thread.name} exceptionClass=${throwable::class.java.name} message=${throwable.message.orEmpty()}"
                 )
-                DiagnosticLogger.logException("LibreDisplayApp", throwable, "FATAL APP CRASH stacktrace")
+                DiagnosticLogger.logException("LibreCareApp", throwable, "FATAL APP CRASH stacktrace")
             }
             previous?.uncaughtException(thread, throwable)
         }

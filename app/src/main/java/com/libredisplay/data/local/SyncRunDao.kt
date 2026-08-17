@@ -13,5 +13,8 @@ interface SyncRunDao {
 
     @Query("SELECT * FROM sync_runs ORDER BY startedAt DESC LIMIT 1")
     suspend fun getLatest(): SyncRunEntity?
+
+    @Query("DELETE FROM sync_runs")
+    suspend fun deleteAll(): Int
 }
 

@@ -86,7 +86,7 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
                 OutlinedButton(onClick = { refresh() }, modifier = Modifier.weight(1f)) { Text("Pokaż log") }
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("LibreDisplayLog", logText))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", logText))
                 }, modifier = Modifier.weight(1f)) { Text("Kopiuj") }
             }
 

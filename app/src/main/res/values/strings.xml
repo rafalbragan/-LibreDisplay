@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="app_name">LibreDisplay</string>
+    <string name="app_name">LibreCare</string>
     <string name="settings_title">Ustawienia</string>
     <string name="monitoring_title">Monitor glukozy</string>
     <string name="label_email">E-mail LibreLinkUp</string>
@@ -14,7 +14,7 @@
     <string name="unit_mgdl">mg/dL</string>
     <string name="notification_channel_name">Monitorowanie glukozy</string>
     <string name="notification_channel_description">Odswiezanie danych glukozy w tle</string>
-    <string name="notification_monitoring_title">LibreDisplay aktywne</string>
+    <string name="notification_monitoring_title">LibreCare aktywne</string>
     <string name="notification_monitoring_text">Monitorowanie poziomu glukozy...</string>
     <string name="loading_connecting">Laczenie z LibreLinkUp...</string>
     <string name="timestamp_label">Czas pomiaru: %1$s</string>
@@ -71,7 +71,7 @@
     <string name="biometric_locked_out">Biometria zablokowana po zbyt wielu probach</string>
     <string name="logout_and_clear_data">Wyloguj i usun zapisane dane</string>
     <string name="observer_account_hint">Wpisz dane konta LibreLinkUp, na ktorym widzisz odczyty glukozy obserwowanej osoby.</string>
-    <string name="librelink_checklist">1. Otworz oficjalna aplikacje LibreLinkUp.\n2. Zaloguj sie tym samym kontem.\n3. Zaakceptuj ewentualne nowe warunki korzystania.\n4. Sprawdz, czy widzisz odczyty glukozy obserwowanej osoby.\n5. Sprawdz, czy zaproszenie zostalo zaakceptowane.\n6. Wroc do LibreDisplay i zaloguj sie ponownie.</string>
+    <string name="librelink_checklist">1. Otworz oficjalna aplikacje LibreLinkUp.\n2. Zaloguj sie tym samym kontem.\n3. Zaakceptuj ewentualne nowe warunki korzystania.\n4. Sprawdz, czy widzisz odczyty glukozy obserwowanej osoby.\n5. Sprawdz, czy zaproszenie zostalo zaakceptowane.\n6. Wroc do LibreCare i zaloguj sie ponownie.</string>
     <string name="medical_disclaimer">Aplikacja pomocnicza. Decyzje medyczne podejmuj na podstawie oficjalnej aplikacji/urzadzenia i zalecen lekarza.</string>
     <string name="widget_last_update">Ostatnia aktualizacja: %1$s</string>
     <string name="share_diagnostic_log">Udostepnij log diagnostyczny</string>

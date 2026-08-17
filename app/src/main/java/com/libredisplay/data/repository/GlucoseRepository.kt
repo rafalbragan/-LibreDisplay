@@ -118,6 +118,10 @@ class GlucoseRepository(
 
         val selectedPerson = resolveSelectedPerson(persons, preferredPatientId, storedPatientId)
         DiagnosticLogger.logInfo(
+            "DATA",
+            "Refreshing glucose data for person: ${selectedPerson.displayName} / ${selectedPerson.patientId}"
+        )
+        DiagnosticLogger.logInfo(
             "GlucoseRepository",
             "GRAPH REQUEST FOR SELECTED PERSON name=${selectedPerson.displayName} patientIdPrefix=${selectedPerson.patientId.take(6)}"
         )
@@ -137,6 +141,8 @@ class GlucoseRepository(
         localHistoryRepository?.upsertObservedPersons(persons, java.time.Instant.now())
         localHistoryRepository?.insertReadings(
             patientId = selectedPerson.patientId,
+            source = if (client === mockClient) "DemoMode" else "LibreLinkUp",
+            sourceAccountId = authRepository.currentAccountIdHash(),
             points = (reading.history + listOf(
                 com.libredisplay.data.model.GlucoseHistoryPoint(
                     value = reading.value,

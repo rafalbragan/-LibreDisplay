@@ -19,5 +19,11 @@ interface ObservedPersonDao {
 
     @Query("UPDATE observed_persons SET isActive = 0, updatedAt = :updatedAt WHERE patientId NOT IN (:activePatientIds)")
     suspend fun markInactiveExcept(activePatientIds: List<String>, updatedAt: java.time.Instant)
+
+    @Query("DELETE FROM observed_persons")
+    suspend fun deleteAllPeople(): Int
+
+    @Query("DELETE FROM observed_persons WHERE patientId LIKE 'demo-person-%'")
+    suspend fun deleteDemoPeople(): Int
 }
 

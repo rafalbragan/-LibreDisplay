@@ -14,6 +14,6 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "LibreDisplay"
+rootProject.name = "LibreCare"
 include(":app")
 

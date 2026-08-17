@@ -32,6 +32,11 @@ class AuthRepository(
 
     fun nextAllowedLoginAtMillis(): Long = loginStateStore?.loadNextAllowedLoginAt() ?: 0L
 
+    fun currentAccountIdHash(): String? {
+        return client.exportSession()?.accountIdHash
+            ?: loginStateStore?.loadPersistedSession()?.accountIdHash
+    }
+
     fun clearLocalLoginCooldown() {
         loginStateStore?.clearNextAllowedLoginAt()
     }
@@ -51,6 +56,7 @@ class AuthRepository(
         loginMutex.withLock {
             try {
                 if (!force && client.hasActiveSession()) {
+                    DiagnosticLogger.logInfo("AUTH", "Existing token reused")
                     DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT SKIP - already logged in")
                     return
                 }
@@ -58,6 +64,7 @@ class AuthRepository(
                 if (!force && !client.hasActiveSession()) {
                     tryImportPersistedSession()
                     if (client.hasActiveSession()) {
+                        DiagnosticLogger.logInfo("AUTH", "Existing token reused")
                         DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT SKIP - reused persisted token")
                         return
                     }
@@ -90,6 +97,7 @@ class AuthRepository(
                 }
 
                 try {
+                    DiagnosticLogger.logInfo("AUTH", "Login requested")
                     client.login(snapshot.email, snapshot.password, snapshot.region)
                     lastTerminalLoginError = null
                     loginStateStore?.clearNextAllowedLoginAt()
@@ -100,6 +108,10 @@ class AuthRepository(
                 } catch (cancelled: CancellationException) {
                     throw cancelled
                 } catch (throwable: Throwable) {
+                    val statusCode = (throwable as? LibreLinkUpHttpException)?.statusCode
+                    if (statusCode == 401 || statusCode == 403) {
+                        DiagnosticLogger.logWarning("AUTH", "Server rejected token, re-authentication required")
+                    }
                     loginStateStore?.clearPersistedSession()
                     if (throwable is NonRetryableLibreLinkUpException) {
                         lastTerminalLoginError = throwable
@@ -150,9 +162,11 @@ class AuthRepository(
         val saved = loginStateStore?.loadPersistedSession() ?: return
         val expiresAt = saved.tokenExpiresAtEpochSeconds
         if (expiresAt != null && expiresAt <= currentTimeMillis() / 1000L) {
+            DiagnosticLogger.logInfo("AUTH", "Token expired, refreshing")
             loginStateStore.clearPersistedSession()
             return
         }
+        DiagnosticLogger.logInfo("AUTH", "Existing token reused")
         client.importSession(saved)
     }
 
@@ -167,7 +181,11 @@ class AuthRepository(
                 val lockout = throwable.lockoutInfo?.lockoutSeconds ?: 0
                 val retryAfter = throwable.retryAfterSeconds ?: 0
                 val serverSeconds = maxOf(lockout, retryAfter)
-                maxOf(baseCooldownMs, serverSeconds * 1000L)
+                if (throwable.statusCode in setOf(429, 430) || serverSeconds > 0) {
+                    (serverSeconds.coerceAtLeast(1) * 1000L)
+                } else {
+                    baseCooldownMs
+                }
             }
             else -> baseCooldownMs
         }

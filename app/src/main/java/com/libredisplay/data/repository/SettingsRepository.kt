@@ -17,6 +17,8 @@ class SettingsRepository(context: Context) {
         val normalizedPassword = settings.password.trim()
         val originalPassword = settings.password
         val storedSelectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() }
+        val requestedSelectedPatientId = settings.selectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
+        val selectedPatientIdToStore = requestedSelectedPatientId ?: storedSelectedPatientId
 
         val passwordHadLeadingWhitespace = originalPassword.isNotEmpty() && originalPassword.first().isWhitespace()
         val passwordHadTrailingWhitespace = originalPassword.isNotEmpty() && originalPassword.last().isWhitespace()
@@ -40,7 +42,7 @@ class SettingsRepository(context: Context) {
         storage.putBoolean(SecureStorage.KEY_KIOSK_MODE, settings.kioskMode)
         storage.putBoolean(SecureStorage.KEY_USE_MOCK, settings.useMock)
         storage.putBoolean(SecureStorage.KEY_USE_AUTH_V3, true)
-        storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, storedSelectedPatientId.orEmpty())
+        storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, selectedPatientIdToStore.orEmpty())
     }
 
     fun loadSettings(): AppSettings {
@@ -68,6 +70,29 @@ class SettingsRepository(context: Context) {
         storage.clear()
     }
 
+    fun clearSelectedPatientId() {
+        storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, "")
+    }
+
+    fun clearRateLimitState() {
+        clearRateLimitUntilEpochMillis()
+        clearNextAllowedLoginAt()
+    }
+
+    fun clearSessionData() {
+        clearPersistedSession()
+        clearRateLimitState()
+    }
+
+    fun clearAccountCredentials() {
+        storage.putString(SecureStorage.KEY_EMAIL, "")
+        storage.putString(SecureStorage.KEY_PASSWORD, "")
+    }
+
+    fun setDemoModeEnabled(enabled: Boolean) {
+        storage.putBoolean(SecureStorage.KEY_USE_MOCK, enabled)
+    }
+
     fun saveNextAllowedLoginAt(epochMillis: Long) {
         storage.putString(SecureStorage.KEY_NEXT_ALLOWED_LOGIN_AT, epochMillis.toString())
     }
@@ -78,6 +103,18 @@ class SettingsRepository(context: Context) {
 
     fun clearNextAllowedLoginAt() {
         storage.putString(SecureStorage.KEY_NEXT_ALLOWED_LOGIN_AT, "0")
+    }
+
+    fun saveRateLimitUntilEpochMillis(epochMillis: Long) {
+        storage.putString(SecureStorage.KEY_RATE_LIMIT_UNTIL, epochMillis.toString())
+    }
+
+    fun loadRateLimitUntilEpochMillis(): Long {
+        return storage.getString(SecureStorage.KEY_RATE_LIMIT_UNTIL).toLongOrNull() ?: 0L
+    }
+
+    fun clearRateLimitUntilEpochMillis() {
+        storage.putString(SecureStorage.KEY_RATE_LIMIT_UNTIL, "0")
     }
 
     fun savePersistedSession(session: PersistedLibreLinkUpSession) {

@@ -93,7 +93,7 @@ class MonitoringService : Service() {
         return NotificationCompat.Builder(this, MONITORING_CHANNEL_ID)
             .setContentTitle(getString(R.string.notification_monitoring_title))
             .setContentText(getString(R.string.notification_monitoring_text))
-            .setSmallIcon(android.R.drawable.ic_menu_compass)
+            .setSmallIcon(R.drawable.ic_stat_librecare)
             .setOngoing(true)
             .setContentIntent(contentIntent)
             .build()

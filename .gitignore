@@ -6,6 +6,10 @@ build/
 # Android / local SDK config
 local.properties
 .android-sdk/
+*.jks
+*.keystore
+*.apk
+*.aab
 
 # IntelliJ / Android Studio
 .idea/

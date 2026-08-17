@@ -4,7 +4,7 @@
     android:height="108dp"
     android:viewportWidth="108"
     android:viewportHeight="108">
-    <!-- LibreDisplay icon: stylised glucose drop -->
+    <!-- LibreCare icon: stylised glucose drop -->
     <path
         android:fillColor="#FFFFFF"
         android:pathData="M54,20 C54,20 30,50 30,65 A24,24 0 0 0 78,65 C78,50 54,20 54,20Z"/>

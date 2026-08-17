@@ -67,7 +67,18 @@ class GlucoseSyncRepository(
             var status = SyncStatus.SUCCESS
 
             try {
-                authRepository.ensureAuthenticated(force = false)
+                val hasSession = authRepository.ensureSessionFromStorageOnly()
+                if (!hasSession) {
+                    status = SyncStatus.SKIPPED
+                    errorMessage = "No authenticated session"
+                    return@withLock SyncResult(
+                        status = status,
+                        personsCount = 0,
+                        inserted = 0,
+                        duplicates = 0,
+                        errorMessage = errorMessage
+                    )
+                }
                 val persons = productionClient.getConnections()
                 personsCount = persons.size
                 localRepository.upsertObservedPersons(persons, Instant.now())
@@ -85,6 +96,7 @@ class GlucoseSyncRepository(
                         val summary = localRepository.insertReadings(
                             patientId = person.patientId,
                             points = allPoints,
+                            sourceAccountId = authRepository.currentAccountIdHash(),
                             now = Instant.now()
                         )
                         inserted += summary.inserted

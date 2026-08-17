@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.core.content.FileProvider
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
+import com.libredisplay.BuildConfig
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
@@ -12,8 +13,8 @@ import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 object DiagnosticLogger {
-    private const val DEFAULT_TAG = "LibreDisplay"
-    private const val LOG_FILE_NAME = "libredisplay.log"
+    private const val DEFAULT_TAG = "LibreCare"
+    private const val LOG_FILE_NAME = "librecare.log"
     private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     @Volatile
@@ -28,7 +29,7 @@ object DiagnosticLogger {
         clear()
         DiagnosticStatus.reset()
         logInfo(DEFAULT_TAG, "=====================================")
-        logInfo(DEFAULT_TAG, "LibreDisplay started")
+        logInfo(DEFAULT_TAG, "LibreCare started")
         logInfo(DEFAULT_TAG, "=====================================")
     }
 
@@ -144,16 +145,33 @@ object DiagnosticLogger {
         return Intent(Intent.ACTION_SEND).apply {
             type = "text/plain"
             putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "LibreDisplay - log diagnostyczny")
+            putExtra(Intent.EXTRA_SUBJECT, "LibreCare - log diagnostyczny")
             addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
         }
     }
 
     private fun append(level: String, tag: String, message: String) {
         val file = getOrCreateLogFile() ?: return
-        val line = "${LocalDateTime.now().format(formatter)} [$level] $tag $message\n"
+        val sanitizedTag = if (BuildConfig.DEBUG) tag else safeReleaseTag(tag)
+        val sanitizedMessage = if (BuildConfig.DEBUG) message else sanitizeForRelease(message)
+        val line = "${LocalDateTime.now().format(formatter)} [$level] $sanitizedTag $sanitizedMessage\n"
         synchronized(this) {
             runCatching { file.appendText(line, Charsets.UTF_8) }
+        }
+    }
+
+    private fun sanitizeForRelease(message: String): String {
+        return message
+            .replace(Regex("(?i)patientIdPrefix=[A-Za-z0-9_-]+"), "patientIdPrefix=***")
+            .replace(Regex("(?i)name=[^\n\r]+"), "name=***")
+            .replace(Regex("(?i)value=\\d+"), "value=***")
+            .replace(Regex("(?i)history=\\d+"), "history=***")
+    }
+
+    private fun safeReleaseTag(tag: String): String {
+        return when (tag) {
+            "DATA", "PERSON", "AUTH" -> DEFAULT_TAG
+            else -> tag
         }
     }
 

@@ -50,6 +50,7 @@ sealed interface PollingStatus {
 data class MonitoringUiState(
     val settings: AppSettings = AppSettings(),
     val isConfigured: Boolean = false,
+    val isDemoMode: Boolean = false,
     val isLoading: Boolean = false,
     val reading: GlucoseReading? = null,
     val currentGlucose: String = "",
@@ -77,6 +78,9 @@ data class MonitoringUiState(
     val lastMeasurementTimestamp: Instant? = null,
     val availablePersons: List<LibreConnectionPerson> = emptyList(),
     val selectedPatientId: String? = null,
+    val selectedPersonFirstName: String? = null,
+    val selectedPersonLastName: String? = null,
+    val selectedPersonFullName: String? = null,
     val selectedPersonName: String? = null,
     val labHbA1cPercent: Double? = null,
     val labHbA1cDate: LocalDate? = null,

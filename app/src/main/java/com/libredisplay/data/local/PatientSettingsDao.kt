@@ -13,5 +13,14 @@ interface PatientSettingsDao {
 
     @Query("SELECT * FROM patient_settings WHERE patientId = :patientId LIMIT 1")
     suspend fun getByPatientId(patientId: String): PatientSettingsEntity?
+
+    @Query("DELETE FROM patient_settings")
+    suspend fun deleteAll(): Int
+
+    @Query("DELETE FROM patient_settings WHERE patientId = :patientId")
+    suspend fun deleteByPatientId(patientId: String): Int
+
+    @Query("DELETE FROM patient_settings WHERE patientId LIKE 'demo-person-%'")
+    suspend fun deleteDemoSettings(): Int
 }
 

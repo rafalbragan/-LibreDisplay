@@ -165,6 +165,57 @@ class AuthRepositoryTest {
     }
 
     @Test
+    fun cooldownRemainingSeconds_decreasesBasedOnCurrentTimestamp() {
+        var now = 100_000L
+        val fakeSettings = FakeSettingsRepository().apply {
+            saveNextAllowedLoginAt(now + 90_000L)
+        }
+        val repository = AuthRepository(
+            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            client = FakeAuthClient(),
+            loginStateStore = fakeSettings,
+            currentTimeMillis = { now }
+        )
+
+        assertEquals(90L, repository.cooldownRemainingSeconds(now))
+
+        now += 31_000L
+        assertEquals(59L, repository.cooldownRemainingSeconds(now))
+
+        now += 59_000L
+        assertEquals(0L, repository.cooldownRemainingSeconds(now))
+    }
+
+    @Test
+    fun cooldownPersistsAcrossRepositoryRecreation() {
+        var now = 200_000L
+        val fakeSettings = FakeSettingsRepository().apply {
+            saveNextAllowedLoginAt(now + 45_000L)
+        }
+
+        val firstRepository = AuthRepository(
+            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            client = FakeAuthClient(),
+            loginStateStore = fakeSettings,
+            currentTimeMillis = { now }
+        )
+        assertEquals(45L, firstRepository.cooldownRemainingSeconds(now))
+
+        now += 20_000L
+        val recreatedRepository = AuthRepository(
+            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            client = FakeAuthClient(),
+            loginStateStore = fakeSettings,
+            currentTimeMillis = { now }
+        )
+
+        assertEquals(25L, recreatedRepository.cooldownRemainingSeconds(now))
+
+        now += 26_000L
+        assertEquals(0L, recreatedRepository.cooldownRemainingSeconds(now))
+    }
+
+    @Test
     fun decodingFailure_doesNotSetCooldown_andAllowsImmediateRetry() = runTest {
         var now = 10_000L
         val fakeClient = FakeAuthClient().apply { failWithDecoding = true }
