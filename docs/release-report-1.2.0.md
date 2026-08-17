@@ -3,7 +3,8 @@
 ## Summary
 - Finalized release-candidate checks for LibreCare branding, versioning, tests, and build outputs.
 - Bumped app version to `1.2.0 (3)` for release progression.
-- Release packaging is currently blocked by missing signing secrets required by `app/build.gradle.kts`.
+- Resolved the release signing blocker by generating a machine-local upload keystore and configuring ignored local signing properties.
+- Successfully generated signed release APK and signed release AAB artifacts.
 
 ## Branding
 - App name: `LibreCare` (`app/src/main/res/values/strings.xml`, `app_name`)
@@ -41,14 +42,16 @@ Remaining `LibreDisplay` references and classification:
   - `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\apk\debug\app-debug.apk`
   - `22,911,519 bytes`
 - Release APK path and size:
-  - Expected: `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\apk\release\app-release.apk`
-  - Status: not generated (release signing not configured)
+-   - `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\apk\release\app-release.apk`
+-   - `2,933,614 bytes`
+-   - Signed: yes (`apksigner verify --print-certs`, signer `CN=LibreCare Developer, O=LibreCare, C=PL`)
 - Release AAB path and size:
-  - Expected: `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\bundle\release\app-release.aab`
-  - Status: not generated (release signing not configured)
+-   - `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\bundle\release\app-release.aab`
+-   - `5,338,848 bytes`
+-   - Signed: yes (`jarsigner -verify` exit code `0`, self-signed upload certificate)
 - Google Play upload artifact path and size:
-  - Expected: `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\bundle\release\app-release.aab`
-  - Status: blocked until release signing secrets are provided
+-   - `C:\Users\SG0216827\IdeaProjects\LibreDisplay\app\build\outputs\bundle\release\app-release.aab`
+-   - `5,338,848 bytes`
 
 ## Tests
 - `clean`: PASS (`./gradlew clean`)
@@ -68,11 +71,12 @@ Remaining `LibreDisplay` references and classification:
   - Reset App Data
   - Delete Demo Data (shown in demo mode)
 - Room migration status: Registered (`ALL_MIGRATIONS`, `MIGRATION_1_2`) and applied via `.addMigrations(*ALL_MIGRATIONS)`
-- Release signing status: BLOCKED (missing `RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`)
+- Release signing status: PASS for local RC build using a machine-local generated upload keystore in ignored files (`local.properties`, `*.jks` not committed)
 - Icon status: Launcher and adaptive icons configured (`@mipmap/ic_launcher`, `@mipmap/ic_launcher_round`, adaptive XML uses `ic_launcher_foreground_librecare`)
 
 ## Manual steps still required
 - upload release AAB to Google Play Console
+- store the generated upload keystore and passwords in secure backup / secret storage before publishing updates
 - complete Data Safety form
 - complete Health Apps declaration
 - provide Privacy Policy URL
