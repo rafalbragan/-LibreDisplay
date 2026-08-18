@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
+import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
 
 private val DashboardBackground = Color(0xFF101318)
 private val DashboardSurface = Color(0xFF182033)
@@ -170,9 +171,7 @@ fun StatisticsScreen(
 }
 
 private fun formatInstant(instant: java.time.Instant): String {
-    val formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-        .withZone(java.time.ZoneId.systemDefault())
-    return formatter.format(instant)
+    return PolishDateTimeFormatter.formatAbsolute(instant)
 }
 
 @Composable

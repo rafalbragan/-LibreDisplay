@@ -6,6 +6,7 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -16,6 +17,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Icon
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -23,6 +25,8 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -68,15 +72,15 @@ fun CompactPersonSwitcherBar(
         )
         if (isDemoMode) {
             Surface(
-                color = AccentWarning,
-                shape = RoundedCornerShape(8.dp)
+                color = AccentWarning.copy(alpha = 0.16f),
+                shape = RoundedCornerShape(999.dp)
             ) {
                 Text(
                     text = "DEMO",
-                    color = Color.Black,
+                    color = AccentWarning,
                     fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
                 )
             }
         }
@@ -157,18 +161,18 @@ private fun PersonChip(
     modifier: Modifier = Modifier
 ) {
     Surface(
-        color = if (isSelected) AccentGreen else DashboardElevatedSurface,
-        shape = RoundedCornerShape(12.dp),
+        color = if (isSelected) AccentGreen.copy(alpha = 0.18f) else DashboardElevatedSurface,
+        shape = RoundedCornerShape(999.dp),
         modifier = modifier
             .clickable(enabled = !isSelected) { onClick() }
-            .heightIn(min = 40.dp)
+            .heightIn(min = 36.dp)
     ) {
         Text(
             text = name,
-            color = if (isSelected) Color.Black else DashboardSecondaryText,
+            color = if (isSelected) AccentGreen else DashboardSecondaryText,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
+            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -266,25 +270,28 @@ private fun CompactStatBox(
 @Composable
 fun TimeRangeDisplay(
     timeRange: TimeRangeState,
+    latestReadingAt: java.time.Instant?,
     onChangeClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Surface(
         color = DashboardElevatedSurface,
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(16.dp),
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = 16.dp)
-            .heightIn(min = 36.dp)
+            .heightIn(min = 44.dp)
     ) {
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
+            Icon(Icons.Default.AccessTime, contentDescription = null, tint = DashboardSecondaryText)
             Text(
-                text = timeRange.rangeLabel(),
+                text = compactDashboardRangeLabel(timeRange, latestReadingAt),
                 color = DashboardSecondaryText,
                 fontSize = 12.sp,
                 maxLines = 1,
@@ -292,7 +299,7 @@ fun TimeRangeDisplay(
                 modifier = Modifier.weight(1f)
             )
             TextButton(onClick = onChangeClick) {
-                Text(text = "Zmień", fontSize = 12.sp)
+                Text(text = "Zmień", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }

@@ -7,25 +7,25 @@ import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
-val ColorLowBackground = Color(0xFFB8324A)
-val ColorInRangeBackground = Color(0xFF43C59E)
-val ColorHighBackground = Color(0xFFF2B84B)
-val ColorStaleBackground = Color(0xFF546073)
+val ColorLowBackground = LibreCareColors.AccentRed
+val ColorInRangeBackground = LibreCareColors.AccentTeal
+val ColorHighBackground = LibreCareColors.AccentAmber
+val ColorStaleBackground = LibreCareColors.TextMuted
 
-val ColorOnDark = Color(0xFFF3F6FA)
-val ColorSubtitle = Color(0xFFAAB3C2)
+val ColorOnDark = LibreCareColors.TextPrimary
+val ColorSubtitle = LibreCareColors.TextSecondary
 
 private val DarkColorScheme = darkColorScheme(
-    primary = Color(0xFF64D2C8),
-    onPrimary = Color(0xFF0A111F),
-    secondary = Color(0xFF7EA5FF),
-    onSecondary = Color(0xFF0A111F),
-    background = Color(0xFF101318),
-    onBackground = Color(0xFFF3F6FA),
-    surface = Color(0xFF182033),
-    onSurface = Color(0xFFF3F6FA),
-    surfaceVariant = Color(0xFF202A3D),
-    onSurfaceVariant = Color(0xFFAAB3C2)
+    primary = LibreCareColors.AccentTeal,
+    onPrimary = LibreCareColors.Background,
+    secondary = LibreCareColors.AccentBlue,
+    onSecondary = LibreCareColors.Background,
+    background = LibreCareColors.Background,
+    onBackground = LibreCareColors.TextPrimary,
+    surface = LibreCareColors.Surface,
+    onSurface = LibreCareColors.TextPrimary,
+    surfaceVariant = LibreCareColors.SurfaceElevated,
+    onSurfaceVariant = LibreCareColors.TextSecondary
 )
 
 private val LightColorScheme = lightColorScheme(

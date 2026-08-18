@@ -6,6 +6,9 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import androidx.compose.ui.geometry.Offset
+import com.libredisplay.data.model.GlucoseHistoryPoint
+import com.libredisplay.data.model.GlucoseTrend
+import java.time.Instant
 
 class GlucoseChartLayoutLogicTest {
 
@@ -89,6 +92,53 @@ class GlucoseChartLayoutLogicTest {
 
         assertTrue(topLeft.x < 198f)
         assertTrue(topLeft.x >= 56f)
+    }
+
+    @Test
+    fun findNearestHistoryPoint_returnsNearestVisiblePoint() {
+        val points = listOf(
+            GlucoseHistoryPoint(100, Instant.parse("2026-08-18T10:00:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(120, Instant.parse("2026-08-18T10:15:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(160, Instant.parse("2026-08-18T10:30:00Z"), GlucoseTrend.FLAT)
+        )
+
+        val nearest = findNearestHistoryPoint(points, canvasWidth = 300f, canvasHeight = 260f, touchX = 140f)
+
+        assertNotNull(nearest)
+        assertEquals(120, nearest?.value)
+    }
+
+    @Test
+    fun findNearestHistoryPointMatch_reportsPointAndDistance() {
+        val points = listOf(
+            GlucoseHistoryPoint(100, Instant.parse("2026-08-18T10:00:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(120, Instant.parse("2026-08-18T10:15:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(160, Instant.parse("2026-08-18T10:30:00Z"), GlucoseTrend.FLAT)
+        )
+
+        val match = findNearestHistoryPointMatch(points, canvasWidth = 300f, canvasHeight = 260f, touchX = 140f)
+
+        assertNotNull(match)
+        assertEquals(120, match?.point?.value)
+        assertTrue((match?.distancePx ?: Float.MAX_VALUE) >= 0f)
+    }
+
+    @Test
+    fun downsampleHistoryPreservingExtremes_keepsMinAndMax() {
+        val points = (0 until 100).map { index ->
+            val value = when (index) {
+                17 -> 52
+                82 -> 320
+                else -> 100 + (index % 20)
+            }
+            GlucoseHistoryPoint(value, Instant.parse("2026-08-18T00:00:00Z").plusSeconds(index * 900L), GlucoseTrend.FLAT)
+        }
+
+        val reduced = downsampleHistoryPreservingExtremes(points, maxPoints = 20)
+
+        assertTrue(reduced.size <= 20)
+        assertTrue(reduced.any { it.value == 52 })
+        assertTrue(reduced.any { it.value == 320 })
     }
 }
 

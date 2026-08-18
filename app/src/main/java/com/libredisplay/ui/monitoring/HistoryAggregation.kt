@@ -8,6 +8,8 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 internal enum class TimeRange(val duration: Duration, val label: String, val shortLabel: String) {
+    LAST_3_HOURS(Duration.ofHours(3), "Ostatnie 3 godz.", "3h"),
+    LAST_6_HOURS(Duration.ofHours(6), "Ostatnie 6 godz.", "6h"),
     LAST_12_HOURS(Duration.ofHours(12), "Ostatnie 12 godz.", "12h"),
     LAST_24_HOURS(Duration.ofHours(24), "Ostatnie 24 godz.", "24h"),
     LAST_3_DAYS(Duration.ofDays(3), "Ostatnie 3 dni", "3 dni"),
@@ -182,6 +184,8 @@ private fun calculateBucket(
 }
 
 internal fun chartModeForRange(range: TimeRange): String = when (range) {
+    TimeRange.LAST_3_HOURS,
+    TimeRange.LAST_6_HOURS,
     TimeRange.LAST_12_HOURS,
     TimeRange.LAST_24_HOURS -> "line"
     TimeRange.LAST_3_DAYS,
@@ -191,9 +195,21 @@ internal fun chartModeForRange(range: TimeRange): String = when (range) {
     TimeRange.LAST_365_DAYS -> "bar"
 }
 
+internal fun TimeRangeState.toHistoryTimeRange(): TimeRange = when (presetRange) {
+    PresetTimeRange.LAST_12_HOURS -> TimeRange.LAST_12_HOURS
+    PresetTimeRange.LAST_24_HOURS -> TimeRange.LAST_24_HOURS
+    PresetTimeRange.LAST_7_DAYS -> TimeRange.LAST_7_DAYS
+    PresetTimeRange.LAST_14_DAYS -> TimeRange.LAST_30_DAYS
+    PresetTimeRange.LAST_30_DAYS -> TimeRange.LAST_30_DAYS
+    PresetTimeRange.LAST_90_DAYS -> TimeRange.LAST_90_DAYS
+    PresetTimeRange.LAST_12_MONTHS -> TimeRange.LAST_365_DAYS
+}
+
 internal fun rangeStartInstant(range: TimeRange, end: Instant = Instant.now()): Instant = end.minus(range.duration)
 
 internal fun bucketSizeForRange(range: TimeRange): Duration = when (range) {
+    TimeRange.LAST_3_HOURS -> Duration.ofMinutes(5)
+    TimeRange.LAST_6_HOURS -> Duration.ofMinutes(10)
     TimeRange.LAST_12_HOURS -> Duration.ofMinutes(15)
     TimeRange.LAST_24_HOURS -> Duration.ofMinutes(30)
     TimeRange.LAST_3_DAYS -> Duration.ofHours(1)

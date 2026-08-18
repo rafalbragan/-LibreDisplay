@@ -49,10 +49,18 @@ class HistoryAggregationTest {
 
     @Test
     fun chartMode_matchesRangePolicy() {
+        assertEquals("line", chartModeForRange(TimeRange.LAST_3_HOURS))
+        assertEquals("line", chartModeForRange(TimeRange.LAST_6_HOURS))
         assertEquals("line", chartModeForRange(TimeRange.LAST_12_HOURS))
         assertEquals("line", chartModeForRange(TimeRange.LAST_24_HOURS))
         assertEquals("aggregated", chartModeForRange(TimeRange.LAST_7_DAYS))
         assertEquals("bar", chartModeForRange(TimeRange.LAST_90_DAYS))
+    }
+
+    @Test
+    fun bucketSizeForRange_supportsShortHistoryRanges() {
+        assertEquals(Duration.ofMinutes(5), bucketSizeForRange(TimeRange.LAST_3_HOURS))
+        assertEquals(Duration.ofMinutes(10), bucketSizeForRange(TimeRange.LAST_6_HOURS))
     }
 
     @Test
@@ -73,6 +81,14 @@ class HistoryAggregationTest {
 
         assertTrue(aggregated.buckets.isNotEmpty())
         assertTrue(aggregated.buckets.any { it.averageGlucoseMgDl == null })
+    }
+
+    @Test
+    fun toHistoryTimeRange_preservesDashboardPresetIntent() {
+        assertEquals(TimeRange.LAST_12_HOURS, TimeRangeState.fromPreset(PresetTimeRange.LAST_12_HOURS).toHistoryTimeRange())
+        assertEquals(TimeRange.LAST_24_HOURS, TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS).toHistoryTimeRange())
+        assertEquals(TimeRange.LAST_7_DAYS, TimeRangeState.fromPreset(PresetTimeRange.LAST_7_DAYS).toHistoryTimeRange())
+        assertEquals(TimeRange.LAST_30_DAYS, TimeRangeState.fromPreset(PresetTimeRange.LAST_14_DAYS).toHistoryTimeRange())
     }
 }
 

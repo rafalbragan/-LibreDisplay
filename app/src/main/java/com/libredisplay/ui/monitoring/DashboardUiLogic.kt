@@ -3,6 +3,7 @@
 import androidx.compose.ui.geometry.Rect
 import com.libredisplay.analytics.RangeDistribution
 import com.libredisplay.analytics.SensorActivity
+import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.HbA1cSettings
@@ -10,7 +11,6 @@ import com.libredisplay.data.model.LibreConnectionPerson
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
-import java.time.format.DateTimeFormatter
 import kotlin.math.abs
 import kotlin.math.max
 
@@ -33,6 +33,8 @@ internal data class DashboardTypography(
 internal data class ChartPointLabel(
     val dateTime: String,
     val valueText: String,
+    val valueLabel: String,
+    val timeLabel: String,
     val statusText: String,
     val trendText: String? = null
 )
@@ -48,6 +50,17 @@ internal data class NfzStatusUi(
     val headline: String,
     val details: String
 )
+
+internal data class DashboardMetricTile(
+    val label: String,
+    val value: String,
+    val supportingText: String,
+    val hasData: Boolean
+)
+
+internal sealed interface MonitoringAction {
+    data class OpenHistory(val context: HistoryOpenContext) : MonitoringAction
+}
 
 internal data class DashboardUiState(
     val selectedPersonHbA1cSettings: HbA1cSettings,
@@ -95,6 +108,36 @@ internal fun buildHistoryOpenContext(state: MonitoringUiState): HistoryOpenConte
         timeRange = state.timeRange
     )
 
+internal fun compactDashboardRangeLabel(
+    timeRange: TimeRangeState,
+    latestReadingAt: Instant?,
+    zoneId: ZoneId = DateTimeFormatterProvider.deviceZoneId()
+): String {
+    val rangeLabel = when (timeRange.presetRange) {
+        PresetTimeRange.LAST_12_HOURS -> "12h"
+        PresetTimeRange.LAST_24_HOURS -> "24h"
+        PresetTimeRange.LAST_7_DAYS -> "7 dni"
+        PresetTimeRange.LAST_14_DAYS -> "14 dni"
+        PresetTimeRange.LAST_30_DAYS -> "30 dni"
+        PresetTimeRange.LAST_90_DAYS -> "90 dni"
+        PresetTimeRange.LAST_12_MONTHS -> "12 mies."
+    }
+    val readingLabel = latestReadingAt?.let {
+        val today = Instant.now().atZone(zoneId).toLocalDate()
+        val readingDate = it.atZone(zoneId).toLocalDate()
+        val prefix = when (readingDate) {
+            today -> "dziś"
+            today.minusDays(1) -> "wczoraj"
+            else -> DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(it)
+        }
+        "Dane: $prefix ${PolishDateTimeFormatter.formatTime(it, zoneId)}"
+    } ?: "Dane: brak"
+    return "$readingLabel • Zakres: $rangeLabel"
+}
+
+internal fun chartClickAction(state: MonitoringUiState): MonitoringAction =
+    MonitoringAction.OpenHistory(buildHistoryOpenContext(state))
+
 internal fun topBarPersonSubtitle(personName: String?): String {
     val safeName = personName?.trim().takeIf { !it.isNullOrBlank() } ?: "-"
     return "Osoba: $safeName"
@@ -102,7 +145,7 @@ internal fun topBarPersonSubtitle(personName: String?): String {
 
 internal fun chartTitleForPerson(personName: String?): String {
     val safeName = personName?.trim().takeIf { !it.isNullOrBlank() } ?: "-"
-    return "Historia glukozy - $safeName"
+    return "Historia glikemii - $safeName"
 }
 
 internal fun dispatchPersonSelection(patientId: String, onSelected: (String) -> Unit) {
@@ -155,10 +198,12 @@ internal fun formatChartPointLabel(
     targetHigh: Int,
     zoneId: ZoneId
 ): ChartPointLabel {
-    val formatter = DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm").withZone(zoneId)
+    val absoluteDateTime = PolishDateTimeFormatter.formatAbsolute(point.timestamp, zoneId)
     return ChartPointLabel(
-        dateTime = formatter.format(point.timestamp),
+        dateTime = absoluteDateTime,
         valueText = glucoseValueAndUnitText(point.value),
+        valueLabel = "Wartość: ${glucoseValueAndUnitText(point.value)}",
+        timeLabel = "Czas: $absoluteDateTime",
         statusText = glucoseRangeStatus(point.value, targetLow, targetHigh),
         trendText = trendContentDescription(point.trend)
     )
@@ -189,26 +234,57 @@ internal fun formatReadingAge(duration: Duration?): String {
 }
 
 internal fun formatDurationLabel(duration: Duration?): String {
-    if (duration == null || duration.isZero || duration.isNegative) return "brak danych"
-    val totalMinutes = duration.toMinutes().coerceAtLeast(0)
-    val days = totalMinutes / (24 * 60)
-    val hours = (totalMinutes % (24 * 60)) / 60
-    val minutes = totalMinutes % 60
-    return when {
-        days > 0 -> "$days d ${hours} h ${minutes} min"
-        hours > 0 -> "$hours godz. ${minutes} min"
-        else -> "$minutes min"
-    }
+    return PolishDateTimeFormatter.formatCompactDuration(duration)
 }
 
-internal fun rangeTileUi(percent: Int?, duration: Duration?): RangeTileUi {
-    if (percent == null || duration == null || duration.isNegative || duration.isZero) {
+internal fun rangeTileUi(percent: Int?, duration: Duration?, hasReadings: Boolean = duration != null || percent != null): RangeTileUi {
+    if (!hasReadings || percent == null || duration == null || duration.isNegative) {
         return RangeTileUi(percentLabel = "—", durationLabel = "brak danych", hasData = false)
     }
     return RangeTileUi(
         percentLabel = "$percent%",
-        durationLabel = formatDurationLabel(duration),
+        durationLabel = PolishDateTimeFormatter.formatRangeTileDuration(duration, hasReadings = true),
         hasData = true
+    )
+}
+
+internal fun readingTimeline(reading: GlucoseReading): List<GlucoseHistoryPoint> {
+    return (reading.history + GlucoseHistoryPoint(value = reading.value, timestamp = reading.timestamp, trend = reading.trend))
+        .distinctBy { it.timestamp to it.value }
+        .sortedBy { it.timestamp }
+}
+
+internal fun buildDashboardMetricTiles(
+    reading: GlucoseReading,
+    targetLow: Int,
+    targetHigh: Int,
+    sensorActivityPeriodEnd: Instant = Instant.now(),
+    sensorWindow: Duration = Duration.ofDays(14)
+): List<DashboardMetricTile> {
+    val history = readingTimeline(reading)
+    val distribution = rangeDistributionFromHistory(history, targetLow, targetHigh)
+    val below = rangeTileUi(distribution?.belowRangePercent, distribution?.belowRangeDuration, hasReadings = history.isNotEmpty())
+    val inRange = rangeTileUi(distribution?.inRangePercent, distribution?.inRangeDuration, hasReadings = history.isNotEmpty())
+    val above = rangeTileUi(distribution?.aboveRangePercent, distribution?.aboveRangeDuration, hasReadings = history.isNotEmpty())
+    val sensorActivity = sensorActivityFromHistory(history, sensorActivityPeriodEnd.minus(sensorWindow), sensorActivityPeriodEnd)
+    val gmi = buildHbA1cKpiModel(HbA1cSettings(history.firstOrNull()?.timestamp?.toString(), null, null, 7.5), reading.history)
+
+    return listOf(
+        DashboardMetricTile("Poniżej", below.durationLabel, below.percentLabel, below.hasData),
+        DashboardMetricTile("Zakres", inRange.durationLabel, inRange.percentLabel, inRange.hasData),
+        DashboardMetricTile("Powyżej", above.durationLabel, above.percentLabel, above.hasData),
+        DashboardMetricTile(
+            label = "GMI",
+            value = gmi.valuePercent?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "mało danych",
+            supportingText = if (gmi.valuePercent == null) "szacunek" else "szacowane",
+            hasData = gmi.valuePercent != null
+        ),
+        DashboardMetricTile(
+            label = "Czujnik",
+            value = sensorActivity?.activityPercent?.let { "${it.toInt()}%" } ?: "—",
+            supportingText = if (sensorActivity == null) "brak danych" else "14 dni",
+            hasData = sensorActivity != null
+        )
     )
 }
 

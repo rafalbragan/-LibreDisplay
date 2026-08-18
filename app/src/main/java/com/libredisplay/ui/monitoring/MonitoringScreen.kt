@@ -2,15 +2,18 @@ package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -18,9 +21,13 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AddCircle
+import androidx.compose.material.icons.automirrored.outlined.ShowChart
+import androidx.compose.material.icons.filled.Home
+import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
+import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.Badge
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
@@ -29,7 +36,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
@@ -56,20 +63,30 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
 import com.libredisplay.analytics.GlucoseMetricsCalculator
+import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseReading
+import com.libredisplay.ui.theme.LibreCareColors
 import java.time.Duration
 import java.time.Instant
 
-private val DashboardBackground = Color(0xFF101318)
-private val DashboardSurface = Color(0xFF182033)
-private val DashboardElevatedSurface = Color(0xFF202A3D)
-private val DashboardPrimaryText = Color(0xFFF3F6FA)
-private val DashboardSecondaryText = Color(0xFFAAB3C2)
-private val DashboardMutedText = Color(0xFF7F8A9A)
-private val AccentGreen = Color(0xFF43C59E)
-private val AccentWarning = Color(0xFFF2B84B)
-private val AccentRed = Color(0xFFE05A6A)
-private val AccentCritical = Color(0xFFB8324A)
+private val DashboardBackground = LibreCareColors.Background
+private val DashboardSurface = LibreCareColors.Surface
+private val DashboardElevatedSurface = LibreCareColors.SurfaceElevated
+private val DashboardPrimaryText = LibreCareColors.TextPrimary
+private val DashboardSecondaryText = LibreCareColors.TextSecondary
+private val DashboardMutedText = LibreCareColors.TextMuted
+private val AccentGreen = LibreCareColors.AccentTeal
+private val AccentWarning = LibreCareColors.AccentAmber
+private val AccentRed = LibreCareColors.AccentRed
+private val AccentCritical = LibreCareColors.AccentPurple
+
+private enum class DashboardNavItem(val label: String) {
+    GLOWNA("Główna"),
+    HISTORIA("Historia"),
+    DODAJ("Dodaj"),
+    ALARMY("Alarmy"),
+    WIECEJ("Więcej")
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -82,17 +99,24 @@ fun MonitoringScreen(
     viewModel: MonitoringViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
-    var showFullScreenHistory by remember { mutableStateOf(false) }
+    var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshNonce) {
         viewModel.onScreenVisible(refreshNonce)
     }
 
-    if (showFullScreenHistory) {
+    val openHistory: () -> Unit = {
+        when (val action = chartClickAction(state)) {
+            is MonitoringAction.OpenHistory -> historyContext = action.context
+        }
+    }
+
+    if (historyContext != null) {
         FullScreenGlucoseChartScreen(
-            onNavigateBack = { showFullScreenHistory = false },
-            viewModel = viewModel
+            onNavigateBack = { historyContext = null },
+            viewModel = viewModel,
+            initialRange = historyContext!!.timeRange.toHistoryTimeRange()
         )
         return
     }
@@ -104,8 +128,14 @@ fun MonitoringScreen(
                 connectionState = state.connectionState,
                 isDemoMode = state.isDemoMode,
                 onRefresh = viewModel::refreshNow,
-                onOpenHistory = { showFullScreenHistory = true },
+                onOpenHistory = openHistory,
                 onOpenSettings = onNavigateToSettings
+            )
+        },
+        bottomBar = {
+            DashboardBottomNavigation(
+                onOpenHistory = openHistory,
+                onOpenMore = onNavigateToSettings
             )
         }
     ) { padding ->
@@ -139,17 +169,18 @@ fun MonitoringScreen(
 
                         TimeRangeDisplay(
                             timeRange = state.timeRange,
-                            onChangeClick = { showFullScreenHistory = true }
+                            latestReadingAt = reading?.timestamp ?: state.lastMeasurementTimestamp,
+                            onChangeClick = openHistory
                         )
 
                         if (reading != null) {
                             CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
-                            RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
-                            HbA1cGmiAndSensorRow(state = state, reading = reading)
+                            CurrentGlucoseWarningCard(reading, state.settings.targetLow, state.settings.targetHigh)
+                            DashboardMetricTilesRow(state = state, reading = reading)
                             GlucoseChartCard(
                                 state = state,
                                 reading = reading,
-                                onOpenHistory = { showFullScreenHistory = true }
+                                onOpenHistory = openHistory
                             )
                             NfzStatusCompactCard(state = state, reading = reading)
                             LastSyncFooter(state.lastSuccessfulFetchAt)
@@ -215,7 +246,7 @@ private fun DashboardTopBar(
                 Icon(Icons.Default.Refresh, contentDescription = "Odśwież dane", tint = DashboardPrimaryText)
             }
             IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Outlined.ShowChart, contentDescription = "Historia glikemii", tint = DashboardPrimaryText)
+                Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = "Historia glikemii", tint = DashboardPrimaryText)
             }
             IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Settings, contentDescription = "Ustawienia", tint = DashboardPrimaryText)
@@ -259,20 +290,27 @@ private fun ConnectionStatusDot(connectionState: ConnectionState) {
 
 @Composable
 private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
-    val duration = Duration.between(reading.timestamp, Instant.now())
-    val stale = duration.toMinutes() > 30
-    val statusText = glucoseRangeStatus(reading.value, targetLow, targetHigh)
+    val now = Instant.now()
+    val duration = Duration.between(reading.timestamp, now)
+    val presentation = buildGlucoseStatusPresentation(
+        reading = reading,
+        now = now,
+        config = GlucoseWarningConfig(targetLowMgDl = targetLow, targetHighMgDl = targetHigh)
+    )
+    val freshnessWarning = presentation.freshnessWarning
+    val trend = trendPresentation(reading.trend)
+    val glucoseColor = warningToneColor((presentation.medicalWarning ?: presentation.primary).tone)
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = if (stale) DashboardElevatedSurface else DashboardSurface),
-        shape = RoundedCornerShape(20.dp),
+        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
+        shape = RoundedCornerShape(24.dp),
         modifier = Modifier
             .fillMaxWidth()
             .semantics { contentDescription = "Aktualna glikemia ${reading.value} mg na decylitr, ${trendContentDescription(reading.trend)}" }
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
             val type = glucoseCardTypographyForWidth(maxWidth.value.toInt())
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text("Aktualna glikemia", color = DashboardSecondaryText, fontSize = 14.sp)
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Row(
@@ -282,7 +320,7 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                     ) {
                         Text(
                             text = reading.value.toString(),
-                            color = DashboardPrimaryText,
+                            color = glucoseColor,
                             fontSize = type.glucoseValueSp.sp,
                             fontWeight = FontWeight.Bold,
                             maxLines = 1,
@@ -298,29 +336,30 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                             softWrap = false
                         )
                     }
-                    TrendBlock(reading.trend.arrow, reading.trend.description, type)
+                    TrendBlock(trend.arrow, trend.label, trend.color, type)
                 }
-                Text(
-                    text = formatReadingAge(duration),
-                    color = DashboardSecondaryText,
-                    fontSize = 13.sp,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
-                    MetricStatusBadge(
-                        text = statusText,
-                        color = when (statusText) {
-                            "W zakresie" -> AccentGreen
-                            "Poniżej zakresu" -> AccentRed
-                            "Krytycznie nisko" -> AccentCritical
-                            "Bardzo wysoko" -> AccentCritical
-                            else -> AccentWarning
-                        }
+                Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = PolishDateTimeFormatter.formatUserFacing(reading.timestamp),
+                        color = DashboardSecondaryText,
+                        fontSize = 13.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
                     )
-                    if (stale) {
-                        DataFreshnessBadge(text = "Dane nieaktualne")
-                    }
+                    Text(trend.label, color = trend.color, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                }
+                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = formatReadingAge(duration),
+                        color = DashboardMutedText,
+                        fontSize = 12.sp,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    SensorRemainingPill()
+                    if (freshnessWarning != null) DataFreshnessBadge(freshnessWarning.title)
                 }
             }
         }
@@ -328,54 +367,100 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
 }
 
 @Composable
-private fun TrendBlock(arrow: String, label: String, typography: DashboardTypography) {
+private fun CurrentGlucoseWarningCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
+    val presentation = buildGlucoseStatusPresentation(
+        reading = reading,
+        now = Instant.now(),
+        config = GlucoseWarningConfig(targetLowMgDl = targetLow, targetHighMgDl = targetHigh)
+    )
+    val primary = presentation.primary
+    if (primary.level == GlucoseWarningLevel.IN_RANGE) return
+
+    Card(
+        colors = CardDefaults.cardColors(containerColor = warningToneColor(primary.tone).copy(alpha = 0.15f)),
+        shape = RoundedCornerShape(18.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), verticalAlignment = Alignment.CenterVertically) {
+                Icon(warningIcon(primary.iconName), contentDescription = primary.title, tint = warningToneColor(primary.tone))
+                Text(primary.title, color = warningToneColor(primary.tone), fontSize = 15.sp, fontWeight = FontWeight.Bold)
+            }
+            Text(primary.message, color = DashboardPrimaryText, fontSize = 13.sp)
+        }
+    }
+}
+
+@Composable
+private fun TrendBlock(arrow: String, label: String, color: Color, typography: DashboardTypography) {
     Column(
         horizontalAlignment = Alignment.End,
         modifier = Modifier.semantics { contentDescription = "Trend: $label" }
     ) {
-        Text(arrow, color = DashboardPrimaryText, fontSize = typography.trendArrowSp.sp, fontWeight = FontWeight.Bold)
-        Text(label, color = DashboardSecondaryText, fontSize = typography.trendDescriptionSp.sp, maxLines = 1)
+        Text(arrow, color = color, fontSize = typography.trendArrowSp.sp, fontWeight = FontWeight.Bold)
+        Text(label, color = color, fontSize = typography.trendDescriptionSp.sp, maxLines = 1)
     }
 }
 
 @Composable
-private fun RangeTimeSummaryRow(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
-    val history = reading.history + listOf(
-        com.libredisplay.data.model.GlucoseHistoryPoint(
-            value = reading.value,
-            timestamp = reading.timestamp,
-            trend = reading.trend
+private fun SensorRemainingPill() {
+    Surface(color = DashboardElevatedSurface, shape = RoundedCornerShape(999.dp)) {
+        Text(
+            text = "Sensor: 14 dni",
+            color = DashboardSecondaryText,
+            fontSize = 11.sp,
+            modifier = Modifier.padding(horizontal = 10.dp, vertical = 6.dp)
         )
-    )
-    val distribution = rangeDistributionFromHistory(history, targetLow, targetHigh)
-    val below = rangeTileUi(distribution?.belowRangePercent, distribution?.belowRangeDuration)
-    val inRange = rangeTileUi(distribution?.inRangePercent, distribution?.inRangeDuration)
-    val above = rangeTileUi(distribution?.aboveRangePercent, distribution?.aboveRangeDuration)
-
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-        RangeTimeCard("Poniżej", below, AccentRed, Modifier.weight(1f))
-        RangeTimeCard("W zakresie", inRange, AccentGreen, Modifier.weight(1f), emphasized = true)
-        RangeTimeCard("Powyżej", above, AccentWarning, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun RangeTimeCard(
-    title: String,
-    data: RangeTileUi,
+private fun DashboardMetricTilesRow(state: MonitoringUiState, reading: GlucoseReading) {
+    val tiles = buildDashboardMetricTiles(
+        reading = reading,
+        targetLow = state.settings.targetLow,
+        targetHigh = state.settings.targetHigh
+    )
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState()),
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        tiles.forEachIndexed { index, tile ->
+            CompactMetricTile(
+                tile = tile,
+                accent = when (tile.label) {
+                    "Poniżej" -> AccentRed
+                    "Zakres" -> AccentGreen
+                    "Powyżej" -> AccentWarning
+                    "Czujnik" -> AccentGreen
+                    else -> DashboardPrimaryText
+                },
+                modifier = Modifier.width(108.dp),
+                emphasized = index == 1
+            )
+        }
+    }
+}
+
+@Composable
+private fun CompactMetricTile(
+    tile: DashboardMetricTile,
     accent: Color,
     modifier: Modifier = Modifier,
     emphasized: Boolean = false
 ) {
     Card(
-        modifier = modifier.height(92.dp),
+        modifier = modifier.height(88.dp),
         colors = CardDefaults.cardColors(containerColor = if (emphasized) DashboardElevatedSurface else DashboardSurface),
-        shape = RoundedCornerShape(16.dp)
+        shape = RoundedCornerShape(18.dp)
     ) {
-        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(title, color = DashboardSecondaryText, fontSize = 11.sp)
-            Text(data.percentLabel, color = DashboardPrimaryText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
-            Text(data.durationLabel, color = accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(modifier = Modifier.padding(horizontal = 8.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(tile.label, color = DashboardSecondaryText, fontSize = 10.sp, maxLines = 1)
+            Text(tile.value, color = accent, fontSize = 18.sp, fontWeight = FontWeight.Bold, maxLines = 2, overflow = TextOverflow.Ellipsis)
+            Text(tile.supportingText, color = DashboardMutedText, fontSize = 10.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -459,15 +544,26 @@ private fun SensorActivityCard(reading: GlucoseReading, modifier: Modifier = Mod
 
 @Composable
 private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReading) {
-    val distribution = rangeDistributionFromHistory(reading.history, state.settings.targetLow, state.settings.targetHigh)
-    val activity = sensorActivityFromHistory(reading.history, Instant.now().minus(Duration.ofDays(14)), Instant.now())
-    val nfz = evaluateNfzStatus(
-        sensorActivityPercent = activity?.activityPercent,
-        tirPercent = distribution?.inRangePercent,
-        labHbA1cPercent = state.labHbA1cPercent
-    )
+    var showInfo by remember { mutableStateOf(false) }
+    val profile = remember(state.labHbA1cPercent) {
+        NfzPatientProfile(
+            patientGroup = NfzPatientGroup.UNKNOWN,
+            hbA1cPercent = state.labHbA1cPercent,
+            profileCompleted = state.labHbA1cPercent != null
+        )
+    }
+    val historyTimeline = remember(reading) { readingTimeline(reading) }
+    val assessment = remember(historyTimeline, state.settings.targetLow, state.settings.targetHigh, state.labHbA1cPercent) {
+        assessNfzRefundContinuation(
+            history = historyTimeline,
+            targetLow = state.settings.targetLow,
+            targetHigh = state.settings.targetHigh,
+            profile = profile
+        )
+    }
+    val summary = remember(assessment) { assessment.toStatusSummaryUi() }
 
-    val color = when (nfz.status) {
+    val color = when (summary.status) {
         NfzStatus.GREEN -> AccentGreen
         NfzStatus.YELLOW -> AccentWarning
         NfzStatus.RED -> AccentRed
@@ -479,44 +575,195 @@ private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReadi
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Status NFZ: ${nfz.headline}" }
+            .semantics { contentDescription = "Status NFZ: ${assessment.headline}" }
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Refundacja NFZ", color = DashboardSecondaryText, fontSize = 12.sp)
-            Text(nfz.headline, color = color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text("Status informacyjny", color = DashboardMutedText, fontSize = 12.sp)
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text("Refundacja NFZ", color = DashboardSecondaryText, fontSize = 12.sp)
+                Spacer(modifier = Modifier.weight(1f))
+                MetricStatusBadge(
+                    text = when (summary.status) {
+                        NfzStatus.GREEN -> "Status dobry"
+                        NfzStatus.YELLOW -> "Wymaga uwagi"
+                        NfzStatus.RED -> "Niespełnione"
+                        NfzStatus.GRAY -> "Za mało danych"
+                    },
+                    color = color
+                )
+                Spacer(modifier = Modifier.width(6.dp))
+                IconButton(
+                    onClick = { showInfo = true },
+                    modifier = Modifier.semantics { contentDescription = "Informacje o warunkach refundacji NFZ" }
+                ) {
+                    Icon(Icons.Default.Info, contentDescription = null, tint = DashboardSecondaryText)
+                }
+            }
+            Text(summary.headline, color = color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
+            Text("Szczegóły kryteriów i okres oceny znajdziesz pod ikoną informacji.", color = DashboardMutedText, fontSize = 12.sp)
+        }
+    }
+
+    if (showInfo) {
+        AlertDialog(
+            onDismissRequest = { showInfo = false },
+            title = { Text("Warunki refundacji NFZ") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Text("Status", fontWeight = FontWeight.Bold)
+                    Text(summary.headline)
+                    Text("Okres oceny", fontWeight = FontWeight.Bold)
+                    Text(summary.details)
+                    Text("Kryteria", fontWeight = FontWeight.Bold)
+                    assessment.criteria.forEach { criterion ->
+                        Text("• ${criterion.condition}: ${nfzStatusLabel(criterion.status)}")
+                    }
+                    Text("Dlaczego niespełnione", fontWeight = FontWeight.Bold)
+                    if (summary.keyReasons.isEmpty()) {
+                        Text("Brak głównych powodów do wyświetlenia.")
+                    } else {
+                        summary.keyReasons.forEach { Text("• $it") }
+                    }
+                    Text("Zalecenia", fontWeight = FontWeight.Bold)
+                    summary.keyRecommendations.forEach { Text("• $it") }
+                    Text("Zastrzeżenie", fontWeight = FontWeight.Bold)
+                    Text("Aplikacja nie zastępuje decyzji lekarza ani NFZ.")
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = { showInfo = false }) {
+                    Text("Rozumiem")
+                }
+            }
+        )
+    }
+}
+
+@Composable
+private fun CriterionCard(criterion: NfzCriterionEvaluation) {
+    Card(
+        colors = CardDefaults.cardColors(containerColor = DashboardElevatedSurface),
+        shape = RoundedCornerShape(14.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(10.dp), verticalArrangement = Arrangement.spacedBy(3.dp)) {
+            Text(criterion.condition, color = DashboardPrimaryText, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+            Text("Aktualnie: ${criterion.currentValue}", color = DashboardSecondaryText, fontSize = 12.sp)
+            Text("Wymagane: ${criterion.requiredValue}", color = DashboardSecondaryText, fontSize = 12.sp)
+            Text(nfzStatusLabel(criterion.status), color = when (criterion.status) {
+                NfzCriterionStatus.MET -> AccentGreen
+                NfzCriterionStatus.NOT_MET -> AccentRed
+                NfzCriterionStatus.UNKNOWN -> AccentWarning
+                NfzCriterionStatus.NOT_APPLICABLE -> DashboardMutedText
+            }, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+            Text("Powód: ${criterion.reason}", color = DashboardPrimaryText, fontSize = 12.sp)
+            criterion.recommendation?.let {
+                Text("Zalecenie: $it", color = DashboardSecondaryText, fontSize = 12.sp)
+            }
         }
     }
 }
 
 @Composable
 private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?, onOpenHistory: () -> Unit) {
+    var selectedPoint by remember(reading) { mutableStateOf<GlucoseHistoryPoint?>(null) }
+    val chartPoints = remember(reading) {
+        if (reading != null) readingTimeline(reading) else emptyList()
+    }
+    val zoneId = DateTimeFormatterProvider.deviceZoneId()
     Card(
         colors = CardDefaults.cardColors(containerColor = DashboardSurface),
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onOpenHistory() }
-            .semantics { contentDescription = "Wykres historii glukozy. Dotknij aby powiększyć" }
+            .semantics { contentDescription = "Wykres historii glukozy. Dotknij punkt lub przeciągnij, aby podejrzeć pomiar. Dotknij tła wykresu, aby powiększyć." }
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.weight(1f))
-                Icon(Icons.Outlined.ShowChart, contentDescription = "Powiększyć wykres", tint = DashboardSecondaryText)
+                IconButton(onClick = onOpenHistory) {
+                    Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = "Powiększyć wykres", tint = DashboardSecondaryText)
+                }
             }
-            Text("Dotknij, aby powiększyć", color = DashboardMutedText, fontSize = 12.sp)
-            if (reading == null || reading.history.isEmpty()) {
+            Text("Dotknij wykresu, aby otworzyć pełny ekran.", color = DashboardMutedText, fontSize = 12.sp)
+            if (chartPoints.isEmpty()) {
                 EmptyChartState()
             } else {
                 GlucoseChart(
-                    points = reading.history,
+                    points = chartPoints,
                     targetLow = state.settings.targetLow,
                     targetHigh = state.settings.targetHigh,
+                    zoneId = zoneId,
+                    selectedPoint = selectedPoint,
+                    onPointSelected = { point -> selectedPoint = point },
+                    onPointSelectionCleared = { selectedPoint = null },
+                    onChartTapped = onOpenHistory,
                     modifier = Modifier.fillMaxWidth()
                 )
+                selectedPoint?.let { point ->
+                    val label = formatChartPointLabel(
+                        point = point,
+                        targetLow = state.settings.targetLow,
+                        targetHigh = state.settings.targetHigh,
+                        zoneId = zoneId
+                    )
+                    Text(
+                        text = "${label.valueText} • ${label.dateTime} • ${label.statusText}",
+                        color = DashboardSecondaryText,
+                        fontSize = 12.sp,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
             }
         }
+    }
+}
+
+@Composable
+private fun DashboardBottomNavigation(
+    onOpenHistory: () -> Unit,
+    onOpenMore: () -> Unit
+) {
+    NavigationBar(
+        containerColor = DashboardElevatedSurface,
+        tonalElevation = 0.dp,
+        modifier = Modifier.heightIn(min = 68.dp)
+    ) {
+        DashboardBottomNavItem(true, DashboardNavItem.GLOWNA.label, Icons.Default.Home) {}
+        DashboardBottomNavItem(false, DashboardNavItem.HISTORIA.label, Icons.AutoMirrored.Outlined.ShowChart, onOpenHistory)
+        DashboardBottomNavItem(false, DashboardNavItem.DODAJ.label, Icons.Default.AddCircle) {}
+        DashboardBottomNavItem(false, DashboardNavItem.ALARMY.label, Icons.Default.NotificationsNone) {}
+        DashboardBottomNavItem(false, DashboardNavItem.WIECEJ.label, Icons.Default.Settings, onOpenMore)
+    }
+}
+
+@Composable
+private fun RowScope.DashboardBottomNavItem(
+    selected: Boolean,
+    label: String,
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .weight(1f)
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp)
+    ) {
+        Icon(
+            icon,
+            contentDescription = label,
+            tint = if (selected) AccentGreen else DashboardSecondaryText
+        )
+        Text(
+            label,
+            fontSize = 11.sp,
+            color = if (selected) DashboardPrimaryText else DashboardSecondaryText,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+        )
     }
 }
 
@@ -531,7 +778,7 @@ private fun EmptyChartState() {
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
-        Icon(Icons.Outlined.ShowChart, contentDescription = null, tint = DashboardMutedText)
+        Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = null, tint = DashboardMutedText)
         Spacer(Modifier.height(8.dp))
         Text("Brak danych 12 h", color = DashboardPrimaryText, fontWeight = FontWeight.SemiBold)
         Text("Nie mam jeszcze lokalnej historii dla tego zakresu.", color = DashboardSecondaryText, fontSize = 12.sp)
@@ -556,7 +803,7 @@ private fun DataFreshnessBadge(text: String) {
 @Composable
 private fun LastSyncFooter(lastSuccessfulFetchAt: Instant?) {
     val label = lastSuccessfulFetchAt?.let {
-        "Ostatnia synchronizacja: ${DateTimeLabel.format(it)}"
+        "Ostatnia synchronizacja: ${PolishDateTimeFormatter.formatUserFacing(it)}"
     } ?: "Brak informacji o synchronizacji"
 
     Text(
@@ -585,10 +832,6 @@ private fun ErrorPanel(errorMessage: String?, canRetry: Boolean, cooldownSeconds
     }
 }
 
-private object DateTimeLabel {
-    private val formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy HH:mm")
-    fun format(instant: Instant): String = formatter.withZone(java.time.ZoneId.systemDefault()).format(instant)
-}
 
 @Composable
 private fun LoadingState() {

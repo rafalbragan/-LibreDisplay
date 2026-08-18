@@ -25,13 +25,7 @@ data class TimeRangeState(
 
     fun rangeLabel(): String {
         return when {
-            isCustomRange -> {
-                val formatter = java.time.format.DateTimeFormatter.ofPattern("dd.MM.yyyy")
-                    .withZone(java.time.ZoneId.systemDefault())
-                val start = formatter.format(startTimestamp)
-                val end = formatter.format(endTimestamp)
-                "Zakres: $start - $end"
-            }
+            isCustomRange -> PolishDateTimeFormatter.formatRangeLabel(startTimestamp, endTimestamp)
             else -> "Zakres: ${presetRange.displayLabel}"
         }
     }

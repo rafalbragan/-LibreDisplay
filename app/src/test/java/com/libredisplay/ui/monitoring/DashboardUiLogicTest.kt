@@ -138,8 +138,10 @@ class DashboardUiLogicTest {
             zoneId = ZoneId.of("Europe/Warsaw")
         )
 
-        assertTrue(label.dateTime.matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4} \\d{2}:\\d{2}")))
+        assertTrue(label.dateTime.matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4}, \\d{2}:\\d{2}")))
         assertEquals("145 mg/dL", label.valueText)
+        assertTrue(label.valueLabel.startsWith("Wartość:"))
+        assertTrue(label.timeLabel.startsWith("Czas:"))
         assertEquals("W zakresie", label.statusText)
     }
 
@@ -165,11 +167,31 @@ class DashboardUiLogicTest {
 
     @Test
     fun rangeTileUi_noData_usesDashAndNoFakeZero() {
-        val tile = rangeTileUi(percent = null, duration = null)
+        val tile = rangeTileUi(percent = null, duration = null, hasReadings = false)
 
         assertEquals("—", tile.percentLabel)
         assertEquals("brak danych", tile.durationLabel)
         assertFalse(tile.hasData)
+    }
+
+    @Test
+    fun rangeTileUi_existingReadingsAndZeroDuration_showsZeroMinutes() {
+        val tile = rangeTileUi(percent = 0, duration = Duration.ZERO, hasReadings = true)
+
+        assertEquals("0%", tile.percentLabel)
+        assertEquals("0m", tile.durationLabel)
+        assertTrue(tile.hasData)
+    }
+
+    @Test
+    fun formatDurationLabel_usesCompactPolishUnits() {
+        assertEquals("0m", formatDurationLabel(Duration.ZERO))
+        assertEquals("45m", formatDurationLabel(Duration.ofMinutes(45)))
+        assertEquals("1g", formatDurationLabel(Duration.ofMinutes(60)))
+        assertEquals("1g 15m", formatDurationLabel(Duration.ofMinutes(75)))
+        assertEquals("2g", formatDurationLabel(Duration.ofMinutes(120)))
+        assertEquals("2g 30m", formatDurationLabel(Duration.ofMinutes(150)))
+        assertEquals("1d 2g", formatDurationLabel(Duration.ofHours(26)))
     }
 
     @Test
@@ -197,6 +219,81 @@ class DashboardUiLogicTest {
 
         assertEquals("p2", context.patientId)
         assertEquals(PresetTimeRange.LAST_7_DAYS, context.timeRange.presetRange)
+    }
+
+    @Test
+    fun chartClickAction_opensHistoryWithSelectedPersonAndRange() {
+        val state = MonitoringUiState(
+            selectedPatientId = "p7",
+            timeRange = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS)
+        )
+
+        val action = chartClickAction(state)
+
+        assertTrue(action is MonitoringAction.OpenHistory)
+        val context = (action as MonitoringAction.OpenHistory).context
+        assertEquals("p7", context.patientId)
+        assertEquals(PresetTimeRange.LAST_24_HOURS, context.timeRange.presetRange)
+    }
+
+    @Test
+    fun compactDashboardRangeLabel_isPolishAndTimezoneAware() {
+        val label = compactDashboardRangeLabel(
+            timeRange = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS),
+            latestReadingAt = Instant.parse("2026-08-18T17:07:00Z"),
+            zoneId = ZoneId.of("Europe/Warsaw")
+        )
+
+        assertTrue(label.contains("Dane:"))
+        assertTrue(label.contains("19:07"))
+        assertTrue(label.contains("Zakres: 24h"))
+    }
+
+    @Test
+    fun chartTitleForPerson_usesPolishHistoryTitle() {
+        assertEquals("Historia glikemii - Halina", chartTitleForPerson("Halina"))
+    }
+
+    @Test
+    fun dashboardMetricTiles_exposeFiveCompactStates() {
+        val history = listOf(
+            GlucoseHistoryPoint(120, Instant.parse("2026-07-27T10:00:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(120, Instant.parse("2026-07-27T10:15:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(220, Instant.parse("2026-07-27T10:30:00Z"), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(120, Instant.parse("2026-07-27T10:45:00Z"), GlucoseTrend.FLAT)
+        )
+        val reading = GlucoseReading.of(
+            value = 120,
+            timestamp = Instant.parse("2026-07-27T10:45:00Z"),
+            trend = GlucoseTrend.FLAT,
+            history = history
+        )
+
+        val tiles = buildDashboardMetricTiles(reading = reading, targetLow = 80, targetHigh = 180)
+
+        assertEquals(5, tiles.size)
+        assertEquals(listOf("Poniżej", "Zakres", "Powyżej", "GMI", "Czujnik"), tiles.map { it.label })
+    }
+
+    @Test
+    fun readingTimeline_appendsCurrentReadingOnceAndSorts() {
+        val reading = GlucoseReading.of(
+            value = 130,
+            timestamp = Instant.parse("2026-07-27T10:45:00Z"),
+            trend = GlucoseTrend.FLAT,
+            history = listOf(
+                GlucoseHistoryPoint(120, Instant.parse("2026-07-27T10:00:00Z"), GlucoseTrend.FLAT),
+                GlucoseHistoryPoint(125, Instant.parse("2026-07-27T10:15:00Z"), GlucoseTrend.FLAT),
+                GlucoseHistoryPoint(130, Instant.parse("2026-07-27T10:45:00Z"), GlucoseTrend.FLAT)
+            )
+        )
+
+        val timeline = readingTimeline(reading)
+
+        assertEquals(3, timeline.size)
+        assertEquals(Instant.parse("2026-07-27T10:00:00Z"), timeline.first().timestamp)
+        assertEquals(Instant.parse("2026-07-27T10:45:00Z"), timeline.last().timestamp)
+        assertEquals(130, timeline.last().value)
     }
 
     @Test

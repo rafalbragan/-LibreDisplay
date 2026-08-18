@@ -2,6 +2,142 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.5.0 - 2026-08-18
+
+### PL
+
+#### Dodano
+- Mockup-based redesign glownego dashboardu LibreCare z nowa hierarchia kart i ciemna paleta medyczna
+- Nowy dolny pasek nawigacji z pozycjami: Glowna, Historia, Dodaj, Alarmy, Wiecej
+- Rozszerzony ekran `Historia glikemii` z chipsami zakresu, legenda zakresow, statystykami i placeholderem `Notatki i zdarzenia`
+- Centralne tokeny kolorow `LibreCareColors` i wspolne modele UI dla legendy/statystyk historii
+
+#### Zmieniono
+- Przeprojektowano top bar, kompaktowy selector osob i kompaktowy wiersz zakresu czasu zgodnie z kierunkiem mockupu
+- Karta aktualnej glikemii ma teraz bardziej dominujacy uklad, wyrazniejszy trend i osobna karte warningow
+- KPI cards zostaly zageszczone i przeniesione do poziomego scrolleru, aby nie obcinac waznych wartosci
+- Wykres dashboardu i historia pelnoekranowa korzystaja z czytelniejszych osi, pasm ryzyka i tooltipa nad wybranym punktem
+- Karta NFZ na dashboardzie zostala uproszczona, a szczegoly przeniesiono do dialogu informacyjnego
+
+#### Poprawiono
+- Wszystkie glówne czasy uzytkowe korzystaja z lokalnej strefy urzadzenia przez centralne formattery
+- Zachowano rozroznienie `0m` vs `brak danych` w KPI i legendzie historii
+- Dotkniecie tła wykresu nadal otwiera pełny ekran historii, a przeciąganie wybiera punkt i pokazuje tooltip
+- Usunieto bledy kompilacji i ostrzezenia zwiazane z nowym shellem UI
+
+#### Testy
+- `./gradlew clean`: PASS
+- `./gradlew testDebugUnitTest`: PASS
+- `./gradlew lint`: PASS
+- `./gradlew connectedDebugAndroidTest`: NIE WYKONANO (brak podlaczonego urzadzenia/emulatora)
+- `./gradlew assembleDebug`: PASS
+- `./gradlew assembleRelease`: PASS
+- `./gradlew bundleRelease`: PASS
+
+#### Artefakty
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (23.1 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
+### EN
+
+#### Added
+- Mockup-based redesign of the main LibreCare dashboard with a darker medical dashboard hierarchy
+- New bottom navigation shell with Home, History, Add, Alarms, and More entries
+- Expanded `Glucose history` screen with range chips, range legend, statistics, and a `Notes and events` placeholder
+- Centralized `LibreCareColors` design tokens and shared history legend/stat UI models
+
+#### Changed
+- Redesigned the top bar, compact person selector, and compact time range row to follow the provided mockup direction
+- The current glucose card now has a stronger visual hierarchy, clearer trend state, and a dedicated warning card
+- KPI cards were compacted into a horizontal scroller to avoid clipping important values
+- The dashboard chart and full-screen history now use clearer axes, risk bands, and a tooltip offset above the selected point
+- The dashboard NFZ card was simplified, with details moved into an informational dialog
+
+#### Fixed
+- Main user-facing timestamps now consistently use the device local timezone through shared formatters
+- Preserved the `0m` vs `no data` distinction in KPIs and the history legend
+- Kept background-tap navigation to full-screen history while drag/touch selects points and shows a tooltip
+- Resolved compile issues and UI shell regressions introduced during the redesign work
+
+#### Tests
+- `./gradlew clean`: PASS
+- `./gradlew testDebugUnitTest`: PASS
+- `./gradlew lint`: PASS
+- `./gradlew connectedDebugAndroidTest`: NOT EXECUTED (no connected device/emulator)
+- `./gradlew assembleDebug`: PASS
+- `./gradlew assembleRelease`: PASS
+- `./gradlew bundleRelease`: PASS
+
+#### Artifacts
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (23.1 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
+## 1.4.1 - 2026-08-18
+
+### PL
+
+#### Dodano
+- Centralne formattery czasu i duration dla dashboardu, wykresu i historii pelnoekranowej
+- Rozszerzone podsumowanie NFZ z powodami, wskaznikami i najwazniejszymi zaleceniami
+- Tooltip punktu wykresu podczas tap/drag na dashboardzie i w pelnym ekranie historii
+
+#### Zmieniono
+- Wykres i historia korzystaja ze wspolnej osi czasu opartej o lokalna strefe urzadzenia
+- Kompaktowe etykiety czasu na osi wykresu sa dopasowywane do widocznego zakresu (godzina / data+godzina / data)
+- Karta ostrzezen glikemii pokazuje jednoczesnie ryzyko kliniczne oraz swiezosc danych bez ukrywania pilnych stanow
+- Dashboardowa karta NFZ korzysta z centralnego modelu statusu zamiast lokalnego skladania komunikatow
+
+#### Poprawiono
+- Rozroznienie `0m` vs `brak danych` w kafelkach zakresu pozostaje spójne w calej aplikacji
+- Tap poza punktem na wykresie nadal otwiera pelny ekran historii, a tap blisko punktu wybiera pomiar
+- Pelny ekran historii startuje na najnowszym punkcie i pokazuje czasy w lokalnej strefie urzadzenia
+- Usunieto ostrzezenia kompilacji zwiazane z przestarzalymi ikonami wykresu
+
+#### Testy
+- `./gradlew testDebugUnitTest`: PASS
+- `./gradlew lint`: PASS
+- `./gradlew assembleDebug`: PASS
+- `./gradlew assembleRelease`: PASS
+- `./gradlew bundleRelease`: PASS
+
+#### Artefakty
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (23.5 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
+### EN
+
+#### Added
+- Centralized time and duration formatters for the dashboard, chart, and full-screen history
+- Extended NFZ summary model with reasons, metrics, and top recommendations
+- Point tooltip support on tap/drag for the dashboard chart and full-screen history
+
+#### Changed
+- Chart and history now use a shared timeline and the device-local time zone
+- Compact chart axis labels adapt to the visible range (time / date+time / date)
+- Glucose warning UI now surfaces both clinical severity and data freshness without hiding urgent states
+- The dashboard NFZ card now uses a central status summary model instead of composing messages ad hoc
+
+#### Fixed
+- Preserved the distinction between `0m` and `no data` across range tiles
+- Kept background-tap navigation to full-screen history while allowing near-point selection on the chart
+- Full-screen history now defaults to the latest point and displays local-device timestamps consistently
+- Removed deprecated chart icon build warnings
+
+#### Tests
+- `./gradlew testDebugUnitTest`: PASS
+- `./gradlew lint`: PASS
+- `./gradlew assembleDebug`: PASS
+- `./gradlew assembleRelease`: PASS
+- `./gradlew bundleRelease`: PASS
+
+#### Artifacts
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (23.5 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
 ## 1.4.0 - 2026-08-18
 
 ### PL
