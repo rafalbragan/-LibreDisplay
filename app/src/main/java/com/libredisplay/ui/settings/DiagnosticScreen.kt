@@ -68,11 +68,11 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
         ) {
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    Text("Login: ${snapshot.loginStatus}")
+                    Text("Logowanie: ${snapshot.loginStatus}")
                     Text("Token: ${snapshot.tokenStatus}")
-                    Text("Connections: ${snapshot.getConnectionsStatus}")
-                    Text("Graph: ${snapshot.getLatestGraphStatus}")
-                    Text("Polling: ${snapshot.pollingStatus}")
+                    Text("Połączenia: ${snapshot.getConnectionsStatus}")
+                    Text("Wykres: ${snapshot.getLatestGraphStatus}")
+                    Text("Odpytywanie: ${snapshot.pollingStatus}")
                     Text("HTTP: ${snapshot.lastHttpCode ?: "—"}")
                     Text("Ostrzeżenie: ${snapshot.lastWarning}")
                     Text("Ostatni endpoint: ${snapshot.lastEndpoint}")

@@ -41,6 +41,7 @@ enum class PrivacyAction {
     DeleteMonitoredPeople,
     DisconnectAccount,
     ClearSessionData,
+    ClearSavedTokenAndLoginAgain,
     ResetAppData,
     DeleteDemoData
 }
@@ -50,6 +51,7 @@ enum class PrivacyAction {
 fun PrivacyDataScreen(
     onNavigateBack: () -> Unit,
     onNavigateToStart: () -> Unit,
+    onNavigateToLogin: () -> Unit,
     viewModel: PrivacyDataViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -62,6 +64,8 @@ fun PrivacyDataScreen(
         snackbarHostState.showSnackbar(value.message)
         if (value.navigateToStart) {
             onNavigateToStart()
+        } else if (value.navigateToLogin) {
+            onNavigateToLogin()
         }
         viewModel.consumeEvent()
     }
@@ -69,10 +73,10 @@ fun PrivacyDataScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Privacy & Data") },
+                title = { Text("Prywatność i dane") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
                     }
                 }
             )
@@ -88,18 +92,17 @@ fun PrivacyDataScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                "LibreCare stores glucose history locally on this device.\n\n" +
-                    "Stored data may include:\n" +
-                    "- monitored person name\n" +
-                    "- monitored person identifier\n" +
-                    "- glucose readings\n" +
-                    "- glucose trends\n" +
-                    "- reading timestamps\n" +
-                    "- selected monitored person\n" +
-                    "- local app settings\n" +
-                    "- authentication/session data needed to connect to LibreLinkUp\n\n" +
-                    "LibreCare does not sell your data.\n\n" +
-                    "LibreCare is not a medical device and does not provide medical advice, diagnosis, treatment recommendations or emergency alerts.",
+                "Usunięcie danych lokalnych usuwa dane zapisane przez LibreCare na tym urządzeniu. Nie usuwa danych z konta LibreLinkUp.\n\n" +
+                    "Lokalnie zapisane dane mogą obejmować:\n" +
+                    "- nazwę monitorowanej osoby\n" +
+                    "- identyfikator monitorowanej osoby\n" +
+                    "- odczyty glikemii\n" +
+                    "- trendy glikemii\n" +
+                    "- czas odczytów\n" +
+                    "- wybraną monitorowaną osobę\n" +
+                    "- ustawienia aplikacji\n" +
+                    "- dane sesji potrzebne do połączenia z LibreLinkUp\n\n" +
+                    "LibreCare nie jest wyrobem medycznym i nie zastępuje porady lekarza.",
                 fontSize = 14.sp
             )
 
@@ -112,7 +115,7 @@ fun PrivacyDataScreen(
                     }
                 }
             ) {
-                Text("Privacy Policy")
+                Text("Polityka prywatności")
             }
 
             if (viewModel.isDemoMode) {
@@ -120,39 +123,44 @@ fun PrivacyDataScreen(
                     modifier = Modifier.fillMaxWidth(),
                     onClick = { pendingAction = PrivacyAction.DeleteDemoData }
                 ) {
-                    Text("Delete demo data")
+                    Text("Usuń dane trybu demo")
                 }
             }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.DeleteMyStoredData }
-            ) { Text("Delete my stored data") }
+            ) { Text("Usuń moje zapisane dane") }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.DeleteLocalGlucoseHistory }
-            ) { Text("Delete local glucose history") }
+            ) { Text("Usuń lokalną historię glikemii") }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.DeleteMonitoredPeople }
-            ) { Text("Delete monitored people") }
+            ) { Text("Usuń monitorowane osoby") }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.DisconnectAccount }
-            ) { Text("Disconnect LibreLinkUp account") }
+            ) { Text("Odłącz konto LibreLinkUp") }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.ClearSessionData }
-            ) { Text("Clear session data") }
+            ) { Text("Wyczyść dane sesji") }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { pendingAction = PrivacyAction.ClearSavedTokenAndLoginAgain }
+            ) { Text("Wyczyść zapisany token i zaloguj ponownie") }
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { pendingAction = PrivacyAction.ResetAppData }
-            ) { Text("Reset app data") }
+            ) { Text("Zresetuj aplikację") }
         }
     }
 
@@ -171,6 +179,7 @@ fun PrivacyDataScreen(
                         PrivacyAction.DeleteMonitoredPeople -> viewModel.deleteMonitoredPeople()
                         PrivacyAction.DisconnectAccount -> viewModel.disconnectLibreLinkUpAccount()
                         PrivacyAction.ClearSessionData -> viewModel.clearSessionData()
+                        PrivacyAction.ClearSavedTokenAndLoginAgain -> viewModel.clearSavedTokenAndLoginAgain()
                         PrivacyAction.ResetAppData -> viewModel.resetAppData()
                         PrivacyAction.DeleteDemoData -> viewModel.deleteDemoData()
                     }
@@ -180,7 +189,7 @@ fun PrivacyDataScreen(
             },
             dismissButton = {
                 OutlinedButton(onClick = { pendingAction = null }) {
-                    Text("Cancel")
+                    Text("Anuluj")
                 }
             }
         )
@@ -196,39 +205,44 @@ private data class ConfirmationDialogModel(
 private fun confirmationDialogModel(action: PrivacyAction): ConfirmationDialogModel {
     return when (action) {
         PrivacyAction.DeleteMyStoredData -> ConfirmationDialogModel(
-            title = "Delete my stored data?",
-            message = "This will delete locally stored LibreCare data from this device. This does not delete data from LibreLinkUp.",
-            confirm = "Delete"
+            title = "Usunąć moje zapisane dane?",
+            message = "To usunie lokalnie zapisane dane LibreCare z tego urządzenia. Nie usuwa danych z konta LibreLinkUp.",
+            confirm = "Usuń"
         )
         PrivacyAction.DeleteLocalGlucoseHistory -> ConfirmationDialogModel(
-            title = "Delete local glucose history?",
-            message = "This will remove local glucose readings from this device and keep account settings.",
-            confirm = "Delete"
+            title = "Usunąć lokalną historię glikemii?",
+            message = "To usunie lokalną historię glikemii z tego urządzenia i pozostawi ustawienia konta.",
+            confirm = "Usuń"
         )
         PrivacyAction.DeleteMonitoredPeople -> ConfirmationDialogModel(
-            title = "Delete monitored people?",
-            message = "This will remove locally stored monitored people and selected person.",
-            confirm = "Delete"
+            title = "Usunąć monitorowane osoby?",
+            message = "To usunie lokalnie zapisane monitorowane osoby oraz aktualny wybór osoby.",
+            confirm = "Usuń"
         )
         PrivacyAction.DisconnectAccount -> ConfirmationDialogModel(
-            title = "Disconnect LibreLinkUp account?",
-            message = "This will clear session tokens and account connection state on this device.",
-            confirm = "Disconnect"
+            title = "Odłączyć konto LibreLinkUp?",
+            message = "To usunie lokalną sesję i stan połączenia konta na tym urządzeniu.",
+            confirm = "Odłącz"
         )
         PrivacyAction.ClearSessionData -> ConfirmationDialogModel(
-            title = "Clear session data?",
-            message = "This clears stored session/authentication tokens and keeps local history.",
-            confirm = "Clear"
+            title = "Wyczyścić dane sesji?",
+            message = "To wyczyści dane sesji i zapisane tokeny logowania. Lokalna historia glikemii pozostanie bez zmian.",
+            confirm = "Wyczyść"
+        )
+        PrivacyAction.ClearSavedTokenAndLoginAgain -> ConfirmationDialogModel(
+            title = "Wyczyścić zapisany token?",
+            message = "To usunie zapisaną sesję logowania. Po tej operacji konieczne będzie ponowne zalogowanie do LibreLinkUp.",
+            confirm = "Wyczyść i zaloguj ponownie"
         )
         PrivacyAction.ResetAppData -> ConfirmationDialogModel(
-            title = "Reset LibreCare?",
-            message = "This will remove local history, monitored people, selected person, session data and app settings from this device. This action cannot be undone.",
-            confirm = "Reset"
+            title = "Zresetować aplikację LibreCare?",
+            message = "To usunie lokalną historię, monitorowane osoby, wybór osoby, dane sesji i ustawienia aplikacji z tego urządzenia. Tej operacji nie można cofnąć.",
+            confirm = "Zresetuj"
         )
         PrivacyAction.DeleteDemoData -> ConfirmationDialogModel(
-            title = "Delete demo data?",
-            message = "This will remove simulated demo people and demo glucose history from this device.",
-            confirm = "Delete"
+            title = "Usunąć dane trybu demo?",
+            message = "To usunie przykładowe osoby i historię glikemii trybu demo z tego urządzenia.",
+            confirm = "Usuń"
         )
     }
 }

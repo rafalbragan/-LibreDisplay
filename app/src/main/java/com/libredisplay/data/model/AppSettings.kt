@@ -15,10 +15,17 @@ data class AppSettings(
     val trendWindowMinutes: Int = DisplaySettings.DEFAULT_TREND_WINDOW_MINUTES,
     val showStatistics: Boolean = true,
     val kioskMode: Boolean = false,
-    val useMock: Boolean = false,
+    val appMode: AppMode = AppMode.NONE,
     val useAuthV3: Boolean = true
 ) {
-    fun isConfigured(): Boolean = useMock || (email.isNotBlank() && password.isNotBlank())
+    val useMock: Boolean
+        get() = appMode == AppMode.DEMO
+
+    fun hasCredentials(): Boolean = email.isNotBlank() && password.isNotBlank()
+
+    fun isConfigured(): Boolean = appMode == AppMode.DEMO || (appMode == AppMode.LIVE && hasCredentials())
+
+    fun isDemoPatientSelected(): Boolean = selectedPatientId?.startsWith("demo-person-") == true
 
     fun loginRegionSelection(): String {
         return when (regionMode.uppercase()) {

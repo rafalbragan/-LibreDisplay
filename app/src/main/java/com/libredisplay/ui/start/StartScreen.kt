@@ -35,8 +35,8 @@ fun StartScreen(
                 verticalArrangement = Arrangement.spacedBy(10.dp)
             ) {
                 Text("LibreCare", fontSize = 28.sp)
-                Text("Monitor glucose with LibreLinkUp or try Demo Mode without login.")
-                Text("LibreCare is not a medical device and does not provide medical advice, diagnosis, treatment recommendations or emergency alerts.")
+                Text("Monitorowanie glikemii z konta LibreLinkUp")
+                Text("LibreCare nie jest wyrobem medycznym i nie zastępuje porady lekarza.")
             }
         }
 
@@ -47,13 +47,13 @@ fun StartScreen(
             verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Button(onClick = onConnectWithLibreLinkUp, modifier = Modifier.fillMaxWidth()) {
-                Text("Connect with LibreLinkUp")
+                Text("Połącz z LibreLinkUp")
             }
             OutlinedButton(onClick = onTryDemoMode, modifier = Modifier.fillMaxWidth()) {
-                Text("Try Demo Mode")
+                Text("Uruchom tryb demo")
             }
             Text(
-                "Demo Mode uses simulated glucose data. Do not use it for medical decisions.",
+                "Tryb demo używa przykładowych danych i nie wymaga logowania.",
                 fontSize = 12.sp
             )
         }

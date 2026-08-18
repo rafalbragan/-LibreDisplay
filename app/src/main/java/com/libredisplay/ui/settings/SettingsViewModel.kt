@@ -2,13 +2,16 @@ package com.libredisplay.ui.settings
 
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewModelScope
 import com.libredisplay.LibreDisplayApp
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.HbA1cSettings
 import com.libredisplay.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 import java.time.LocalDate
 
 class SettingsViewModel(application: Application) : AndroidViewModel(application) {
@@ -28,6 +31,11 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    fun reloadFromRepository() {
+        _settings.value = settingsRepository.loadSettings()
+        _hba1cSettings.value = settingsRepository.loadHbA1cSettings(_settings.value.selectedPatientId)
+    }
+
     fun onEmailChange(value: String) {
         _settings.value = _settings.value.copy(email = value)
     }
@@ -37,7 +45,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun onUseMockChange(value: Boolean) {
-        _settings.value = _settings.value.copy(useMock = value)
+        _settings.value = _settings.value.copy(appMode = if (value) AppMode.DEMO else AppMode.LIVE)
     }
 
     fun onLabHbA1cPercentChange(value: String) {
@@ -82,18 +90,55 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveSettings() {
-        settingsRepository.saveSettings(_settings.value)
+        val settingsToSave = _settings.value.let { current ->
+            if (current.appMode == AppMode.NONE && (current.hasCredentials() || current.useMock)) {
+                current.copy(appMode = if (current.useMock) AppMode.DEMO else AppMode.LIVE)
+            } else {
+                current
+            }
+        }
+        settingsRepository.saveSettings(settingsToSave)
         settingsRepository.saveHbA1cSettings(
-            _hba1cSettings.value.copy(patientId = _settings.value.selectedPatientId)
+            _hba1cSettings.value.copy(patientId = settingsToSave.selectedPatientId)
         )
         authRepository.clearSession()
-        DiagnosticLogger.logInfo("SettingsViewModel", "Settings saved useMock=${_settings.value.useMock}")
+        reloadFromRepository()
+        DiagnosticLogger.logInfo("SettingsViewModel", "Settings saved appMode=${settingsToSave.appMode}")
         _message.value = "Ustawienia zapisane"
     }
 
+    fun saveAndLogin() {
+        val draft = _settings.value.copy(appMode = AppMode.LIVE)
+        settingsRepository.saveSettings(draft)
+        settingsRepository.saveHbA1cSettings(
+            _hba1cSettings.value.copy(patientId = draft.selectedPatientId)
+        )
+        viewModelScope.launch {
+            runCatching {
+                authRepository.ensureAuthenticated(force = true)
+            }.onSuccess {
+                reloadFromRepository()
+                _message.value = "Ustawienia zapisane"
+            }.onFailure {
+                val cooldownSeconds = authRepository.cooldownRemainingSeconds()
+                _message.value = if (cooldownSeconds > 0) {
+                    "Zbyt wiele prób logowania. Spróbuj ponownie za $cooldownSeconds sekund."
+                } else {
+                    "Nie udało się zalogować. Sprawdź email i hasło albo spróbuj ponownie później."
+                }
+            }
+        }
+    }
+
     fun resetSession() {
+        val current = settingsRepository.loadSettings()
         authRepository.clearSession()
-        _message.value = "Wyczyszczono zapisany token. Zaloguj sie ponownie recznie."
+        if (current.isDemoPatientSelected()) {
+            settingsRepository.clearSelectedPatientId()
+        }
+        settingsRepository.switchToLiveMode()
+        reloadFromRepository()
+        _message.value = "Zapisany token został usunięty. Zaloguj się ponownie."
     }
 
     fun clearMessage() {

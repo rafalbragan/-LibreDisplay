@@ -11,7 +11,8 @@ import kotlinx.coroutines.launch
 
 data class PrivacyActionEvent(
     val message: String,
-    val navigateToStart: Boolean = false
+    val navigateToStart: Boolean = false,
+    val navigateToLogin: Boolean = false
 )
 
 class PrivacyDataViewModel(application: Application) : AndroidViewModel(application) {
@@ -28,45 +29,53 @@ class PrivacyDataViewModel(application: Application) : AndroidViewModel(applicat
     fun deleteMyStoredData() {
         viewModelScope.launch {
             privacyRepository.deleteMyStoredData()
-            _event.value = PrivacyActionEvent("Stored data deleted from this device.", navigateToStart = true)
+            _event.value = PrivacyActionEvent("Dane zostały usunięte z tego urządzenia.", navigateToStart = true)
         }
     }
 
     fun deleteLocalGlucoseHistory() {
         viewModelScope.launch {
             privacyRepository.deleteLocalGlucoseHistory()
-            _event.value = PrivacyActionEvent("Local glucose history deleted.")
+            _event.value = PrivacyActionEvent("Lokalna historia glikemii została usunięta.")
         }
     }
 
     fun deleteMonitoredPeople() {
         viewModelScope.launch {
             privacyRepository.deleteObservedPeople()
-            _event.value = PrivacyActionEvent("Monitored people deleted. Selected person cleared.", navigateToStart = true)
+            _event.value = PrivacyActionEvent("Monitorowane osoby i wybór osoby zostały usunięte.", navigateToStart = true)
         }
     }
 
     fun disconnectLibreLinkUpAccount() {
         privacyRepository.disconnectAccount()
-        _event.value = PrivacyActionEvent("LibreLinkUp account disconnected. Session cleared.", navigateToStart = true)
+        _event.value = PrivacyActionEvent("Konto LibreLinkUp zostało odłączone.", navigateToStart = true)
     }
 
     fun clearSessionData() {
         privacyRepository.clearSessionData()
-        _event.value = PrivacyActionEvent("Session data cleared.")
+        _event.value = PrivacyActionEvent("Dane sesji zostały wyczyszczone.", navigateToLogin = true)
+    }
+
+    fun clearSavedTokenAndLoginAgain() {
+        privacyRepository.clearSavedTokenAndPrepareLiveLogin()
+        _event.value = PrivacyActionEvent(
+            "Zapisany token został usunięty. Zaloguj się ponownie.",
+            navigateToLogin = true
+        )
     }
 
     fun resetAppData() {
         viewModelScope.launch {
             privacyRepository.resetAppData()
-            _event.value = PrivacyActionEvent("App data reset completed.", navigateToStart = true)
+            _event.value = PrivacyActionEvent("Aplikacja została zresetowana.", navigateToStart = true)
         }
     }
 
     fun deleteDemoData() {
         viewModelScope.launch {
             privacyRepository.deleteDemoData()
-            _event.value = PrivacyActionEvent("Demo data deleted.", navigateToStart = true)
+            _event.value = PrivacyActionEvent("Dane trybu demo zostały usunięte.", navigateToStart = true)
         }
     }
 

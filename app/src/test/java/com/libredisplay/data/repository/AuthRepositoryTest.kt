@@ -5,6 +5,7 @@ import com.libredisplay.data.api.LibreResponseDecodingException
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.AppMode
 import com.google.gson.stream.MalformedJsonException
 import kotlinx.coroutines.async
 import kotlinx.coroutines.test.runTest
@@ -20,7 +21,7 @@ class AuthRepositoryTest {
     fun ensureAuthenticated_logsInOnlyOnceWhenSessionIsActive() = runTest {
         val fakeClient = FakeAuthClient()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient
         )
 
@@ -37,6 +38,7 @@ class AuthRepositoryTest {
         val repository = AuthRepository(
             settingsProvider = {
                 AppSettings(
+                    appMode = AppMode.LIVE,
                     email = " user@example.com ",
                     password = " secret ",
                     regionMode = "AUTO"
@@ -59,6 +61,7 @@ class AuthRepositoryTest {
         val repository = AuthRepository(
             settingsProvider = {
                 AppSettings(
+                    appMode = AppMode.LIVE,
                     email = "  RaFal@Gmail.com  ",
                     password = "P@ss Word",
                     regionMode = "EU"
@@ -79,7 +82,7 @@ class AuthRepositoryTest {
     fun nonRetryableFailure_isCachedUntilSessionReset() = runTest {
         val fakeClient = FakeAuthClient().apply { failWithNonRetryable = true }
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient
         )
 
@@ -107,7 +110,7 @@ class AuthRepositoryTest {
     fun clearSession_resetsClientSession() {
         val fakeClient = FakeAuthClient().apply { active = true }
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient
         )
 
@@ -120,7 +123,7 @@ class AuthRepositoryTest {
     fun parallelEnsureAuthenticated_performsOnlyOneLogin() = runTest {
         val fakeClient = FakeAuthClient()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient
         )
 
@@ -141,7 +144,7 @@ class AuthRepositoryTest {
         val fakeClient = FakeAuthClient().apply { failWithNonRetryable = true }
         val fakeSettings = FakeSettingsRepository()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient,
             loginStateStore = fakeSettings,
             currentTimeMillis = { now }
@@ -171,7 +174,7 @@ class AuthRepositoryTest {
             saveNextAllowedLoginAt(now + 90_000L)
         }
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = FakeAuthClient(),
             loginStateStore = fakeSettings,
             currentTimeMillis = { now }
@@ -194,7 +197,7 @@ class AuthRepositoryTest {
         }
 
         val firstRepository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = FakeAuthClient(),
             loginStateStore = fakeSettings,
             currentTimeMillis = { now }
@@ -203,7 +206,7 @@ class AuthRepositoryTest {
 
         now += 20_000L
         val recreatedRepository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = FakeAuthClient(),
             loginStateStore = fakeSettings,
             currentTimeMillis = { now }
@@ -221,7 +224,7 @@ class AuthRepositoryTest {
         val fakeClient = FakeAuthClient().apply { failWithDecoding = true }
         val fakeSettings = FakeSettingsRepository()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient,
             loginStateStore = fakeSettings,
             currentTimeMillis = { now }
@@ -246,7 +249,7 @@ class AuthRepositoryTest {
         val fakeClient = FakeAuthClient().apply { failWithMalformedJson = true }
         val fakeSettings = FakeSettingsRepository()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient,
             loginStateStore = fakeSettings
         )
@@ -266,7 +269,7 @@ class AuthRepositoryTest {
         val fakeClient = FakeAuthClient()
         val fakeStore = FakeSettingsRepository()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient,
             loginStateStore = fakeStore
         )
@@ -293,7 +296,7 @@ class AuthRepositoryTest {
             )
         }
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient,
             loginStateStore = fakeStore
         )
@@ -308,7 +311,7 @@ class AuthRepositoryTest {
     fun connectOnce_withInconsistentEmailSnapshot_abortsBeforeNetwork() = runTest {
         val fakeClient = FakeAuthClient()
         val repository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = fakeClient
         )
         val badSnapshot = CredentialsSnapshot(
@@ -344,6 +347,7 @@ class AuthRepositoryTest {
     @Test
     fun credentialsSnapshot_normalizesPasswordByTrimming() {
         val settings = AppSettings(
+            appMode = AppMode.LIVE,
             email = " User@Example.com ",
             password = " myPassword123 ",
             regionMode = "EU"
@@ -362,6 +366,7 @@ class AuthRepositoryTest {
     @Test
     fun credentialsSnapshot_preservesInternalSpacesInPassword() {
         val settings = AppSettings(
+            appMode = AppMode.LIVE,
             email = "user@example.com",
             password = "my Password 123",
             regionMode = "EU"
@@ -379,6 +384,7 @@ class AuthRepositoryTest {
     @Test
     fun credentialsSnapshot_detecetsLeadingWhitespace() {
         val settings = AppSettings(
+            appMode = AppMode.LIVE,
             email = "user@example.com",
             password = "  secret",
             regionMode = "EU"
@@ -393,6 +399,7 @@ class AuthRepositoryTest {
     @Test
     fun credentialsSnapshot_detectsNewLineInPassword() {
         val settings = AppSettings(
+            appMode = AppMode.LIVE,
             email = "user@example.com",
             password = "secret\npassword",
             regionMode = "EU"

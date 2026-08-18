@@ -51,6 +51,7 @@ import androidx.compose.ui.graphics.Color
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
+    loginOnly: Boolean = false,
     onNavigateBack: () -> Unit,
     onSaved: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
@@ -74,7 +75,7 @@ fun SettingsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Ustawienia") },
+                title = { Text(if (loginOnly) "Logowanie" else "Ustawienia") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
                         Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
@@ -91,13 +92,23 @@ fun SettingsScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
+            if (message != null && message != "Ustawienia zapisane") {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = message.orEmpty(),
+                        modifier = Modifier.padding(12.dp),
+                        fontSize = 13.sp
+                    )
+                }
+            }
+
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Konto LibreLinkUp", fontSize = 20.sp)
+                    Text("Dane logowania do LibreLinkUp", fontSize = 20.sp)
                     OutlinedTextField(
                         value = settings.email,
                         onValueChange = viewModel::onEmailChange,
-                        label = { Text("E-mail") },
+                        label = { Text("Email") },
                         modifier = Modifier.fillMaxWidth(),
                         singleLine = true,
                         keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
@@ -139,6 +150,24 @@ fun SettingsScreen(
                             )
                         }
                     }
+                    Text(
+                        "Użyj tego samego konta, którego używasz w aplikacji LibreLink / LibreLinkUp.",
+                        fontSize = 13.sp
+                    )
+                    if (loginOnly) {
+                        Button(onClick = viewModel::saveAndLogin, modifier = Modifier.fillMaxWidth()) {
+                            Text("Zaloguj")
+                        }
+                    }
+                }
+            }
+
+            if (loginOnly) {
+                return@Column
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     OutlinedTextField(
                         value = settings.regionMode,
                         onValueChange = { viewModel.onRegionModeChange(it.uppercase()) },
@@ -179,8 +208,8 @@ fun SettingsScreen(
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                         Column(modifier = Modifier.weight(1f)) {
-                            Text("Demo Mode")
-                            Text("No real login required. Uses simulated glucose data.", fontSize = 13.sp)
+                            Text("Tryb demo")
+                            Text("Nie wymaga prawdziwego logowania. Używa przykładowych danych.", fontSize = 13.sp)
                         }
                         Switch(checked = settings.useMock, onCheckedChange = viewModel::onUseMockChange)
                     }
@@ -189,13 +218,13 @@ fun SettingsScreen(
 
             Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    Text("Privacy", fontSize = 20.sp)
-                    Text("Manage local data, session, and account privacy controls.", fontSize = 13.sp)
+                    Text("Prywatność", fontSize = 20.sp)
+                    Text("Zarządzaj danymi lokalnymi, sesją i ustawieniami prywatności konta.", fontSize = 13.sp)
                     OutlinedButton(onClick = onNavigateToPrivacyData, modifier = Modifier.fillMaxWidth()) {
-                        Text("Open Privacy & Data")
+                        Text("Otwórz Prywatność i dane")
                     }
                     OutlinedButton(onClick = onNavigateToAbout, modifier = Modifier.fillMaxWidth()) {
-                        Text("About LibreCare")
+                        Text("O aplikacji LibreCare")
                     }
                 }
             }
@@ -259,7 +288,7 @@ fun SettingsScreen(
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                 OutlinedButton(onClick = viewModel::resetSession, modifier = Modifier.weight(1f)) {
-                    Text("Wyczysc zapisany token i zaloguj ponownie")
+                    Text("Wyczyść zapisany token i zaloguj ponownie")
                 }
                 Button(onClick = { viewModel.saveSettings() }, modifier = Modifier.weight(1f)) {
                     Text("Zapisz")

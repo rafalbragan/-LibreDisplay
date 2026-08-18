@@ -42,10 +42,10 @@ fun AboutScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("About") },
+                title = { Text("O aplikacji") },
                 navigationIcon = {
                     IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Back")
+                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
                     }
                 }
             )
@@ -67,11 +67,11 @@ fun AboutScreen(
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     Text("LibreCare", fontSize = 26.sp)
-                    Text("Version: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                    Text("Monitor glucose information from LibreLinkUp in a simple and family-friendly way.")
-                    Text("This app is not a medical device.")
+                    Text("Wersja: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
+                    Text("Monitorowanie glikemii z konta LibreLinkUp.")
+                    Text("Ta aplikacja nie jest wyrobem medycznym.")
                     Text(
-                        "LibreCare is not a medical device and does not provide medical advice, diagnosis, treatment recommendations or emergency alerts.",
+                        "LibreCare nie jest wyrobem medycznym i nie zastępuje porady lekarza.",
                         fontSize = 12.sp
                     )
                 }
@@ -85,14 +85,14 @@ fun AboutScreen(
                     }
                 }
             ) {
-                Text("Privacy Policy")
+                Text("Polityka prywatności")
             }
 
             Button(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = { showLicenses.value = true }
             ) {
-                Text("Open Source Licenses")
+                Text("Licencje open source")
             }
         }
     }
@@ -100,16 +100,16 @@ fun AboutScreen(
     if (showLicenses.value) {
         AlertDialog(
             onDismissRequest = { showLicenses.value = false },
-            title = { Text("Open Source Licenses") },
+            title = { Text("Licencje open source") },
             text = {
                 Text(
-                    "This app uses open source software, including AndroidX, Kotlin, Retrofit, OkHttp, Room, WorkManager and Compose. " +
-                        "Please review dependency notices in the repository and Gradle configuration."
+                    "Ta aplikacja korzysta z oprogramowania open source, w tym AndroidX, Kotlin, Retrofit, OkHttp, Room, WorkManager i Compose. " +
+                        "Szczegóły zależności znajdują się w konfiguracji Gradle projektu."
                 )
             },
             confirmButton = {
                 Button(onClick = { showLicenses.value = false }) {
-                    Text("Close")
+                    Text("Zamknij")
                 }
             }
         )

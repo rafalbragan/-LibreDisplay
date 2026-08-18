@@ -11,7 +11,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
-import com.libredisplay.data.model.AppSettings
 import com.libredisplay.ui.monitoring.MonitoringScreen
 import com.libredisplay.ui.analytics.AnalyticsScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
@@ -43,36 +42,40 @@ class MainActivity : ComponentActivity() {
         setContent {
             LibreDisplayTheme {
                 var refreshNonce by remember { mutableIntStateOf(0) }
+                var showLoginOnly by remember { mutableStateOf(false) }
+                fun resolveLaunchScreen(): AppScreen {
+                    val target = AppLaunchResolver.resolve(app.settingsRepository.loadSettings(), app.settingsRepository.hasPersistedSessionData())
+                    showLoginOnly = target == AppLaunchTarget.LOGIN
+                    return when (target) {
+                        AppLaunchTarget.START -> AppScreen.Start
+                        AppLaunchTarget.LOGIN -> AppScreen.Settings
+                        AppLaunchTarget.MONITORING -> AppScreen.Monitoring
+                    }
+                }
+
+                fun resolveBackFromSettings(): AppScreen {
+                    return when (AppLaunchResolver.resolveBackFromSettings(app.settingsRepository.loadSettings(), app.settingsRepository.hasPersistedSessionData())) {
+                        AppLaunchTarget.MONITORING -> AppScreen.Monitoring
+                        AppLaunchTarget.START,
+                        AppLaunchTarget.LOGIN -> AppScreen.Start
+                    }
+                }
+
                 var currentScreen by remember {
-                    mutableStateOf(
-                        if (app.settingsRepository.isConfigured()) AppScreen.Monitoring else AppScreen.Start
-                    )
+                    mutableStateOf(resolveLaunchScreen())
                 }
 
                 when (currentScreen) {
                     AppScreen.Start -> StartScreen(
-                        onConnectWithLibreLinkUp = { currentScreen = AppScreen.Settings },
+                        onConnectWithLibreLinkUp = {
+                            app.settingsRepository.switchToLiveMode()
+                            showLoginOnly = true
+                            refreshNonce += 1
+                            currentScreen = resolveLaunchScreen()
+                        },
                         onTryDemoMode = {
-                            val current = app.settingsRepository.loadSettings()
-                            app.settingsRepository.saveSettings(
-                                AppSettings(
-                                    email = "",
-                                    password = "",
-                                    selectedPatientId = "demo-person-anna",
-                                    region = current.region,
-                                    regionMode = current.regionMode,
-                                    customBaseUrl = current.customBaseUrl,
-                                    refreshInterval = current.refreshInterval,
-                                    targetLow = current.targetLow,
-                                    targetHigh = current.targetHigh,
-                                    trendWindowMinutes = current.trendWindowMinutes,
-                                    showStatistics = current.showStatistics,
-                                    kioskMode = current.kioskMode,
-                                    useMock = true,
-                                    useAuthV3 = current.useAuthV3
-                                )
-                            )
-                            app.authRepository.clearSession()
+                            app.settingsRepository.switchToDemoMode()
+                            showLoginOnly = false
                             refreshNonce += 1
                             currentScreen = AppScreen.Monitoring
                         }
@@ -82,7 +85,13 @@ class MainActivity : ComponentActivity() {
                         refreshNonce = refreshNonce,
                         onNavigateToSettings = { currentScreen = AppScreen.Settings },
                         onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
-                        onNavigateToAnalytics = { currentScreen = AppScreen.Analytics }
+                        onNavigateToAnalytics = { currentScreen = AppScreen.Analytics },
+                        onSwitchToLiveMode = {
+                            app.settingsRepository.switchToLiveMode()
+                            showLoginOnly = true
+                            refreshNonce += 1
+                            currentScreen = resolveLaunchScreen()
+                        }
                     )
 
                     AppScreen.Analytics -> AnalyticsScreen(
@@ -90,12 +99,12 @@ class MainActivity : ComponentActivity() {
                     )
 
                     AppScreen.Settings -> SettingsScreen(
-                        onNavigateBack = {
-                            currentScreen = if (app.settingsRepository.isConfigured()) AppScreen.Monitoring else AppScreen.Start
-                        },
+                        loginOnly = showLoginOnly,
+                        onNavigateBack = { currentScreen = resolveBackFromSettings() },
                         onSaved = {
+                            showLoginOnly = false
                             refreshNonce += 1
-                            currentScreen = AppScreen.Monitoring
+                            currentScreen = resolveLaunchScreen()
                         },
                         onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
                         onNavigateToPrivacyData = { currentScreen = AppScreen.PrivacyData },
@@ -103,18 +112,22 @@ class MainActivity : ComponentActivity() {
                     )
 
                     AppScreen.Diagnostics -> DiagnosticScreen(
-                        onNavigateBack = {
-                            currentScreen = if (app.settingsRepository.isConfigured()) AppScreen.Monitoring else AppScreen.Start
-                        }
+                        onNavigateBack = { currentScreen = resolveBackFromSettings() }
                     )
 
                     AppScreen.PrivacyData -> PrivacyDataScreen(
                         onNavigateBack = {
-                            currentScreen = if (app.settingsRepository.isConfigured()) AppScreen.Settings else AppScreen.Start
+                            currentScreen = if (resolveLaunchScreen() == AppScreen.Start) AppScreen.Start else AppScreen.Settings
                         },
                         onNavigateToStart = {
+                            showLoginOnly = false
                             refreshNonce += 1
                             currentScreen = AppScreen.Start
+                        },
+                        onNavigateToLogin = {
+                            showLoginOnly = true
+                            refreshNonce += 1
+                            currentScreen = AppScreen.Settings
                         }
                     )
 

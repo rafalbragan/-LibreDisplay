@@ -2,6 +2,7 @@ package com.libredisplay.data.repository
 
 import android.content.Context
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.HbA1cSettings
 import com.libredisplay.data.storage.SecureStorage
@@ -18,7 +19,18 @@ class SettingsRepository(context: Context) {
         val originalPassword = settings.password
         val storedSelectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() }
         val requestedSelectedPatientId = settings.selectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
-        val selectedPatientIdToStore = requestedSelectedPatientId ?: storedSelectedPatientId
+        val selectedPatientIdToStore = when (settings.appMode) {
+            AppMode.DEMO -> {
+                requestedSelectedPatientId?.takeIf(::isDemoPatientId)
+                    ?: storedSelectedPatientId?.takeIf(::isDemoPatientId)
+                    ?: DEFAULT_DEMO_PATIENT_ID
+            }
+            AppMode.LIVE -> {
+                requestedSelectedPatientId?.takeIf { !isDemoPatientId(it) }
+                    ?: storedSelectedPatientId?.takeIf { !isDemoPatientId(it) }
+            }
+            AppMode.NONE -> null
+        }
 
         val passwordHadLeadingWhitespace = originalPassword.isNotEmpty() && originalPassword.first().isWhitespace()
         val passwordHadTrailingWhitespace = originalPassword.isNotEmpty() && originalPassword.last().isWhitespace()
@@ -40,15 +52,24 @@ class SettingsRepository(context: Context) {
         storage.putInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, settings.trendWindowMinutes)
         storage.putBoolean(SecureStorage.KEY_SHOW_STATISTICS, settings.showStatistics)
         storage.putBoolean(SecureStorage.KEY_KIOSK_MODE, settings.kioskMode)
+        storage.putString(SecureStorage.KEY_APP_MODE, settings.appMode.name)
         storage.putBoolean(SecureStorage.KEY_USE_MOCK, settings.useMock)
         storage.putBoolean(SecureStorage.KEY_USE_AUTH_V3, true)
         storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, selectedPatientIdToStore.orEmpty())
     }
 
     fun loadSettings(): AppSettings {
+        val email = storage.getString(SecureStorage.KEY_EMAIL)
+        val password = storage.getString(SecureStorage.KEY_PASSWORD)
+        val appMode = resolveAppMode(
+            storedMode = storage.getString(SecureStorage.KEY_APP_MODE),
+            legacyUseMock = storage.getBoolean(SecureStorage.KEY_USE_MOCK, false),
+            hasCredentials = email.isNotBlank() && password.isNotBlank(),
+            hasPersistedSession = loadPersistedSession() != null
+        )
         return AppSettings(
-            email = storage.getString(SecureStorage.KEY_EMAIL),
-            password = storage.getString(SecureStorage.KEY_PASSWORD),
+            email = email,
+            password = password,
             region = storage.getString(SecureStorage.KEY_REGION, "EU").ifBlank { "EU" },
             regionMode = storage.getString(SecureStorage.KEY_REGION_MODE, "EU").ifBlank { "EU" },
             customBaseUrl = storage.getString(SecureStorage.KEY_CUSTOM_BASE_URL),
@@ -58,7 +79,7 @@ class SettingsRepository(context: Context) {
             trendWindowMinutes = storage.getInt(SecureStorage.KEY_TREND_WINDOW_MINUTES, 3),
             showStatistics = storage.getBoolean(SecureStorage.KEY_SHOW_STATISTICS, true),
             kioskMode = storage.getBoolean(SecureStorage.KEY_KIOSK_MODE, false),
-            useMock = storage.getBoolean(SecureStorage.KEY_USE_MOCK, false),
+            appMode = appMode,
             selectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() },
             useAuthV3 = true
         ).normalized()
@@ -89,8 +110,51 @@ class SettingsRepository(context: Context) {
         storage.putString(SecureStorage.KEY_PASSWORD, "")
     }
 
-    fun setDemoModeEnabled(enabled: Boolean) {
-        storage.putBoolean(SecureStorage.KEY_USE_MOCK, enabled)
+    fun setAppMode(appMode: AppMode) {
+        storage.putString(SecureStorage.KEY_APP_MODE, appMode.name)
+        storage.putBoolean(SecureStorage.KEY_USE_MOCK, appMode == AppMode.DEMO)
+        if (appMode == AppMode.NONE) {
+            clearSelectedPatientId()
+        } else if (appMode == AppMode.LIVE && isDemoPatientId(storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID))) {
+            clearSelectedPatientId()
+        }
+    }
+
+    fun switchToDemoMode() {
+        val current = loadSettings()
+        saveSettings(
+            current.copy(
+                appMode = AppMode.DEMO,
+                selectedPatientId = DEFAULT_DEMO_PATIENT_ID
+            )
+        )
+    }
+
+    fun switchToLiveMode() {
+        val current = loadSettings()
+        saveSettings(
+            current.copy(
+                appMode = AppMode.LIVE,
+                selectedPatientId = current.selectedPatientId?.takeIf { !isDemoPatientId(it) }
+            )
+        )
+    }
+
+    fun resetModeSelection() {
+        val current = loadSettings()
+        saveSettings(current.copy(appMode = AppMode.NONE, selectedPatientId = null))
+    }
+
+    fun hasStoredCredentials(): Boolean {
+        val settings = loadSettings()
+        return settings.hasCredentials()
+    }
+
+    fun hasPersistedSessionData(): Boolean = loadPersistedSession() != null
+
+    fun shouldShowLoginForm(): Boolean {
+        val settings = loadSettings()
+        return settings.appMode == AppMode.LIVE && !hasPersistedSessionData() && !settings.hasCredentials()
     }
 
     fun saveNextAllowedLoginAt(epochMillis: Long) {
@@ -222,6 +286,11 @@ class SettingsRepository(context: Context) {
     private fun AppSettings.normalized(): AppSettings {
         val low = targetLow.coerceIn(40, 300)
         val high = targetHigh.coerceAtLeast(low + 1).coerceAtMost(400)
+        val normalizedSelectedPatientId = when (appMode) {
+            AppMode.DEMO -> selectedPatientId?.takeIf(::isDemoPatientId) ?: DEFAULT_DEMO_PATIENT_ID
+            AppMode.LIVE -> selectedPatientId?.takeIf { !isDemoPatientId(it) }
+            AppMode.NONE -> null
+        }
         return copy(
             targetLow = low,
             targetHigh = high,
@@ -229,12 +298,34 @@ class SettingsRepository(context: Context) {
             regionMode = regionMode.ifBlank { "EU" }.uppercase().let { if (it == "AUTO") "EU" else it },
             region = region.ifBlank { "EU" }.uppercase(),
             customBaseUrl = customBaseUrl.trim(),
-            selectedPatientId = selectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
+            selectedPatientId = normalizedSelectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
         )
+    }
+
+    private fun resolveAppMode(
+        storedMode: String,
+        legacyUseMock: Boolean,
+        hasCredentials: Boolean,
+        hasPersistedSession: Boolean
+    ): AppMode {
+        return runCatching { AppMode.valueOf(storedMode) }.getOrNull()
+            ?: when {
+                legacyUseMock -> AppMode.DEMO
+                hasCredentials || hasPersistedSession -> AppMode.LIVE
+                else -> AppMode.NONE
+            }
+    }
+
+    private fun isDemoPatientId(patientId: String?): Boolean {
+        return patientId?.startsWith("demo-person-") == true
     }
 
     private fun patientStorageSuffix(patientId: String?): String {
         return patientId?.trim().takeIf { !it.isNullOrBlank() } ?: "global"
+    }
+
+    private companion object {
+        const val DEFAULT_DEMO_PATIENT_ID = "demo-person-anna"
     }
 }
 

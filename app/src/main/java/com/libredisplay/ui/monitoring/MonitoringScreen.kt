@@ -25,6 +25,7 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ShowChart
 import androidx.compose.material3.Badge
+import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -38,6 +39,7 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -83,12 +85,14 @@ fun MonitoringScreen(
     onNavigateToSettings: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToAnalytics: () -> Unit = onNavigateToDiagnostics,
+    onSwitchToLiveMode: () -> Unit,
     viewModel: MonitoringViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
     val configuration = LocalConfiguration.current
     val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showFullScreenHistory by remember { mutableStateOf(false) }
+    var showSwitchToLiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshNonce) {
         viewModel.onScreenVisible(refreshNonce)
@@ -140,7 +144,7 @@ fun MonitoringScreen(
                         ) {
                             Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                                 if (state.isDemoMode) {
-                                    DemoModeBanner()
+                                    DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                                 }
                                 SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
                                 if (reading != null) {
@@ -163,7 +167,7 @@ fun MonitoringScreen(
                     } else {
                         Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
                             if (state.isDemoMode) {
-                                DemoModeBanner()
+                                DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                             }
                             SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
                             if (reading != null) {
@@ -186,6 +190,31 @@ fun MonitoringScreen(
                 }
             }
         }
+    }
+
+    if (showSwitchToLiveDialog) {
+        AlertDialog(
+            onDismissRequest = { showSwitchToLiveDialog = false },
+            title = { Text("Przejść do trybu Live?") },
+            text = {
+                Text(
+                    "Tryb Live połączy aplikację z kontem LibreLinkUp. Jeśli nie masz zapisanych danych logowania, poprosimy o ich wprowadzenie."
+                )
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    showSwitchToLiveDialog = false
+                    onSwitchToLiveMode()
+                }) {
+                    Text("Przejdź do Live")
+                }
+            },
+            dismissButton = {
+                TextButton(onClick = { showSwitchToLiveDialog = false }) {
+                    Text("Anuluj")
+                }
+            }
+        )
     }
 }
 
@@ -257,15 +286,18 @@ private fun DashboardTopBar(
 }
 
 @Composable
-private fun DemoModeBanner() {
+private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2E18)), modifier = Modifier.fillMaxWidth()) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Demo Mode", color = Color(0xFFFDE68A), fontWeight = FontWeight.Bold)
+            Text("Tryb demo", color = Color(0xFFFDE68A), fontWeight = FontWeight.Bold)
             Text(
-                "Demo Mode uses simulated glucose data. Do not use it for medical decisions.",
+                "Tryb demo używa przykładowych danych. Nie używaj ich do podejmowania decyzji medycznych.",
                 color = Color(0xFFF8FAFC),
                 fontSize = 12.sp
             )
+            OutlinedButton(onClick = onSwitchToLiveMode, modifier = Modifier.fillMaxWidth()) {
+                Text("Przełącz na tryb Live")
+            }
         }
     }
 }
@@ -671,7 +703,7 @@ private fun EmptyConfigurationState(onNavigateToSettings: () -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)
             ) {
-                Text("Wprowadź dane LibreLinkUp albo włącz tryb mock.", color = DashboardPrimaryText)
+                Text("Wprowadź dane LibreLinkUp albo uruchom tryb demo.", color = DashboardPrimaryText)
                 OutlinedButton(onClick = onNavigateToSettings) {
                     Text("Otwórz ustawienia")
                 }

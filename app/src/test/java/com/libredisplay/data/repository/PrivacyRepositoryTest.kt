@@ -4,6 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import com.libredisplay.data.api.AuthCapableLibreLinkUpClient
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.local.GlucoseReadingEntity
 import com.libredisplay.data.local.LibreDisplayDatabase
 import com.libredisplay.data.local.ObservedPersonEntity
@@ -11,6 +12,7 @@ import com.libredisplay.data.model.AppSettings
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -124,6 +126,7 @@ class PrivacyRepositoryTest {
 
     @Test
     fun resetAppData_andEmptyStateOperations_doNotCrash() = runBlocking {
+        settingsRepository.switchToDemoMode()
         privacyRepository.resetAppData()
         privacyRepository.deleteLocalGlucoseHistory()
         privacyRepository.deleteObservedPeople()
@@ -131,6 +134,27 @@ class PrivacyRepositoryTest {
 
         assertTrue(db.observedPersonDao().getActivePersons().isEmpty())
         assertNull(settingsRepository.loadSettings().selectedPatientId)
+        assertEquals(AppMode.NONE, settingsRepository.loadSettings().appMode)
+    }
+
+    @Test
+    fun clearSavedTokenAndPrepareLiveLogin_clearsSessionAndKeepsLiveMode() = runBlocking {
+        settingsRepository.switchToDemoMode()
+        settingsRepository.savePersistedSession(
+            PersistedLibreLinkUpSession(
+                token = "token",
+                userId = "u1",
+                accountIdHash = "a1",
+                region = "EU",
+                baseUrl = "https://api-eu.libreview.io"
+            )
+        )
+
+        privacyRepository.clearSavedTokenAndPrepareLiveLogin()
+
+        assertNull(settingsRepository.loadPersistedSession())
+        assertEquals(AppMode.LIVE, settingsRepository.loadSettings().appMode)
+        assertFalse(settingsRepository.loadSettings().isDemoPatientSelected())
     }
 
     @Test

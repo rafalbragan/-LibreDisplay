@@ -823,7 +823,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun rateLimitMessage(remainingSeconds: Long): String {
-        return "Too many login attempts. Try again in $remainingSeconds seconds."
+        return "Zbyt wiele prób logowania. Spróbuj ponownie za $remainingSeconds sekund."
     }
 
     private fun Throwable.isRateLimit(): Boolean {
@@ -932,7 +932,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 }
 
 private fun String?.isRateLimitMessage(): Boolean {
-    return this?.startsWith("Too many login attempts.", ignoreCase = true) == true
+    return this?.startsWith("Zbyt wiele prób logowania.", ignoreCase = true) == true
 }
 
 private class FetchInProgressException : RuntimeException("Fetch already in progress")

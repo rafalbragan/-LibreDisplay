@@ -1,5 +1,6 @@
 package com.libredisplay.data.repository
 
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.local.PatientSettingsDao
 import com.libredisplay.diagnostics.DiagnosticLogger
 
@@ -16,6 +17,7 @@ class PrivacyRepository(
         localHistoryRepository.deleteAllSyncRuns()
         patientSettingsDao.deleteAll()
         settingsRepository.clearAll()
+        settingsRepository.setAppMode(AppMode.NONE)
         authRepository.clearSession()
         DiagnosticLogger.logInfo("PrivacyRepository", "deleteMyStoredData completed")
     }
@@ -37,19 +39,36 @@ class PrivacyRepository(
         settingsRepository.clearSessionData()
         settingsRepository.clearAccountCredentials()
         settingsRepository.clearSelectedPatientId()
-        settingsRepository.setDemoModeEnabled(false)
+        settingsRepository.setAppMode(AppMode.NONE)
         DiagnosticLogger.logInfo("PrivacyRepository", "disconnectAccount completed")
     }
 
     fun clearSessionData() {
         authRepository.clearSession()
         settingsRepository.clearSessionData()
+        settingsRepository.setAppMode(AppMode.LIVE)
+        val current = settingsRepository.loadSettings()
+        if (current.isDemoPatientSelected()) {
+            settingsRepository.clearSelectedPatientId()
+        }
         DiagnosticLogger.logInfo("PrivacyRepository", "clearSessionData completed")
+    }
+
+    fun clearSavedTokenAndPrepareLiveLogin() {
+        authRepository.clearSession()
+        settingsRepository.clearPersistedSession()
+        settingsRepository.setAppMode(AppMode.LIVE)
+        val current = settingsRepository.loadSettings()
+        if (current.isDemoPatientSelected()) {
+            settingsRepository.clearSelectedPatientId()
+        }
+        DiagnosticLogger.logInfo("PrivacyRepository", "clearSavedTokenAndPrepareLiveLogin completed")
     }
 
     suspend fun resetAppData() {
         deleteMyStoredData()
         settingsRepository.clearAll()
+        settingsRepository.setAppMode(AppMode.NONE)
         authRepository.clearSession()
         DiagnosticLogger.logInfo("PrivacyRepository", "resetAppData completed")
     }
@@ -58,7 +77,7 @@ class PrivacyRepository(
         localHistoryRepository.deleteDemoData()
         patientSettingsDao.deleteDemoSettings()
         settingsRepository.clearSelectedPatientId()
-        settingsRepository.setDemoModeEnabled(false)
+        settingsRepository.setAppMode(AppMode.NONE)
         authRepository.clearSession()
         settingsRepository.clearSessionData()
         DiagnosticLogger.logInfo("PrivacyRepository", "deleteDemoData completed")

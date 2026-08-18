@@ -73,6 +73,7 @@ class SecureStorage(context: Context) {
         const val KEY_TREND_WINDOW_MINUTES = "trend_window_minutes"
         const val KEY_SHOW_STATISTICS = "show_statistics"
         const val KEY_KIOSK_MODE = "kiosk_mode"
+        const val KEY_APP_MODE = "app_mode"
         const val KEY_USE_MOCK = "use_mock"
         const val KEY_USE_AUTH_V3 = "use_auth_v3"
         const val KEY_SELECTED_PATIENT_ID = "selected_patient_id"

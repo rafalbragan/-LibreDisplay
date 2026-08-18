@@ -8,6 +8,7 @@ import com.libredisplay.data.api.LoginRequest
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
@@ -24,14 +25,15 @@ class GlucoseRepositoryTest {
     @Test
     fun fetchLatestReading_usesMockClientWhenEnabled() = runTest {
         val mockClient = FakeReadableClient()
+        val http = FakeHttp()
         val authRepository = AuthRepository(
-            settingsProvider = { AppSettings(useMock = true) },
+            settingsProvider = { AppSettings(appMode = AppMode.DEMO) },
             client = FakeAuthClient()
         )
         val repository = GlucoseRepository(
-            settingsProvider = { AppSettings(useMock = true) },
+            settingsProvider = { AppSettings(appMode = AppMode.DEMO) },
             authRepository = authRepository,
-            productionClient = RetrofitLibreLinkUpClient(http = FakeHttp()),
+            productionClient = RetrofitLibreLinkUpClient(http = http),
             mockClient = mockClient
         )
 
@@ -39,6 +41,39 @@ class GlucoseRepositoryTest {
 
         assertEquals(111, reading?.value)
         assertEquals(1, mockClient.loginCalls)
+        assertTrue(http.graphPatientIds.isEmpty())
+    }
+
+    @Test
+    fun fetchMonitoringSnapshot_liveModeDoesNotUseMockClient() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(listOf(Response.success(json("""
+                {"data":[{"patientId":"patient-live","firstName":"Live"}]}
+            """)))),
+            graphResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"connection":{"glucoseMeasurement":{"ValueInMgPerDl":121,"Timestamp":"2026-07-06T10:00:00Z"}},"graphData":[{"ValueInMgPerDl":121,"Timestamp":"2026-07-06T10:00:00Z"}]}}
+            """))))
+        )
+        val mockClient = FakeReadableClient()
+        val client = RetrofitLibreLinkUpClient(http = http)
+        val authRepository = AuthRepository(
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
+            client = client
+        )
+        val repository = GlucoseRepository(
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
+            authRepository = authRepository,
+            productionClient = client,
+            mockClient = mockClient
+        )
+
+        val snapshot = repository.fetchMonitoringSnapshot()
+
+        assertEquals("patient-live", snapshot.selectedPerson.patientId)
+        assertEquals(0, mockClient.loginCalls)
     }
 
     @Test
@@ -83,11 +118,11 @@ class GlucoseRepositoryTest {
         )
         val client = RetrofitLibreLinkUpClient(http = http)
         val authRepository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret", selectedPatientId = "patient-tata") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret", selectedPatientId = "patient-tata") },
             client = client
         )
         val repository = GlucoseRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret", selectedPatientId = "patient-tata") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret", selectedPatientId = "patient-tata") },
             authRepository = authRepository,
             productionClient = client
         )
@@ -123,11 +158,11 @@ class GlucoseRepositoryTest {
         )
         val client = RetrofitLibreLinkUpClient(http = http)
         val authRepository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret", selectedPatientId = "missing") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret", selectedPatientId = "missing") },
             client = client
         )
         val repository = GlucoseRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret", selectedPatientId = "missing") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret", selectedPatientId = "missing") },
             authRepository = authRepository,
             productionClient = client
         )
@@ -162,11 +197,11 @@ class GlucoseRepositoryTest {
         )
         val client = RetrofitLibreLinkUpClient(http = http)
         val authRepository = AuthRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             client = client
         )
         val repository = GlucoseRepository(
-            settingsProvider = { AppSettings(email = "user@example.com", password = "secret") },
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
             authRepository = authRepository,
             productionClient = client
         )
