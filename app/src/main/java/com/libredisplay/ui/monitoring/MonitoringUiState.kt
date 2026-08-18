@@ -84,7 +84,8 @@ data class MonitoringUiState(
     val selectedPersonName: String? = null,
     val labHbA1cPercent: Double? = null,
     val labHbA1cDate: LocalDate? = null,
-    val targetHbA1cPercent: Double = 7.5
+    val targetHbA1cPercent: Double = 7.5,
+    val timeRange: TimeRangeState = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS)
 )
 
 sealed interface HistoryStatus {

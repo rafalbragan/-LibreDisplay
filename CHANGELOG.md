@@ -2,6 +2,56 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.3.0 - 2026-08-18
+
+### PL
+
+#### Dodano
+- Nowy model `TimeRangeState` do zarządzania zakresami czasowymi
+- Enum `PresetTimeRange` z 7 predefiniowanymi zakresami (12h, 24h, 7 dni, 14 dni, 30 dni, 90 dni, 12 miesięcy)
+- Komponenty Compose: `CompactPersonHeader`, `VisiblePersonSwitcher`, `CompactStatisticsGrid`, `TimeRangeDisplay`
+- Ekran statystyk bazy danych i transferu sieciowego
+- Ekran zarządzania retencją danych lokalnych
+- Ekran konfiguracji częstotliwości pobierania danych
+- Kompaktowe statystyki na dasboardzie
+- Widoczny przełącznik osób jako chipy zamiast dropdown'u
+- Wyświetlanie wybranego zakresu czasu
+- ~45 nowych polskich etykiet
+
+#### Zmieniono
+- Przeprojektowany layout dasboardu - informacje bardziej zwarte
+- `MonitoringUiState` - dodane pole `timeRange`
+- Ulepszona hierarchia wizualna
+
+#### Testy
+- Nowa klasa `TimeRangeStateTest` (8 testów)
+- Wszystkie 185 testów: PASS
+- Lint: PASS
+
+### EN
+
+#### Added
+- New `TimeRangeState` model for managing time ranges
+- `PresetTimeRange` enum with 7 predefined ranges
+- Compose components: `CompactPersonHeader`, `VisiblePersonSwitcher`, `CompactStatisticsGrid`, `TimeRangeDisplay`
+- Database statistics and network transfer screen
+- Data retention management screen
+- Polling frequency configuration screen
+- Compact statistics on dashboard
+- Visible person switcher as chips instead of dropdown
+- Selected time range display
+- ~45 new Polish labels
+
+#### Changed
+- Redesigned dashboard layout - more compact information
+- `MonitoringUiState` - added `timeRange` field
+- Improved visual hierarchy
+
+#### Tests
+- New `TimeRangeStateTest` class (8 tests)
+- All 185 tests: PASS
+- Lint: PASS
+
 ## 1.2.1 - 2026-08-18
 
 ### PL

@@ -104,5 +104,74 @@
     <string name="kpi_hba1c_date_label">Data: %1$s</string>
     <string name="kpi_hba1c_content_description">Laboratoryjne HbA1c %1$s procent, cel ponizej %2$s procent</string>
     <string name="kpi_gmi_content_description">GMI %1$s procent, wartosc szacowana z sensora, nie zastepuje HbA1c</string>
+    <!-- Dashboard and UI -->
+    <string name="dashboard_title">Monitorowana osoba</string>
+    <string name="dashboard_no_data">Brak danych</string>
+    <string name="glucose_history">Historia glikemii</string>
+    <string name="glucose_value">Wartosc: %1$d mg/dL</string>
+    <string name="glucose_time">Czas: %1$s</string>
+    <string name="glucose_trend">Trend: %1$s</string>
+    <string name="glucose_min_max">Min: %1$d, Max: %2$d</string>
+    <string name="glucose_min_marker">Min: %1$d mg/dL, %2$s</string>
+    <string name="glucose_max_marker">Max: %1$d mg/dL, %2$s</string>
+    <!-- Time range -->
+    <string name="time_range_12_hours">Ostatnie 12 godzin</string>
+    <string name="time_range_24_hours">Ostatnie 24 godziny</string>
+    <string name="time_range_7_days">Ostatnie 7 dni</string>
+    <string name="time_range_14_days">Ostatnie 14 dni</string>
+    <string name="time_range_30_days">Ostatnie 30 dni</string>
+    <string name="time_range_90_days">Ostatnie 90 dni</string>
+    <string name="time_range_12_months">Ostatnich 12 miesiecy</string>
+    <string name="time_range_custom">Zakres: %1$s - %2$s</string>
+    <string name="time_range_available">Dostepne dane: %1$s - %2$s</string>
+    <!-- Statistics -->
+    <string name="statistics_title">Informacje i statystyki</string>
+    <string name="statistics_database">Baza danych</string>
+    <string name="statistics_network">Siec</string>
+    <string name="database_size">Rozmiar bazy danych</string>
+    <string name="database_reading_count">Liczba odczytow</string>
+    <string name="database_person_count">Liczba monitorowanych osob</string>
+    <string name="database_oldest_reading">Najstarszy odczyt</string>
+    <string name="database_newest_reading">Najnowszy odczyt</string>
+    <string name="database_growth">Przyrost bazy</string>
+    <string name="network_downloaded">Dane pobrane</string>
+    <string name="network_uploaded">Dane wyslane</string>
+    <string name="network_average_per_week">Srednie na tydzien</string>
+    <string name="network_average_per_month">Srednie na miesiac</string>
+    <string name="network_last_sync">Ostatnia synchronizacja</string>
+    <string name="stats_insufficient_data">Za malo danych do dokladnej estymacji</string>
+    <!-- Retention settings -->
+    <string name="retention_title">Retencja danych</string>
+    <string name="retention_description">Wybierz, jak dlugo lokalne dane sa przechowywane</string>
+    <string name="retention_12_hours">12 godzin</string>
+    <string name="retention_24_hours">24 godziny</string>
+    <string name="retention_7_days">7 dni</string>
+    <string name="retention_30_days">30 dni</string>
+    <string name="retention_90_days">90 dni</string>
+    <string name="retention_12_months">12 miesiecy</string>
+    <string name="retention_24_months">24 miesiace</string>
+    <string name="retention_estimated_size">Szacunkowy rozmiar bazy</string>
+    <string name="retention_estimated_readings">Szacunkowa liczba odczytow</string>
+    <string name="retention_warning">Zmiana retencji na %1$s usunie starsze lokalne odczyty z tego urzadzenia. Nie usuwa danych z LibreLinkUp.</string>
+    <string name="retention_confirm_delete">Potwierdzam usuniecie starszych odczytow</string>
+    <string name="retention_change_requires_confirmation">Wymagane potwierdzenie przed usunieciem</string>
+    <!-- Polling frequency -->
+    <string name="polling_frequency_title">Czestotliwosc odpytywania</string>
+    <string name="polling_frequency_description">Minimalna czestotliwosc odpytywania danych z LibreLinkUp</string>
+    <string name="polling_current_usage">Obecne zuzycie danych</string>
+    <string name="polling_estimated_usage">Szacowane zuzycie po zmianie</string>
+    <string name="polling_battery_warning">Zuzycie baterii moze wzrosnac</string>
+    <string name="polling_data_per_day">MB / dzien</string>
+    <string name="polling_not_implemented">Tlo odpytywanie nie jest w pelni zaimplementowane</string>
+    <!-- Monitoring header -->
+    <string name="monitoring_person">Osoba monitorowana</string>
+    <string name="switch_person">Przełacz na</string>
+    <string name="no_persons">Brak monitorowanych osob</string>
+    <!-- Common actions -->
+    <string name="close">Zamknij</string>
+    <string name="confirm">Potwierdz</string>
+    <string name="cancel">Anuluj</string>
+    <string name="delete">Usun</string>
+     <string name="apply">Zastosuj</string>
 </resources>
 

@@ -165,11 +165,19 @@ fun MonitoringScreen(
                             }
                         }
                     } else {
-                        Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                        Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
                             if (state.isDemoMode) {
                                 DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                             }
-                            SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
+                            // New compact header + person switcher
+                            CompactPersonHeader(state.selectedPersonFirstName, state.selectedPersonLastName, state.isDemoMode)
+                            VisiblePersonSwitcher(
+                                persons = state.availablePersons,
+                                selectedPatientId = state.selectedPatientId,
+                                onPersonSelected = viewModel::onPersonSelected
+                            )
+                            TimeRangeDisplay(state.timeRange)
+
                             if (reading != null) {
                                 CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
                                 RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
