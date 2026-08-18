@@ -3,7 +3,7 @@
 **Version:** 1.4.0 (versionCode 6)  
 **Release Date:** 2026-08-18  
 **Branch:** master  
-**Git Commit:** (uzupelnione po push)
+**Git Commit:** 877b999
 
 ---
 
@@ -118,4 +118,5 @@ Dodane testy:
 ### Known limitations
 - Estimates are shown only when measurement window is sufficient; otherwise app shows:
   **"Za malo danych do dokladnej estymacji"**.
+
 
