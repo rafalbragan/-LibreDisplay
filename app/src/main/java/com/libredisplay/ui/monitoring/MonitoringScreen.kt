@@ -1,6 +1,5 @@
 package com.libredisplay.ui.monitoring
 
-import android.content.res.Configuration
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -19,8 +18,6 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Analytics
-import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.outlined.ShowChart
@@ -29,8 +26,6 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -51,7 +46,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
@@ -63,7 +57,6 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
 import com.libredisplay.analytics.GlucoseMetricsCalculator
 import com.libredisplay.data.model.GlucoseReading
-import com.libredisplay.data.model.LibreConnectionPerson
 import java.time.Duration
 import java.time.Instant
 
@@ -89,8 +82,6 @@ fun MonitoringScreen(
     viewModel: MonitoringViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
-    val configuration = LocalConfiguration.current
-    val isLandscape = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
     var showFullScreenHistory by remember { mutableStateOf(false) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
 
@@ -110,14 +101,10 @@ fun MonitoringScreen(
         containerColor = DashboardBackground,
         topBar = {
             DashboardTopBar(
-                persons = state.availablePersons,
-                selectedPatientId = state.selectedPatientId,
-                selectedName = state.selectedPersonName,
                 connectionState = state.connectionState,
                 isDemoMode = state.isDemoMode,
-                onSelectPatient = viewModel::onPersonSelected,
                 onRefresh = viewModel::refreshNow,
-                onOpenAnalytics = onNavigateToAnalytics,
+                onOpenHistory = { showFullScreenHistory = true },
                 onOpenSettings = onNavigateToSettings
             )
         }
@@ -136,64 +123,40 @@ fun MonitoringScreen(
                     val contentModifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
-                        .padding(16.dp)
-                    if (isLandscape) {
-                        Row(
-                            modifier = contentModifier,
-                            horizontalArrangement = Arrangement.spacedBy(16.dp)
-                        ) {
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                if (state.isDemoMode) {
-                                    DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
-                                }
-                                SelectedPersonHeader(state.selectedPersonFullName ?: state.selectedPersonName)
-                                if (reading != null) {
-                                    CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
-                                    RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
-                                    HbA1cGmiAndSensorRow(state = state, reading = reading)
-                                    NfzStatusCompactCard(state = state, reading = reading)
-                                }
-                            }
-                            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                                GlucoseChartCard(
-                                    state = state,
-                                    reading = reading,
-                                    onOpenHistory = { showFullScreenHistory = true }
-                                )
-                                LastSyncFooter(state.lastSuccessfulFetchAt)
-                                ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
-                            }
+                        .padding(horizontal = 12.dp, vertical = 10.dp)
+                    Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        if (state.isDemoMode) {
+                            DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                         }
-                    } else {
-                        Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                            if (state.isDemoMode) {
-                                DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
-                            }
-                            // New compact header + person switcher
-                            CompactPersonHeader(state.selectedPersonFirstName, state.selectedPersonLastName, state.isDemoMode)
-                            VisiblePersonSwitcher(
-                                persons = state.availablePersons,
-                                selectedPatientId = state.selectedPatientId,
-                                onPersonSelected = viewModel::onPersonSelected
-                            )
-                            TimeRangeDisplay(state.timeRange)
 
-                            if (reading != null) {
-                                CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
-                                RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
-                                HbA1cGmiAndSensorRow(state = state, reading = reading)
-                                GlucoseChartCard(
-                                    state = state,
-                                    reading = reading,
-                                    onOpenHistory = { showFullScreenHistory = true }
-                                )
-                                NfzStatusCompactCard(state = state, reading = reading)
-                                LastSyncFooter(state.lastSuccessfulFetchAt)
-                            } else {
-                                EmptyChartState()
-                            }
-                            ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
+                        // Single identity area: selected person appears only in this switcher.
+                        CompactPersonSwitcherBar(
+                            persons = state.availablePersons,
+                            selectedPatientId = state.selectedPatientId,
+                            onPersonSelected = viewModel::onPersonSelected,
+                            isDemoMode = state.isDemoMode
+                        )
+
+                        TimeRangeDisplay(
+                            timeRange = state.timeRange,
+                            onChangeClick = { showFullScreenHistory = true }
+                        )
+
+                        if (reading != null) {
+                            CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
+                            RangeTimeSummaryRow(reading, state.settings.targetLow, state.settings.targetHigh)
+                            HbA1cGmiAndSensorRow(state = state, reading = reading)
+                            GlucoseChartCard(
+                                state = state,
+                                reading = reading,
+                                onOpenHistory = { showFullScreenHistory = true }
+                            )
+                            NfzStatusCompactCard(state = state, reading = reading)
+                            LastSyncFooter(state.lastSuccessfulFetchAt)
+                        } else {
+                            EmptyChartState()
                         }
+                        ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
                     }
                 }
             }
@@ -226,39 +189,13 @@ fun MonitoringScreen(
     }
 }
 
-@Composable
-private fun SelectedPersonHeader(selectedName: String?) {
-    val fullName = selectedName?.trim().takeIf { !it.isNullOrBlank() } ?: return
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier.fillMaxWidth()
-    ) {
-        Column(modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp)) {
-            Text("Monitoring", color = DashboardSecondaryText, fontSize = 12.sp)
-            Text(
-                text = fullName,
-                color = DashboardPrimaryText,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 2,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-    }
-}
-
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun DashboardTopBar(
-    persons: List<LibreConnectionPerson>,
-    selectedPatientId: String?,
-    selectedName: String?,
     connectionState: ConnectionState,
     isDemoMode: Boolean,
-    onSelectPatient: (String) -> Unit,
     onRefresh: () -> Unit,
-    onOpenAnalytics: () -> Unit,
+    onOpenHistory: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     TopAppBar(
@@ -270,12 +207,6 @@ private fun DashboardTopBar(
                         Text("DEMO", fontSize = 10.sp)
                     }
                 }
-                PatientSelectorChip(
-                    persons = persons,
-                    selectedPatientId = selectedPatientId,
-                    selectedName = selectedName,
-                    onSelected = onSelectPatient
-                )
             }
         },
         actions = {
@@ -283,8 +214,8 @@ private fun DashboardTopBar(
             IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Refresh, contentDescription = "Odśwież dane", tint = DashboardPrimaryText)
             }
-            IconButton(onClick = onOpenAnalytics, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Analytics, contentDescription = "Analiza", tint = DashboardPrimaryText)
+            IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
+                Icon(Icons.Outlined.ShowChart, contentDescription = "Historia glikemii", tint = DashboardPrimaryText)
             }
             IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
                 Icon(Icons.Default.Settings, contentDescription = "Ustawienia", tint = DashboardPrimaryText)
@@ -310,47 +241,6 @@ private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
     }
 }
 
-@Composable
-private fun PatientSelectorChip(
-    persons: List<LibreConnectionPerson>,
-    selectedPatientId: String?,
-    selectedName: String?,
-    onSelected: (String) -> Unit
-) {
-    val visible = persons.take(3)
-    if (visible.isEmpty()) return
-    val selected = visible.firstOrNull { it.patientId == selectedPatientId } ?: visible.first()
-    var expanded by remember { mutableStateOf(false) }
-
-    Box(modifier = Modifier.semantics { contentDescription = "Wybrana osoba: ${selected.displayName}" }) {
-        OutlinedButton(onClick = { if (visible.size > 1) expanded = true }, shape = RoundedCornerShape(14.dp)) {
-            Text(
-                text = selectedName?.takeIf { it.isNotBlank() } ?: selected.displayName,
-                fontSize = 13.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-            if (visible.size > 1) {
-                Spacer(Modifier.width(2.dp))
-                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Rozwiń listę pacjentów")
-            }
-        }
-        DropdownMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            visible.forEach { person ->
-                DropdownMenuItem(
-                    text = {
-                        val mark = if (person.patientId == selected.patientId) "✓ " else ""
-                        Text(mark + person.displayName)
-                    },
-                    onClick = {
-                        expanded = false
-                        if (person.patientId != selected.patientId) onSelected(person.patientId)
-                    }
-                )
-            }
-        }
-    }
-}
 
 @Composable
 private fun ConnectionStatusDot(connectionState: ConnectionState) {
@@ -375,15 +265,15 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
 
     Card(
         colors = CardDefaults.cardColors(containerColor = if (stale) DashboardElevatedSurface else DashboardSurface),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(20.dp),
         modifier = Modifier
             .fillMaxWidth()
             .semantics { contentDescription = "Aktualna glikemia ${reading.value} mg na decylitr, ${trendContentDescription(reading.trend)}" }
     ) {
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(18.dp)) {
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 12.dp)) {
             val type = glucoseCardTypographyForWidth(maxWidth.value.toInt())
-            Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text("Aktualna glikemia", color = DashboardSecondaryText, fontSize = 18.sp)
+            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                Text("Aktualna glikemia", color = DashboardSecondaryText, fontSize = 14.sp)
                 Row(modifier = Modifier.fillMaxWidth(), verticalAlignment = Alignment.Top) {
                     Row(
                         modifier = Modifier.weight(1f),
@@ -413,7 +303,7 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                 Text(
                     text = formatReadingAge(duration),
                     color = DashboardSecondaryText,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis
                 )
@@ -478,14 +368,14 @@ private fun RangeTimeCard(
     emphasized: Boolean = false
 ) {
     Card(
-        modifier = modifier,
+        modifier = modifier.height(92.dp),
         colors = CardDefaults.cardColors(containerColor = if (emphasized) DashboardElevatedSurface else DashboardSurface),
-        shape = RoundedCornerShape(18.dp)
+        shape = RoundedCornerShape(16.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(title, color = DashboardSecondaryText, fontSize = 12.sp)
-            Text(data.percentLabel, color = DashboardPrimaryText, fontSize = 24.sp, fontWeight = FontWeight.Bold)
-            Text(data.durationLabel, color = accent, fontSize = 12.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text(title, color = DashboardSecondaryText, fontSize = 11.sp)
+            Text(data.percentLabel, color = DashboardPrimaryText, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+            Text(data.durationLabel, color = accent, fontSize = 11.sp, maxLines = 1, overflow = TextOverflow.Ellipsis)
         }
     }
 }
@@ -510,25 +400,29 @@ private fun HbA1cGmiCard(state: MonitoringUiState, reading: GlucoseReading, modi
         historyPoints = reading.history
     )
 
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = DashboardSurface), shape = RoundedCornerShape(18.dp)) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+    Card(
+        modifier = modifier.height(96.dp),
+        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
             when (kpi.mode) {
                 HbA1cKpiMode.LAB_HBA1C -> {
-                    Text("HbA1c", color = DashboardSecondaryText, fontSize = 12.sp)
-                    Text("${"%.1f".format(kpi.valuePercent)}%", color = DashboardPrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("Laboratoryjne · ${state.labHbA1cDate ?: "brak daty"}", color = DashboardMutedText, fontSize = 12.sp)
-                    Text("Cel: < ${state.targetHbA1cPercent}%", color = DashboardSecondaryText, fontSize = 12.sp)
+                    Text("HbA1c", color = DashboardSecondaryText, fontSize = 11.sp)
+                    Text("${"%.1f".format(kpi.valuePercent)}%", color = DashboardPrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Lab · ${state.labHbA1cDate ?: "brak daty"}", color = DashboardMutedText, fontSize = 11.sp, maxLines = 1)
+                    Text("Cel < ${state.targetHbA1cPercent}%", color = DashboardSecondaryText, fontSize = 10.sp)
                 }
                 HbA1cKpiMode.GMI_ESTIMATED -> {
-                    Text("GMI", color = DashboardSecondaryText, fontSize = 12.sp)
-                    Text("${"%.1f".format(kpi.valuePercent)}%", color = DashboardPrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("Szacowane z sensora", color = DashboardMutedText, fontSize = 12.sp)
-                    Text("Nie zastępuje HbA1c", color = DashboardMutedText, fontSize = 12.sp)
+                    Text("GMI", color = DashboardSecondaryText, fontSize = 11.sp)
+                    Text("${"%.1f".format(kpi.valuePercent)}%", color = DashboardPrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Szacowane z sensora", color = DashboardMutedText, fontSize = 11.sp)
+                    Text("Nie zastępuje HbA1c", color = DashboardMutedText, fontSize = 10.sp)
                 }
                 HbA1cKpiMode.GMI_INSUFFICIENT -> {
-                    Text("GMI", color = DashboardSecondaryText, fontSize = 12.sp)
-                    Text("—", color = DashboardPrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-                    Text("Za mało danych", color = DashboardMutedText, fontSize = 12.sp)
+                    Text("GMI", color = DashboardSecondaryText, fontSize = 11.sp)
+                    Text("—", color = DashboardPrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                    Text("Za mało danych", color = DashboardMutedText, fontSize = 11.sp)
                 }
             }
         }
@@ -549,12 +443,16 @@ private fun SensorActivityCard(reading: GlucoseReading, modifier: Modifier = Mod
         else -> AccentRed
     }
 
-    Card(modifier = modifier, colors = CardDefaults.cardColors(containerColor = DashboardSurface), shape = RoundedCornerShape(18.dp)) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Aktywność czujnika", color = DashboardSecondaryText, fontSize = 12.sp)
-            Text(value?.let { "${"%.0f".format(it)}%" } ?: "—", color = DashboardPrimaryText, fontSize = 28.sp, fontWeight = FontWeight.Bold)
-            Text(if (value == null) "Za mało danych" else "Cel: ≥ 75%", color = color, fontSize = 12.sp)
-            Text("Ostatnie 14 dni", color = DashboardMutedText, fontSize = 12.sp)
+    Card(
+        modifier = modifier.height(96.dp),
+        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(modifier = Modifier.padding(horizontal = 10.dp, vertical = 8.dp), verticalArrangement = Arrangement.spacedBy(2.dp)) {
+            Text("Aktywność", color = DashboardSecondaryText, fontSize = 11.sp)
+            Text(value?.let { "${"%.0f".format(it)}%" } ?: "—", color = DashboardPrimaryText, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+            Text(if (value == null) "Za mało danych" else "Cel: >= 75%", color = color, fontSize = 11.sp)
+            Text("14 dni", color = DashboardMutedText, fontSize = 10.sp)
         }
     }
 }
@@ -595,15 +493,15 @@ private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReadi
 private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?, onOpenHistory: () -> Unit) {
     Card(
         colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(22.dp),
+        shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpenHistory() }
             .semantics { contentDescription = "Wykres historii glukozy. Dotknij aby powiększyć" }
     ) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Historia glukozy", color = DashboardPrimaryText, fontSize = 18.sp, fontWeight = FontWeight.SemiBold)
+                Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
                 Spacer(modifier = Modifier.weight(1f))
                 Icon(Icons.Outlined.ShowChart, contentDescription = "Powiększyć wykres", tint = DashboardSecondaryText)
             }

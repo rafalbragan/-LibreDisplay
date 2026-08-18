@@ -58,6 +58,16 @@ internal data class DashboardUiState(
     val selectedPatientId: String?
 )
 
+internal enum class PersonSwitcherMode {
+    INLINE_CHIPS,
+    SCROLLABLE_CHIPS
+}
+
+internal data class HistoryOpenContext(
+    val patientId: String?,
+    val timeRange: TimeRangeState
+)
+
 internal fun MonitoringUiState.shouldShowPersonSwitcher(): Boolean = mapSwitcherPersons(availablePersons).size > 1
 
 internal fun shouldShowRetryAction(connectionState: ConnectionState): Boolean = when (connectionState) {
@@ -67,6 +77,23 @@ internal fun shouldShowRetryAction(connectionState: ConnectionState): Boolean = 
 }
 
 internal fun mapSwitcherPersons(persons: List<LibreConnectionPerson>): List<LibreConnectionPerson> = persons.take(3)
+
+internal fun personSwitcherModeForCount(personCount: Int): PersonSwitcherMode =
+    if (personCount <= 3) PersonSwitcherMode.INLINE_CHIPS else PersonSwitcherMode.SCROLLABLE_CHIPS
+
+internal fun dashboardIdentityOccurrences(showTopBarIdentity: Boolean, showHeaderIdentity: Boolean, showSwitcherIdentity: Boolean): Int {
+    var count = 0
+    if (showTopBarIdentity) count++
+    if (showHeaderIdentity) count++
+    if (showSwitcherIdentity) count++
+    return count
+}
+
+internal fun buildHistoryOpenContext(state: MonitoringUiState): HistoryOpenContext =
+    HistoryOpenContext(
+        patientId = state.selectedPatientId,
+        timeRange = state.timeRange
+    )
 
 internal fun topBarPersonSubtitle(personName: String?): String {
     val safeName = personName?.trim().takeIf { !it.isNullOrBlank() } ?: "-"

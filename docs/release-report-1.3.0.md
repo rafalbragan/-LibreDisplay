@@ -32,10 +32,13 @@ LibreCare v1.3.0 is a major UI/UX redesign release that improves the user interf
 
 ### UI/UX Redesign
 - **Compact Dashboard Layout**: Reorganized main screen to show essential information without scrolling
-- **Person Switcher**: Changed from dropdown to visible chips for easier multi-person management
+- **Removed Duplicated Person UI**: Selected person identity is now shown in one primary place only
+- **Top Bar Simplification**: Removed person dropdown from top app bar for 2-3 users
+- **Person Switcher**: Changed from dropdown to compact visible chips for easier multi-person management
 - **Time Range Display**: Clear indication of selected data period
+- **Compact Range Row**: Replaced large range card with compact row + action
 - **Compact Statistics**: Smaller stat boxes that don't dominate the screen
-- **Chart Improvements**: Better visual presentation with target range shading
+- **Chart Improvements**: Better visual presentation with target range shading and earlier dashboard visibility
 
 ### New Features
 - **Statistics Screen**: Database size, reading count, network transfer metrics

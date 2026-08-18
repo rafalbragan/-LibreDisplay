@@ -41,9 +41,24 @@ class DashboardUiLogicTest {
     }
 
     @Test
-    fun selectedPerson_isReflectedInTopAndChartTitles() {
-        assertEquals("Osoba: Ryszard", topBarPersonSubtitle("Ryszard"))
-        assertEquals("Historia glukozy - Ryszard", chartTitleForPerson("Ryszard"))
+    fun selectedPerson_identityAppearsOnlyOnceInDashboardModel() {
+        val count = dashboardIdentityOccurrences(
+            showTopBarIdentity = false,
+            showHeaderIdentity = false,
+            showSwitcherIdentity = true
+        )
+        assertEquals(1, count)
+    }
+
+    @Test
+    fun personSwitcher_forTwoAndThreePersons_usesInlineChipsNotDropdown() {
+        assertEquals(PersonSwitcherMode.INLINE_CHIPS, personSwitcherModeForCount(2))
+        assertEquals(PersonSwitcherMode.INLINE_CHIPS, personSwitcherModeForCount(3))
+    }
+
+    @Test
+    fun personSwitcher_forMoreThanThreePersons_usesScrollableChips() {
+        assertEquals(PersonSwitcherMode.SCROLLABLE_CHIPS, personSwitcherModeForCount(4))
     }
 
     @Test
@@ -55,6 +70,13 @@ class DashboardUiLogicTest {
         }
 
         assertEquals("p2", selected.get())
+    }
+
+    @Test
+    fun rangeRow_exposesSelectedRangeLabel() {
+        val label = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS).rangeLabel()
+        assertTrue(label.contains("Zakres:"))
+        assertTrue(label.contains("24"))
     }
 
     @Test
@@ -127,6 +149,21 @@ class DashboardUiLogicTest {
     }
 
     @Test
+    fun glucoseCardModel_containsValueUnitTrendFreshnessAndStatus() {
+        val reading = GlucoseReading.of(
+            value = 225,
+            timestamp = Instant.now().minus(Duration.ofHours(1)),
+            trend = GlucoseTrend.FLAT,
+            history = emptyList()
+        )
+
+        assertEquals("225 mg/dL", glucoseValueAndUnitText(reading.value))
+        assertEquals("Glikemia stabilna", trendContentDescription(reading.trend))
+        assertTrue(formatReadingAge(Duration.ofHours(1)).contains("Dane sprzed"))
+        assertEquals("Powyżej zakresu", glucoseRangeStatus(reading.value, 80, 180))
+    }
+
+    @Test
     fun rangeTileUi_noData_usesDashAndNoFakeZero() {
         val tile = rangeTileUi(percent = null, duration = null)
 
@@ -147,6 +184,26 @@ class DashboardUiLogicTest {
         assertEquals(NfzStatus.GREEN, evaluateNfzStatus(80.0, 75, 7.4).status)
         assertEquals(NfzStatus.YELLOW, evaluateNfzStatus(70.0, 60, null).status)
         assertEquals(NfzStatus.RED, evaluateNfzStatus(40.0, 30, null).status)
+    }
+
+    @Test
+    fun historyContext_preservesSelectedPersonAndRange() {
+        val state = MonitoringUiState(
+            selectedPatientId = "p2",
+            timeRange = TimeRangeState.fromPreset(PresetTimeRange.LAST_7_DAYS)
+        )
+
+        val context = buildHistoryOpenContext(state)
+
+        assertEquals("p2", context.patientId)
+        assertEquals(PresetTimeRange.LAST_7_DAYS, context.timeRange.presetRange)
+    }
+
+    @Test
+    fun keyDashboardLabels_arePolish() {
+        assertEquals("W zakresie", glucoseRangeStatus(120, 80, 180))
+        assertEquals("Poniżej zakresu", glucoseRangeStatus(70, 80, 180))
+        assertEquals("Powyżej zakresu", glucoseRangeStatus(200, 80, 180))
     }
 }
 

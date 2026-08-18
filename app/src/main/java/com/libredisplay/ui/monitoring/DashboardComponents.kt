@@ -10,6 +10,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -17,6 +18,7 @@ import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,55 +42,41 @@ private val AccentWarning = Color(0xFFF2B84B)
 private val AccentRed = Color(0xFFE05A6A)
 
 /**
- * Compact header showing the monitored person's full name.
- * Shows clearly without wasting space.
+ * Single compact person switcher area.
+ * This is the only place where selected monitored person identity is displayed.
  */
 @Composable
-fun CompactPersonHeader(
-    firstName: String?,
-    lastName: String?,
-    isDemoMode: Boolean = false
+fun CompactPersonSwitcherBar(
+    persons: List<LibreConnectionPerson>,
+    selectedPatientId: String?,
+    onPersonSelected: (String) -> Unit,
+    isDemoMode: Boolean,
+    modifier: Modifier = Modifier
 ) {
-    val fullName = buildString {
-        if (!firstName.isNullOrBlank()) append(firstName)
-        if (!firstName.isNullOrBlank() && !lastName.isNullOrBlank()) append(" ")
-        if (!lastName.isNullOrBlank()) append(lastName)
-    }.takeIf { it.isNotBlank() } ?: stringResource(R.string.no_persons)
-
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(modifier = Modifier.weight(1f)) {
-            Text(
-                stringResource(R.string.monitoring_person),
-                color = DashboardSecondaryText,
-                fontSize = 11.sp
-            )
-            Text(
-                text = fullName,
-                color = DashboardPrimaryText,
-                fontSize = 18.sp,
-                fontWeight = FontWeight.SemiBold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        VisiblePersonSwitcher(
+            persons = persons,
+            selectedPatientId = selectedPatientId,
+            onPersonSelected = onPersonSelected,
+            modifier = Modifier.weight(1f)
+        )
         if (isDemoMode) {
             Surface(
                 color = AccentWarning,
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier.padding(start = 8.dp)
+                shape = RoundedCornerShape(8.dp)
             ) {
                 Text(
-                    "DEMO",
+                    text = "DEMO",
                     color = Color.Black,
-                    fontSize = 9.sp,
+                    fontSize = 10.sp,
                     fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
                 )
             }
         }
@@ -107,23 +95,33 @@ fun VisiblePersonSwitcher(
     modifier: Modifier = Modifier
 ) {
     if (persons.isEmpty()) {
+        Surface(
+            color = DashboardElevatedSurface,
+            shape = RoundedCornerShape(12.dp),
+            modifier = modifier.heightIn(min = 40.dp)
+        ) {
+            Text(
+                text = stringResource(R.string.no_persons),
+                color = DashboardSecondaryText,
+                fontSize = 12.sp,
+                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
+            )
+        }
         return
     }
 
-    val chipsPerRow = if (persons.size <= 3) persons.size else 3
     val isScrollable = persons.size > 3
 
     Box(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
     ) {
         if (isScrollable) {
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 persons.forEach { person ->
                     PersonChip(
@@ -136,7 +134,7 @@ fun VisiblePersonSwitcher(
         } else {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 persons.forEach { person ->
                     PersonChip(
@@ -160,16 +158,17 @@ private fun PersonChip(
 ) {
     Surface(
         color = if (isSelected) AccentGreen else DashboardElevatedSurface,
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier
             .clickable(enabled = !isSelected) { onClick() }
+            .heightIn(min = 40.dp)
     ) {
         Text(
             text = name,
             color = if (isSelected) Color.Black else DashboardSecondaryText,
             fontSize = 12.sp,
             fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 9.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -199,15 +198,9 @@ fun CompactStatisticsGrid(
                 .padding(horizontal = 16.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            if (belowRange != null) {
-                CompactStatBox("Poniżej", belowRange, modifier = Modifier.weight(1f))
-            }
-            if (inRange != null) {
-                CompactStatBox("W zakresie", inRange, AccentGreen, modifier = Modifier.weight(1f))
-            }
-            if (aboveRange != null) {
-                CompactStatBox("Powyżej", aboveRange, modifier = Modifier.weight(1f))
-            }
+            CompactStatBox("Poniżej", belowRange, modifier = Modifier.weight(1f))
+            CompactStatBox("W zakresie", inRange, AccentGreen, modifier = Modifier.weight(1f))
+            CompactStatBox("Powyżej", aboveRange, modifier = Modifier.weight(1f))
         }
         Spacer(modifier = Modifier.height(4.dp))
         // Row 2: Sensor, Average, GMI
@@ -273,22 +266,35 @@ private fun CompactStatBox(
 @Composable
 fun TimeRangeDisplay(
     timeRange: TimeRangeState,
+    onChangeClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardElevatedSurface),
-        shape = RoundedCornerShape(8.dp),
+    Surface(
+        color = DashboardElevatedSurface,
+        shape = RoundedCornerShape(12.dp),
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = 16.dp)
+            .heightIn(min = 36.dp)
     ) {
-        Text(
-            text = timeRange.rangeLabel(),
-            color = DashboardSecondaryText,
-            fontSize = 11.sp,
-            fontWeight = FontWeight.Normal,
-            modifier = Modifier.padding(10.dp)
-        )
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(start = 10.dp, end = 4.dp, top = 2.dp, bottom = 2.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text(
+                text = timeRange.rangeLabel(),
+                color = DashboardSecondaryText,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+            TextButton(onClick = onChangeClick) {
+                Text(text = "Zmień", fontSize = 12.sp)
+            }
+        }
     }
 }
 

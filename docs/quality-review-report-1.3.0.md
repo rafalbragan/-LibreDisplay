@@ -48,9 +48,8 @@ data class TimeRangeState(
 ✅ **Very Good**
 
 **Dashboard Components:**
-- **CompactPersonHeader**: Single-responsibility, no hidden state
+- **CompactPersonSwitcherBar**: Single identity area for monitored person selection
 - **VisiblePersonSwitcher**: Handles layout logic for 1-N people elegantly
-- **CompactStatisticsGrid**: Reusable grid with flexible slot-based design
 - **TimeRangeDisplay**: Minimal, focused component
 
 **Composition Benefits:**
@@ -85,8 +84,8 @@ The MonitoringScreen.kt remains large (714+ lines) despite improvements. Future 
 
 **Key Improvements:**
 - ✅ Visual focus on current glucose value (largest element)
-- ✅ Monitored person immediately obvious
-- ✅ Person switching doesn't require opening menu
+- ✅ Monitored person identity appears only once in the main dashboard flow
+- ✅ Person switching doesn't require dropdown/menu interaction
 - ✅ Time range context always visible
 - ✅ Statistics concise and scannable
 

@@ -9,7 +9,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Dodano
 - Nowy model `TimeRangeState` do zarządzania zakresami czasowymi
 - Enum `PresetTimeRange` z 7 predefiniowanymi zakresami (12h, 24h, 7 dni, 14 dni, 30 dni, 90 dni, 12 miesięcy)
-- Komponenty Compose: `CompactPersonHeader`, `VisiblePersonSwitcher`, `CompactStatisticsGrid`, `TimeRangeDisplay`
+- Komponenty Compose: `CompactPersonSwitcherBar`, `VisiblePersonSwitcher`, `TimeRangeDisplay`
 - Ekran statystyk bazy danych i transferu sieciowego
 - Ekran zarządzania retencją danych lokalnych
 - Ekran konfiguracji częstotliwości pobierania danych
@@ -20,6 +20,10 @@ All notable changes to LibreCare will be documented in this file.
 
 #### Zmieniono
 - Przeprojektowany layout dasboardu - informacje bardziej zwarte
+- Usunięto zduplikowaną prezentację monitorowanej osoby
+- Usunięto dropdown osoby z top bara dla 2-3 osób
+- Usunięto etykietę "Osoba monitorowana" z głównego układu
+- Wprowadzono kompaktowy przełącznik osób jako jedyne miejsce tożsamości
 - `MonitoringUiState` - dodane pole `timeRange`
 - Ulepszona hierarchia wizualna
 
@@ -33,7 +37,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Added
 - New `TimeRangeState` model for managing time ranges
 - `PresetTimeRange` enum with 7 predefined ranges
-- Compose components: `CompactPersonHeader`, `VisiblePersonSwitcher`, `CompactStatisticsGrid`, `TimeRangeDisplay`
+- Compose components: `CompactPersonSwitcherBar`, `VisiblePersonSwitcher`, `TimeRangeDisplay`
 - Database statistics and network transfer screen
 - Data retention management screen
 - Polling frequency configuration screen
@@ -44,6 +48,10 @@ All notable changes to LibreCare will be documented in this file.
 
 #### Changed
 - Redesigned dashboard layout - more compact information
+- Removed duplicated monitored-person identity blocks
+- Removed top-bar person dropdown for 2-3 users
+- Removed "Monitored person" label from the main dashboard flow
+- Added compact person switcher as the only monitored-person identity area
 - `MonitoringUiState` - added `timeRange` field
 - Improved visual hierarchy
 

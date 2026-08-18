@@ -16,8 +16,10 @@ Wydanie 1.3.0 zawiera znaczne ulepszenia interfejsu użytkownika, nową funkcjon
 #### 🎨 Główne zmiany
 
 **1. Przeprojektowany pulpit nawigacyjny (Dashboard)**
-- Kompaktowy nagłówek z imieniem i nazwiskiem monitorowanej osoby
-- Widoczny przełącznik osób zamiast rozwijanego menu
+- Usunięto zduplikowaną prezentację monitorowanej osoby (jedno miejsce tożsamości)
+- Usunięto dropdown osoby z top bara dla 2-3 osób
+- Usunięto etykietę "Osoba monitorowana" z głównego układu
+- Wprowadzono kompaktowy przełącznik osób z chipami
 - Lepszy układ informacji bez zbędnego przewijania
 - Wyświetlanie wybranego zakresu czasu
 - Kompaktowe kafelki ze statystyką (poniżej zakresu, w zakresie, powyżej)
@@ -64,7 +66,7 @@ Wydanie 1.3.0 zawiera znaczne ulepszenia interfejsu użytkownika, nową funkcjon
 - Nowy model `TimeRangeState` do obsługi okresów czasowych
 - Nowy enum `PresetTimeRange` z dostępnymi przedziałami
 - Zaktualizowany `MonitoringUiState` o pole `timeRange`
-- Nowe komponenty Compose: `CompactPersonHeader`, `VisiblePersonSwitcher`, `CompactStatisticsGrid`, `TimeRangeDisplay`
+- Nowe komponenty Compose: `CompactPersonSwitcherBar`, `VisiblePersonSwitcher`, `TimeRangeDisplay`
 - Nowe ekrany: `StatisticsScreen`, `RetentionSettingsScreen`, `PollingFrequencyScreen`
 - Dodanych ~45 nowych polskich etykiet w `strings.xml`
 
@@ -107,8 +109,8 @@ Wydanie 1.3.0 zawiera znaczne ulepszenia interfejsu użytkownika, nową funkcjon
 #### 📝 Ręczne kroki do weryfikacji
 
 1. Zaloguj się lub wejdź w tryb demo
-2. Sprawdź, czy nagłówek pokazuje imię i nazwisko monitorowanej osoby
-3. Jeśli masz 2-3 osoby, sprawdź widoczne chipsy zamiast dropdown'u
+2. Sprawdź, czy imię i nazwisko monitorowanej osoby jest widoczne tylko w przełączniku osób
+3. Jeśli masz 2-3 osoby, sprawdź chipsy bez dropdownu w top barze
 4. Dotknij wykresu, aby otworzyć pełnoekranowy widok
 5. W ustawieniach sprawdź nowe ekrany: Retencja danych i Częstotliwość odpytywania
 6. Wszystkie teksty powinny być w polskim
@@ -131,8 +133,10 @@ Release 1.3.0 contains significant user interface improvements, new data managem
 #### 🎨 Major Changes
 
 **1. Redesigned Dashboard**
-- Compact header with full name of monitored person
-- Visible person switcher instead of dropdown menu
+- Removed duplicated monitored-person identity (single primary identity area)
+- Removed top-bar person dropdown for 2-3 people
+- Removed extra "Monitored person" label from the main flow
+- Added compact person switcher chips as the only identity element
 - Better information layout without unnecessary scrolling
 - Selected time range display
 - Compact statistic tiles (below range, in range, above range)
