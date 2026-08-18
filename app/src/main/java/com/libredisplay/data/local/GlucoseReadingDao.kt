@@ -41,5 +41,23 @@ interface GlucoseReadingDao {
 
     @Query("DELETE FROM glucose_readings WHERE source = 'DemoMode' OR patientId LIKE 'demo-person-%'")
     suspend fun deleteDemoReadings(): Int
+
+    @Query("SELECT COUNT(*) FROM glucose_readings")
+    suspend fun countAllReadings(): Long
+
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    suspend fun countLiveReadings(): Long
+
+    @Query("SELECT MIN(timestamp) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    suspend fun oldestLiveReadingTimestamp(): Instant?
+
+    @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    suspend fun newestLiveReadingTimestamp(): Instant?
+
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' AND timestamp >= :fromInclusive")
+    suspend fun countLiveReadingsFrom(fromInclusive: Instant): Long
+
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' AND timestamp < :cutoff")
+    suspend fun countLiveReadingsOlderThan(cutoff: Instant): Long
 }
 

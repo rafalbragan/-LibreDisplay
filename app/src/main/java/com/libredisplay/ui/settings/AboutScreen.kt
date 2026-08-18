@@ -34,7 +34,8 @@ import com.libredisplay.ui.privacy.PRIVACY_POLICY_URL
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AboutScreen(
-    onNavigateBack: () -> Unit
+    onNavigateBack: () -> Unit,
+    onNavigateToStatistics: () -> Unit
 ) {
     val context = LocalContext.current
     val showLicenses = remember { mutableStateOf(false) }
@@ -86,6 +87,13 @@ fun AboutScreen(
                 }
             ) {
                 Text("Polityka prywatności")
+            }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onNavigateToStatistics
+            ) {
+                Text("Informacje i statystyki")
             }
 
             Button(

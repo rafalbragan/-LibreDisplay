@@ -56,6 +56,8 @@ class SettingsRepository(context: Context) {
         storage.putBoolean(SecureStorage.KEY_USE_MOCK, settings.useMock)
         storage.putBoolean(SecureStorage.KEY_USE_AUTH_V3, true)
         storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, selectedPatientIdToStore.orEmpty())
+        storage.putInt(SecureStorage.KEY_RETENTION_HOURS, settings.retentionHours.coerceIn(12, 24 * 30 * 24))
+        storage.putInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, settings.backgroundPollingMinutes.coerceIn(5, 60))
     }
 
     fun loadSettings(): AppSettings {
@@ -81,7 +83,9 @@ class SettingsRepository(context: Context) {
             kioskMode = storage.getBoolean(SecureStorage.KEY_KIOSK_MODE, false),
             appMode = appMode,
             selectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() },
-            useAuthV3 = true
+            useAuthV3 = true,
+            retentionHours = storage.getInt(SecureStorage.KEY_RETENTION_HOURS, 24 * 30).coerceIn(12, 24 * 30 * 24),
+            backgroundPollingMinutes = storage.getInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, 60).coerceIn(5, 60)
         ).normalized()
     }
 
@@ -298,7 +302,9 @@ class SettingsRepository(context: Context) {
             regionMode = regionMode.ifBlank { "EU" }.uppercase().let { if (it == "AUTO") "EU" else it },
             region = region.ifBlank { "EU" }.uppercase(),
             customBaseUrl = customBaseUrl.trim(),
-            selectedPatientId = normalizedSelectedPatientId?.trim().takeIf { !it.isNullOrBlank() }
+            selectedPatientId = normalizedSelectedPatientId?.trim().takeIf { !it.isNullOrBlank() },
+            retentionHours = retentionHours.coerceIn(12, 24 * 30 * 24),
+            backgroundPollingMinutes = backgroundPollingMinutes.coerceIn(5, 60)
         )
     }
 

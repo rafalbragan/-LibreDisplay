@@ -57,6 +57,9 @@ fun SettingsScreen(
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToPrivacyData: () -> Unit,
     onNavigateToAbout: () -> Unit,
+    onNavigateToStatistics: () -> Unit,
+    onNavigateToRetention: () -> Unit,
+    onNavigateToPolling: () -> Unit,
     viewModel: SettingsViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -222,6 +225,15 @@ fun SettingsScreen(
                     Text("Zarządzaj danymi lokalnymi, sesją i ustawieniami prywatności konta.", fontSize = 13.sp)
                     OutlinedButton(onClick = onNavigateToPrivacyData, modifier = Modifier.fillMaxWidth()) {
                         Text("Otwórz Prywatność i dane")
+                    }
+                    OutlinedButton(onClick = onNavigateToStatistics, modifier = Modifier.fillMaxWidth()) {
+                        Text("Informacje i statystyki")
+                    }
+                    OutlinedButton(onClick = onNavigateToRetention, modifier = Modifier.fillMaxWidth()) {
+                        Text("Retencja danych")
+                    }
+                    OutlinedButton(onClick = onNavigateToPolling, modifier = Modifier.fillMaxWidth()) {
+                        Text("Czestotliwosc odpytywania")
                     }
                     OutlinedButton(onClick = onNavigateToAbout, modifier = Modifier.fillMaxWidth()) {
                         Text("O aplikacji LibreCare")

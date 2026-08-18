@@ -9,14 +9,18 @@ import androidx.room.Room
 import com.libredisplay.BuildConfig
 import com.libredisplay.data.local.ALL_MIGRATIONS
 import com.libredisplay.data.local.LibreDisplayDatabase
+import com.libredisplay.data.api.OkHttpLibreLinkUpHttp
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.repository.AuthRepository
+import com.libredisplay.data.repository.DiagnosticsStatsRepository
 import com.libredisplay.data.repository.GlucoseSyncRepository
 import com.libredisplay.data.repository.GlucoseRepository
 import com.libredisplay.data.repository.LocalGlucoseHistoryRepository
+import com.libredisplay.data.repository.NetworkUsageTracker
 import com.libredisplay.data.repository.PrivacyRepository
 import com.libredisplay.data.repository.SettingsLoginStateStore
 import com.libredisplay.data.repository.SettingsRepository
+import com.libredisplay.data.storage.SecureStorage
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.sync.LibreDisplaySyncScheduler
 
@@ -38,6 +42,10 @@ class LibreDisplayApp : Application() {
         private set
     lateinit var privacyRepository: PrivacyRepository
         private set
+    lateinit var diagnosticsStatsRepository: DiagnosticsStatsRepository
+        private set
+    lateinit var networkUsageTracker: NetworkUsageTracker
+        private set
 
     override fun onCreate() {
         super.onCreate()
@@ -45,8 +53,16 @@ class LibreDisplayApp : Application() {
         DiagnosticLogger.startNewSession(this)
         installGlobalCrashHandler()
         settingsRepository = SettingsRepository(applicationContext)
+        val secureStorage = SecureStorage(applicationContext)
+        networkUsageTracker = NetworkUsageTracker(
+            storage = secureStorage,
+            appModeProvider = { settingsRepository.loadSettings().appMode }
+        )
         val initialSettings = settingsRepository.loadSettings()
-        productionClient = RetrofitLibreLinkUpClient(initialRegion = initialSettings.loginRegionSelection())
+        productionClient = RetrofitLibreLinkUpClient(
+            initialRegion = initialSettings.loginRegionSelection(),
+            http = OkHttpLibreLinkUpHttp(networkUsageTracker = networkUsageTracker)
+        )
         authRepository = AuthRepository(
             settingsProvider = { settingsRepository.loadSettings() },
             client = productionClient,
@@ -98,6 +114,15 @@ class LibreDisplayApp : Application() {
             authRepository = authRepository,
             localHistoryRepository = localGlucoseHistoryRepository,
             patientSettingsDao = database.patientSettingsDao()
+        )
+
+        diagnosticsStatsRepository = DiagnosticsStatsRepository(
+            context = applicationContext,
+            glucoseReadingDao = database.glucoseReadingDao(),
+            observedPersonDao = database.observedPersonDao(),
+            syncRunDao = database.syncRunDao(),
+            settingsRepository = settingsRepository,
+            secureStorage = secureStorage
         )
 
         LibreDisplaySyncScheduler.schedule(this)

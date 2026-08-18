@@ -26,8 +26,8 @@ import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -36,6 +36,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
 
 private val DashboardBackground = Color(0xFF101318)
@@ -50,16 +51,11 @@ private val AccentGreen = Color(0xFF43C59E)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun PollingFrequencyScreen(onNavigateBack: () -> Unit) {
-    val pollingOptions = listOf(
-        "5 minut" to "~10.5 MB / dzień",
-        "10 minut" to "~5.2 MB / dzień",
-        "15 minut" to "~3.5 MB / dzień",
-        "30 minut" to "~1.7 MB / dzień",
-        "60 minut" to "~0.9 MB / dzień"
-    )
-
-    val (selectedPolling, setSelectedPolling) = remember { mutableStateOf("15 minut") }
+fun PollingFrequencyScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: PollingFrequencyViewModel = viewModel()
+) {
+    val state by viewModel.uiState.collectAsState()
 
     Scaffold(
         containerColor = DashboardBackground,
@@ -107,7 +103,7 @@ fun PollingFrequencyScreen(onNavigateBack: () -> Unit) {
                     )
                     Spacer(modifier = Modifier.height(4.dp))
                     Text(
-                        "~2.1 MB / dzień",
+                        state.currentUsageLabel,
                         color = DashboardPrimaryText,
                         fontSize = 16.sp,
                         fontWeight = FontWeight.Bold
@@ -123,12 +119,12 @@ fun PollingFrequencyScreen(onNavigateBack: () -> Unit) {
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                pollingOptions.forEach { (frequency, dataUsage) ->
+                state.options.forEach { option ->
                     PollingOption(
-                        frequency = frequency,
-                        dataUsage = dataUsage,
-                        isSelected = frequency == selectedPolling,
-                        onSelect = { setSelectedPolling(frequency) }
+                        frequency = option.label,
+                        dataUsage = if (option.minutes == state.selectedMinutes) state.estimatedUsageLabel else "",
+                        isSelected = option.minutes == state.selectedMinutes,
+                        onSelect = { viewModel.savePolling(option.minutes) }
                     )
                 }
             }
@@ -147,7 +143,7 @@ fun PollingFrequencyScreen(onNavigateBack: () -> Unit) {
             }
 
             Text(
-                "Szacunkowe zużycie po zmianie: ~2.8 MB / dzień",
+                "Szacowane zuzycie po zmianie: ${state.estimatedUsageLabel}",
                 color = DashboardSecondaryText,
                 fontSize = 12.sp
             )

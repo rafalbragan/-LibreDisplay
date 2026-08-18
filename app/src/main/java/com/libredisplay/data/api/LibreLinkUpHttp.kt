@@ -4,6 +4,7 @@ import com.google.gson.Gson
 import com.google.gson.GsonBuilder
 import com.google.gson.JsonObject
 import com.google.gson.JsonParser
+import com.libredisplay.data.repository.NetworkUsageTracker
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.diagnostics.DiagnosticStatus
 import okhttp3.Interceptor
@@ -26,7 +27,8 @@ interface LibreLinkUpHttp {
 }
 
 class OkHttpLibreLinkUpHttp(
-    private val gson: Gson = GsonBuilder().disableHtmlEscaping().create()
+    private val gson: Gson = GsonBuilder().disableHtmlEscaping().create(),
+    private val networkUsageTracker: NetworkUsageTracker? = null
 ) : LibreLinkUpHttp {
 
     private val linkUpVersion: String = LibreLinkUpConfig.linkUpVersion()
@@ -141,6 +143,8 @@ class OkHttpLibreLinkUpHttp(
 
         val requestBody = bodyToString(request.body)
         val bodyContentType = request.body?.contentType()?.toString() ?: ""
+        val uploadedBytes = requestBody.toByteArray(Charsets.UTF_8).size.toLong()
+        networkUsageTracker?.recordRequest(uploadedBytes)
         DiagnosticLogger.logRequest(
             step = step,
             url = request.url.toString(),
@@ -218,6 +222,11 @@ class OkHttpLibreLinkUpHttp(
             responseBodyLooksLikeJson = responseBodyLooksLikeJson,
             responseDecoded = !responseBodyLooksLikeGzip && (responseWasGzipEncoded || initialBodyLooksLikeGzip)
         )
+        val downloadedBytes = when {
+            responseContentLength != null && responseContentLength > 0L -> responseContentLength
+            else -> previewBytes.size.toLong()
+        }
+        networkUsageTracker?.recordResponse(downloadedBytes = downloadedBytes, success = safeResponse.isSuccessful)
         DiagnosticStatus.setResponse(step = step, httpCode = safeResponse.code, responseBody = sanitizedBody)
 
         safeResponse

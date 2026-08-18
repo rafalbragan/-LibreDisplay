@@ -16,7 +16,9 @@ data class AppSettings(
     val showStatistics: Boolean = true,
     val kioskMode: Boolean = false,
     val appMode: AppMode = AppMode.NONE,
-    val useAuthV3: Boolean = true
+    val useAuthV3: Boolean = true,
+    val retentionHours: Int = 24 * 30,
+    val backgroundPollingMinutes: Int = 60
 ) {
     val useMock: Boolean
         get() = appMode == AppMode.DEMO

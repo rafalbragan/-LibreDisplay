@@ -6,6 +6,7 @@ import androidx.work.ExistingPeriodicWorkPolicy
 import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
+import com.libredisplay.data.repository.SettingsRepository
 import java.util.concurrent.TimeUnit
 
 object LibreDisplaySyncScheduler {
@@ -18,7 +19,8 @@ object LibreDisplaySyncScheduler {
             .setRequiresBatteryNotLow(true)
             .build()
 
-        val request = PeriodicWorkRequestBuilder<LibreDisplaySyncWorker>(6, TimeUnit.HOURS)
+        val pollingMinutes = SettingsRepository(context).loadSettings().backgroundPollingMinutes.coerceIn(15, 60)
+        val request = PeriodicWorkRequestBuilder<LibreDisplaySyncWorker>(pollingMinutes.toLong(), TimeUnit.MINUTES)
             .setConstraints(constraints)
             .build()
 

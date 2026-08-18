@@ -52,6 +52,7 @@ fun PrivacyDataScreen(
     onNavigateBack: () -> Unit,
     onNavigateToStart: () -> Unit,
     onNavigateToLogin: () -> Unit,
+    onNavigateToStatistics: () -> Unit,
     viewModel: PrivacyDataViewModel = viewModel()
 ) {
     val context = LocalContext.current
@@ -116,6 +117,13 @@ fun PrivacyDataScreen(
                 }
             ) {
                 Text("Polityka prywatności")
+            }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = onNavigateToStatistics
+            ) {
+                Text("Informacje i statystyki")
             }
 
             if (viewModel.isDemoMode) {

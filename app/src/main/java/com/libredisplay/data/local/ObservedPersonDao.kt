@@ -25,5 +25,8 @@ interface ObservedPersonDao {
 
     @Query("DELETE FROM observed_persons WHERE patientId LIKE 'demo-person-%'")
     suspend fun deleteDemoPeople(): Int
+
+    @Query("SELECT COUNT(*) FROM observed_persons WHERE isActive = 1 AND patientId NOT LIKE 'demo-person-%'")
+    suspend fun countActiveLivePersons(): Int
 }
 

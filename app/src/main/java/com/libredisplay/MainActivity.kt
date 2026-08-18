@@ -16,7 +16,10 @@ import com.libredisplay.ui.analytics.AnalyticsScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
 import com.libredisplay.ui.settings.AboutScreen
 import com.libredisplay.ui.settings.DiagnosticScreen
+import com.libredisplay.ui.settings.PollingFrequencyScreen
+import com.libredisplay.ui.settings.RetentionSettingsScreen
 import com.libredisplay.ui.settings.SettingsScreen
+import com.libredisplay.ui.settings.StatisticsScreen
 import com.libredisplay.ui.start.StartScreen
 import com.libredisplay.ui.theme.LibreDisplayTheme
 
@@ -27,7 +30,10 @@ enum class AppScreen {
     Settings,
     Diagnostics,
     PrivacyData,
-    About
+    About,
+    Statistics,
+    Retention,
+    Polling
 }
 
 class MainActivity : ComponentActivity() {
@@ -108,7 +114,10 @@ class MainActivity : ComponentActivity() {
                         },
                         onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
                         onNavigateToPrivacyData = { currentScreen = AppScreen.PrivacyData },
-                        onNavigateToAbout = { currentScreen = AppScreen.About }
+                        onNavigateToAbout = { currentScreen = AppScreen.About },
+                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics },
+                        onNavigateToRetention = { currentScreen = AppScreen.Retention },
+                        onNavigateToPolling = { currentScreen = AppScreen.Polling }
                     )
 
                     AppScreen.Diagnostics -> DiagnosticScreen(
@@ -128,10 +137,24 @@ class MainActivity : ComponentActivity() {
                             showLoginOnly = true
                             refreshNonce += 1
                             currentScreen = AppScreen.Settings
-                        }
+                        },
+                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
                     )
 
                     AppScreen.About -> AboutScreen(
+                        onNavigateBack = { currentScreen = AppScreen.Settings },
+                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
+                    )
+
+                    AppScreen.Statistics -> StatisticsScreen(
+                        onNavigateBack = { currentScreen = AppScreen.Settings }
+                    )
+
+                    AppScreen.Retention -> RetentionSettingsScreen(
+                        onNavigateBack = { currentScreen = AppScreen.Settings }
+                    )
+
+                    AppScreen.Polling -> PollingFrequencyScreen(
                         onNavigateBack = { currentScreen = AppScreen.Settings }
                     )
                 }

@@ -24,8 +24,8 @@ import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
+import androidx.compose.runtime.collectAsState
+import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -34,6 +34,7 @@ import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
 
 private val DashboardBackground = Color(0xFF101318)
@@ -48,42 +49,30 @@ private val AccentGreen = Color(0xFF43C59E)
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun RetentionSettingsScreen(onNavigateBack: () -> Unit) {
-    val retentionOptions = listOf(
-        "12 godzin",
-        "24 godziny",
-        "7 dni",
-        "30 dni",
-        "90 dni",
-        "12 miesięcy",
-        "24 miesiące"
-    )
+fun RetentionSettingsScreen(
+    onNavigateBack: () -> Unit,
+    viewModel: RetentionSettingsViewModel = viewModel()
+) {
+    val state by viewModel.uiState.collectAsState()
 
-    val (selectedRetention, setSelectedRetention) = remember { mutableStateOf("30 dni") }
-    val (showConfirmation, setShowConfirmation) = remember { mutableStateOf(false) }
-    val (pendingRetention, setPendingRetention) = remember { mutableStateOf<String?>(null) }
-
-    if (showConfirmation && pendingRetention != null) {
+    if (state.confirmRequired && state.pendingHours != null) {
+        val pendingLabel = state.options.firstOrNull { it.hours == state.pendingHours }?.label ?: state.pendingHours.toString()
         AlertDialog(
-            onDismissRequest = { setShowConfirmation(false) },
+            onDismissRequest = { viewModel.dismissConfirmation() },
             title = { Text("Potwierdzenie zmiany retencji") },
             text = {
                 Text(
-                    "Zmiana retencji na $pendingRetention usunie starsze lokalne odczyty z tego urządzenia. Nie usuwa danych z LibreLinkUp.\n\n" +
+                    "Zmiana retencji na $pendingLabel usunie starsze lokalne odczyty z tego urzadzenia. Nie usuwa danych z LibreLinkUp.\n\n" +
                     "Czy na pewno chcesz kontynuować?"
                 )
             },
             confirmButton = {
-                TextButton(onClick = {
-                    setShowConfirmation(false)
-                    setSelectedRetention(pendingRetention)
-                    setPendingRetention(null)
-                }) {
-                    Text("Potwierdź")
+                TextButton(onClick = { viewModel.applyPendingRetention() }) {
+                    Text("Potwierdz")
                 }
             },
             dismissButton = {
-                TextButton(onClick = { setShowConfirmation(false) }) {
+                TextButton(onClick = { viewModel.dismissConfirmation() }) {
                     Text("Anuluj")
                 }
             }
@@ -123,25 +112,24 @@ fun RetentionSettingsScreen(onNavigateBack: () -> Unit) {
             )
 
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                retentionOptions.forEach { option ->
+                state.options.forEach { option ->
                     RetentionOption(
-                        label = option,
-                        isSelected = option == selectedRetention,
+                        label = option.label,
+                        isSelected = option.hours == state.selectedHours,
                         onSelect = {
-                            setPendingRetention(option)
-                            setShowConfirmation(true)
+                            viewModel.requestRetentionChange(option.hours)
                         }
                     )
                 }
             }
 
             Text(
-                "Szacunkowy rozmiar bazy: ~45 MB",
+                "Szacowany rozmiar bazy po zmianie: ${state.estimatedSizeLabel}",
                 color = DashboardSecondaryText,
                 fontSize = 12.sp
             )
             Text(
-                "Szacunkowa liczba odczytów: 123 456",
+                "Szacowana liczba odczytow: ${state.estimatedReadingsLabel}",
                 color = DashboardSecondaryText,
                 fontSize = 12.sp
             )

@@ -119,7 +119,8 @@ class GlucoseSyncRepository(
                 retryAfterSeconds = (throwable as? LibreLinkUpHttpException)?.retryAfterSeconds ?: retryAfterSeconds
                 DiagnosticLogger.logException("GlucoseSyncRepository", throwable, "syncAllPersons failed")
             } finally {
-                localRepository.deleteReadingsOlderThan(days = 365, now = Instant.now())
+                val retentionHours = settingsProvider().retentionHours.coerceIn(12, 24 * 30 * 24)
+                localRepository.deleteReadingsOlderThanHours(hours = retentionHours.toLong(), now = Instant.now())
                 localRepository.saveSyncRun(
                     SyncRunEntity(
                         startedAt = startedAt,

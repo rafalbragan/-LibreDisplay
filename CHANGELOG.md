@@ -2,6 +2,56 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.4.0 - 2026-08-18
+
+### PL
+
+#### Dodano
+- Ekran `Informacje i statystyki` z realnymi danymi lokalnymi (baza, odczyty, zakres danych, synchronizacje)
+- Agregowane liczniki transferu sieciowego (pobrane/wyslane bajty, liczba zapytan, sukcesy/bledy)
+- Modele i logika diagnostyczna: `DatabaseStats`, `NetworkUsageStats`, estymacje retencji i odpytywania
+- Ustawienie `Retencja danych` (12 godzin do 24 miesiecy) z estymacja i potwierdzeniem skrocenia
+- Ustawienie `Czestotliwosc odpytywania` (15/30/60 min) z estymacja transferu
+- Dostep do statystyk z Ustawien, Prywatnosci i O aplikacji
+
+#### Zmieniono
+- Synchronizator WorkManager korzysta z ustawionej czestotliwosci odpytywania (bezpieczny zakres 15-60 min)
+- Cleanup retencji korzysta z konfiguracji godzinowej zamiast stalej wartosci 365 dni
+- Tryb demo nie zasila licznikow realnego transferu
+- Rozszerzono `AppSettings` o `retentionHours` i `backgroundPollingMinutes`
+
+#### Poprawiono
+- Usunieto ekranowe, sztuczne wartosci statystyk i zastapiono je danymi z repozytorium diagnostycznego
+- Ujednolicono komunikat dla niewystarczajacych danych: "Za malo danych do dokladnej estymacji"
+
+#### Testy
+- Dodano testy: `DiagnosticsStatsRepositoryTest`, `NetworkUsageTrackerTest`, `SettingsRepositoryDiagnosticsTest`
+- Testy jednostkowe: PASS
+
+### EN
+
+#### Added
+- `Informacje i statystyki` screen with real local stats (database, readings, data range, sync info)
+- Aggregated network usage counters (downloaded/uploaded bytes, request count, success/failure)
+- Diagnostics domain models: `DatabaseStats`, `NetworkUsageStats`, retention/polling estimators
+- `Data retention` setting (12 hours to 24 months) with estimate and confirmation on shortening
+- `Polling frequency` setting (15/30/60 min) with transfer estimate
+- Statistics access from Settings, Privacy and About screens
+
+#### Changed
+- WorkManager periodic sync now uses configured polling frequency (safe bounds 15-60 min)
+- Retention cleanup uses configured hourly retention instead of hardcoded 365 days
+- Demo mode traffic excluded from live network counters
+- `AppSettings` extended with `retentionHours` and `backgroundPollingMinutes`
+
+#### Fixed
+- Replaced mocked statistics values with diagnostics-repository driven values
+- Unified insufficient-data messaging: "Za malo danych do dokladnej estymacji"
+
+#### Tests
+- Added tests: `DiagnosticsStatsRepositoryTest`, `NetworkUsageTrackerTest`, `SettingsRepositoryDiagnosticsTest`
+- Unit tests: PASS
+
 ## 1.3.0 - 2026-08-18
 
 ### PL

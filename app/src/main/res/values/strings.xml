@@ -134,8 +134,20 @@
     <string name="database_oldest_reading">Najstarszy odczyt</string>
     <string name="database_newest_reading">Najnowszy odczyt</string>
     <string name="database_growth">Przyrost bazy</string>
+    <string name="database_growth_week">Szacowany przyrost na tydzien</string>
+    <string name="database_growth_month">Szacowany przyrost na miesiac</string>
+    <string name="database_available_range">Dostepny zakres danych</string>
     <string name="network_downloaded">Dane pobrane</string>
     <string name="network_uploaded">Dane wyslane</string>
+    <string name="network_downloaded_total">Dane pobrane lacznie</string>
+    <string name="network_uploaded_total">Dane wyslane lacznie</string>
+    <string name="network_downloaded_day">Srednio pobrane na dzien</string>
+    <string name="network_uploaded_day">Srednio wyslane na dzien</string>
+    <string name="network_downloaded_week">Srednio pobrane na tydzien</string>
+    <string name="network_uploaded_week">Srednio wyslane na tydzien</string>
+    <string name="network_downloaded_month">Srednio pobrane na miesiac</string>
+    <string name="network_uploaded_month">Srednio wyslane na miesiac</string>
+    <string name="network_sync_count">Liczba synchronizacji</string>
     <string name="network_average_per_week">Srednie na tydzien</string>
     <string name="network_average_per_month">Srednie na miesiac</string>
     <string name="network_last_sync">Ostatnia synchronizacja</string>
@@ -152,6 +164,8 @@
     <string name="retention_24_months">24 miesiace</string>
     <string name="retention_estimated_size">Szacunkowy rozmiar bazy</string>
     <string name="retention_estimated_readings">Szacunkowa liczba odczytow</string>
+    <string name="retention_current">Obecna retencja</string>
+    <string name="retention_apply">Zastosuj retencje</string>
     <string name="retention_warning">Zmiana retencji na %1$s usunie starsze lokalne odczyty z tego urzadzenia. Nie usuwa danych z LibreLinkUp.</string>
     <string name="retention_confirm_delete">Potwierdzam usuniecie starszych odczytow</string>
     <string name="retention_change_requires_confirmation">Wymagane potwierdzenie przed usunieciem</string>
@@ -160,6 +174,8 @@
     <string name="polling_frequency_description">Minimalna czestotliwosc odpytywania danych z LibreLinkUp</string>
     <string name="polling_current_usage">Obecne zuzycie danych</string>
     <string name="polling_estimated_usage">Szacowane zuzycie po zmianie</string>
+    <string name="polling_current_frequency">Obecna czestotliwosc</string>
+    <string name="polling_after_change">Po zmianie</string>
     <string name="polling_battery_warning">Zuzycie baterii moze wzrosnac</string>
     <string name="polling_data_per_day">MB / dzien</string>
     <string name="polling_not_implemented">Tlo odpytywanie nie jest w pelni zaimplementowane</string>
@@ -173,5 +189,7 @@
     <string name="cancel">Anuluj</string>
     <string name="delete">Usun</string>
      <string name="apply">Zastosuj</string>
+      <string name="insufficient_estimation_data">Za malo danych do dokladnej estymacji</string>
+      <string name="demo_transfer_exclusion">Tryb demo uzywa przykladowych danych. Statystyki transferu nie obejmuja danych demo.</string>
 </resources>
 

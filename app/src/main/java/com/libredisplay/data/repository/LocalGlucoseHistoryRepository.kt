@@ -76,6 +76,11 @@ class LocalGlucoseHistoryRepository(
         return glucoseReadingDao.deleteOlderThan(cutoff)
     }
 
+    suspend fun deleteReadingsOlderThanHours(hours: Long, now: Instant = Instant.now()): Int {
+        val cutoff = now.minus(hours, ChronoUnit.HOURS)
+        return glucoseReadingDao.deleteOlderThan(cutoff)
+    }
+
     suspend fun deleteLocalGlucoseHistory(): Int = glucoseReadingDao.deleteAllReadings()
 
     suspend fun deleteReadingsForPerson(patientId: String): Int = glucoseReadingDao.deleteReadingsForPerson(patientId)
