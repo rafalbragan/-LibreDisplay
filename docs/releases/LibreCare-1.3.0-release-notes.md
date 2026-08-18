@@ -3,7 +3,7 @@
 **Version:** 1.3.0 (versionCode 4 → 5)  
 **Release Date:** 2026-08-18  
 **Branch:** master  
-**Git Commit:** (to be updated after push)
+**Git Commit:** 9b73343
 
 ---
 
