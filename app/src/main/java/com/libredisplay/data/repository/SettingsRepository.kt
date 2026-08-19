@@ -5,6 +5,7 @@ import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.HbA1cSettings
+import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.storage.SecureStorage
 import com.libredisplay.diagnostics.DiagnosticLogger
 import java.time.LocalDate
@@ -206,6 +207,20 @@ class SettingsRepository(context: Context) {
             "SettingsRepository",
             "selectedPatientId saved patientIdPrefix=${normalizedPatientId.take(6)}"
         )
+    }
+
+    fun loadQuickMetricsOrder(): List<QuickMetricId> {
+        val raw = storage.getString(SecureStorage.KEY_QUICK_METRICS_ORDER)
+        if (raw.isBlank()) return QuickMetricId.DEFAULT_ORDER
+        val parsed = raw.split(',')
+            .mapNotNull { QuickMetricId.fromStorageId(it.trim()) }
+        return QuickMetricId.normalizeOrder(parsed)
+    }
+
+    fun saveQuickMetricsOrder(order: List<QuickMetricId>) {
+        val normalized = QuickMetricId.normalizeOrder(order)
+        val serialized = normalized.joinToString(",") { it.storageId }
+        storage.putString(SecureStorage.KEY_QUICK_METRICS_ORDER, serialized)
     }
 
     fun loadHbA1cSettings(patientId: String?): HbA1cSettings {

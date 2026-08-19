@@ -7,6 +7,7 @@ import com.libredisplay.LibreDisplayApp
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.HbA1cSettings
+import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,9 +32,40 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    private val _quickMetricsOrder = MutableStateFlow(settingsRepository.loadQuickMetricsOrder())
+    val quickMetricsOrder: StateFlow<List<QuickMetricId>> = _quickMetricsOrder.asStateFlow()
+
     fun reloadFromRepository() {
         _settings.value = settingsRepository.loadSettings()
         _hba1cSettings.value = settingsRepository.loadHbA1cSettings(_settings.value.selectedPatientId)
+        _quickMetricsOrder.value = settingsRepository.loadQuickMetricsOrder()
+    }
+
+    fun moveQuickMetricUp(metricId: QuickMetricId) {
+        val current = _quickMetricsOrder.value.toMutableList()
+        val index = current.indexOf(metricId)
+        if (index <= 0) return
+        current.removeAt(index)
+        current.add(index - 1, metricId)
+        persistQuickMetricOrder(current)
+    }
+
+    fun moveQuickMetricDown(metricId: QuickMetricId) {
+        val current = _quickMetricsOrder.value.toMutableList()
+        val index = current.indexOf(metricId)
+        if (index == -1 || index >= current.lastIndex) return
+        current.removeAt(index)
+        current.add(index + 1, metricId)
+        persistQuickMetricOrder(current)
+    }
+
+    fun setQuickMetricsOrder(order: List<QuickMetricId>) {
+        persistQuickMetricOrder(order)
+    }
+
+    private fun persistQuickMetricOrder(order: List<QuickMetricId>) {
+        settingsRepository.saveQuickMetricsOrder(order)
+        _quickMetricsOrder.value = settingsRepository.loadQuickMetricsOrder()
     }
 
     fun onEmailChange(value: String) {

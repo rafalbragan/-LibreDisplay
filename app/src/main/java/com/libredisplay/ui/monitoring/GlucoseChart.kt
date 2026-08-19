@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
@@ -66,7 +67,7 @@ internal fun calculateChartArea(
     canvasHeight: Float,
     leftPadding: Float = 72f,
     topPadding: Float = 18f,
-    rightPadding: Float = 20f,
+    rightPadding: Float = 44f,
     bottomPadding: Float = 44f
 ): ChartArea? {
     if (!canvasWidth.isFinite() || !canvasHeight.isFinite() || canvasWidth <= 0f || canvasHeight <= 0f) {
@@ -207,7 +208,7 @@ internal fun findNearestHistoryPointMatch(
         canvasHeight = canvasHeight,
         leftPadding = 72f,
         topPadding = 18f,
-        rightPadding = 28f,
+        rightPadding = 44f,
         bottomPadding = 44f
     ) ?: return null
     val prepared = prepareChartData(points)
@@ -441,7 +442,7 @@ fun GlucoseChart(
             canvasHeight = size.height,
             leftPadding = 72f,
             topPadding = 18f,
-            rightPadding = 28f,
+            rightPadding = 44f,
             bottomPadding = 44f
         )
         if (area == null) {
@@ -486,11 +487,11 @@ fun GlucoseChart(
             )
         }
 
-        drawBand(chartTop, highY, LibreCareColors.VeryHighBand)
-        drawBand(highY, inRangeHighY, LibreCareColors.HighBand)
-        drawBand(inRangeHighY, inRangeLowY, LibreCareColors.InRangeBand)
-        drawBand(inRangeLowY, lowY, LibreCareColors.LowBand)
-        drawBand(lowY, chartBottom, LibreCareColors.VeryLowBand)
+        drawBand(chartTop, highY, LibreCareColors.VeryHighBand.copy(alpha = 0.18f))
+        drawBand(highY, inRangeHighY, LibreCareColors.HighBand.copy(alpha = 0.16f))
+        drawBand(inRangeHighY, inRangeLowY, LibreCareColors.InRangeBand.copy(alpha = 0.14f))
+        drawBand(inRangeLowY, lowY, LibreCareColors.LowBand.copy(alpha = 0.16f))
+        drawBand(lowY, chartBottom, LibreCareColors.VeryLowBand.copy(alpha = 0.18f))
 
         val plottedPoints = sorted.mapNotNull { point ->
             val x = xFor(point.epochMillis.toFloat())
@@ -507,40 +508,14 @@ fun GlucoseChart(
             plottedPoints.forEachIndexed { index, (_, position) ->
                 if (index == 0) linePath.moveTo(position.x, position.y) else linePath.lineTo(position.x, position.y)
             }
-            drawPath(path = linePath, color = Color(0xFF7DD3FC), style = Stroke(width = 5f))
+            drawPath(path = linePath, color = Color(0xFF55C8F2), style = Stroke(width = 3f))
         }
 
         if (plottedPoints.size == 1) {
             DiagnosticLogger.logInfo("GlucoseChart", "CHART SINGLE POINT mode=true")
         }
 
-        plottedPoints.forEach { (_, position) ->
-            drawCircle(
-                color = Color.White,
-                radius = 4f,
-                center = position
-            )
-        }
-
-        val extremes = calculateChartExtremes(visiblePoints)
-        val extremePairs = mutableListOf<Pair<GlucoseHistoryPoint, Color>>()
-        extremes.minimumReading?.let { extremePairs += it to Color(0xFFFB7185) }
-        extremes.maximumReading?.let { extremePairs += it to Color(0xFF38BDF8) }
-        extremePairs.forEach { (extremePoint, accent) ->
-            val marker = plottedPoints.firstOrNull { (point, _) -> point.epochMillis == extremePoint.timestamp.toEpochMilli() } ?: return@forEach
-            drawCircle(color = accent, radius = 8f, center = marker.second)
-            drawCircle(color = Color(0xFF0F172A), radius = 4f, center = marker.second)
-            drawSafeTextLabel(
-                text = if (extremePoint == extremes.minimumReading) "Min" else "Max",
-                style = valueStyle.copy(color = accent, fontSize = 10.sp),
-                preferredTopLeft = Offset(marker.second.x + 6f, (marker.second.y - 14f).coerceIn(chartTop, chartBottom - 12f)),
-                boundsLeft = chartLeft,
-                boundsTop = chartTop,
-                boundsRight = chartRight,
-                boundsBottom = chartBottom,
-                textMeasurer = textMeasurer
-            )
-        }
+        // Marker remains only for selected point to keep the chart compact and readable.
 
         val yLabels = selectYAxisLabels(yScaleMin, targetLow, targetHigh, yScaleMax, maxLabels = 6)
         DiagnosticLogger.logInfo("GlucoseChart", "CHART Y AXIS labels=$yLabels")
@@ -606,68 +581,46 @@ fun GlucoseChart(
             drawCircle(color = Color.White, radius = 10f, center = selectedOffset)
             drawCircle(color = Color(0xFF0F172A), radius = 6f, center = selectedOffset)
 
-            val tooltipText = buildString {
-                append(selectedChartPoint.value)
-                append(" mg/dL • ")
-                append(
-                    PolishDateTimeFormatter.formatChartAxisLabel(
-                        instant = java.time.Instant.ofEpochMilli(selectedChartPoint.epochMillis),
-                        visibleDuration = visibleDuration,
-                        zoneId = zoneId
-                    )
-                )
+            val valueText = "${selectedChartPoint.value} mg/dL"
+            val timeText = PolishDateTimeFormatter.formatTime(
+                instant = java.time.Instant.ofEpochMilli(selectedChartPoint.epochMillis),
+                zoneId = zoneId
+            )
+
+            val valueLayout = textMeasurer.measure(
+                text = AnnotatedString(valueText),
+                style = valueStyle,
+                softWrap = false,
+                maxLines = 1
+            )
+            val timeLayout = textMeasurer.measure(
+                text = AnnotatedString(timeText),
+                style = labelStyle,
+                softWrap = false,
+                maxLines = 1
+            )
+
+            val tooltipWidth = maxOf(valueLayout.size.width, timeLayout.size.width).toFloat() + 24f
+            val tooltipHeight = (valueLayout.size.height + timeLayout.size.height).toFloat() + 18f
+            val preferredX = selectedOffset.x + 12f
+            val tooltipX = if (preferredX + tooltipWidth <= size.width - 8f) {
+                preferredX
+            } else {
+                (selectedOffset.x - tooltipWidth - 12f).coerceAtLeast(chartLeft + 4f)
             }
-            val labelTopLeft = placeCurrentValueLabel(
-                point = selectedOffset,
-                chartLeft = chartLeft,
-                chartRight = chartRight,
-                topY = (selectedOffset.y - 42f).coerceIn(chartTop, chartBottom - 18f)
-            )
-            drawSafeTextLabel(
-                text = tooltipText,
-                style = valueStyle,
-                preferredTopLeft = labelTopLeft,
-                boundsLeft = chartLeft,
-                boundsTop = chartTop,
-                boundsRight = chartRight,
-                boundsBottom = chartBottom,
-                textMeasurer = textMeasurer
-            )
-        }
+            val tooltipY = (selectedOffset.y - tooltipHeight - 10f)
+                .coerceIn(chartTop + 4f, chartBottom - tooltipHeight - 4f)
 
-        if (selectedMarker == null) plottedPoints.lastOrNull()?.let { (latestPoint, latestOffset) ->
-            DiagnosticLogger.logInfo(
-                "GlucoseChart",
-                "CHART CURRENT POINT value=${latestPoint.value} timestamp=${java.time.Instant.ofEpochMilli(latestPoint.epochMillis)}"
+            drawRoundRect(
+                color = Color(0xFF1B2940),
+                topLeft = Offset(tooltipX, tooltipY),
+                size = Size(tooltipWidth, tooltipHeight),
+                cornerRadius = CornerRadius(12f, 12f)
             )
-
-            val emphasized = selectedPoint?.timestamp?.toEpochMilli() == latestPoint.epochMillis
-            drawCircle(
-                color = Color.White,
-                radius = if (emphasized) 10f else 8f,
-                center = latestOffset
-            )
-            drawCircle(
-                color = Color(0xFF0F172A),
-                radius = if (emphasized) 6f else 4f,
-                center = latestOffset
-            )
-
-            val labelTopLeft = placeCurrentValueLabel(
-                point = latestOffset,
-                chartLeft = chartLeft,
-                chartRight = chartRight,
-                topY = (latestOffset.y - 34f).coerceIn(chartTop, chartBottom - 18f)
-            )
-            drawSafeTextLabel(
-                text = "${latestPoint.value} mg/dL",
-                style = valueStyle,
-                preferredTopLeft = labelTopLeft,
-                boundsLeft = chartLeft,
-                boundsTop = chartTop,
-                boundsRight = chartRight,
-                boundsBottom = chartBottom,
-                textMeasurer = textMeasurer
+            drawText(valueLayout, topLeft = Offset(tooltipX + 12f, tooltipY + 6f))
+            drawText(
+                timeLayout,
+                topLeft = Offset(tooltipX + 12f, tooltipY + 8f + valueLayout.size.height.toFloat())
             )
         }
 

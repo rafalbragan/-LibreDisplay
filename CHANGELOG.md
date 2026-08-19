@@ -2,6 +2,76 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.6.0 - 2026-08-19
+
+### PL
+
+#### Dodano
+- Ekran `NfzDetailsScreen` jako pełny ekran szczegółów refundacji NFZ (zamiast nieprzewijalnego dialogu).
+- Mechanizm otwierania `Ustawień` bezpośrednio w sekcji metryk HbA1c/GMI (`SettingsFocusSection.HBA1C`).
+- Personalizowaną kolejność kafelków `Quick Metrics` (long press + drag & drop na Home) z zapisem lokalnym.
+- Alternatywną, dostępnościową zmianę kolejności metryk w `Ustawieniach` (przyciski góra/dół).
+
+#### Zmieniono
+- Home: karta glikemii używa przebudowanego komponentu `RedesignedCurrentGlucoseCard` z medycznym alertem inline.
+- Home: `Quick Metrics` korzysta z panelu `ImprovedQuickMetricsPanel` i akcji `Zmień metryki` prowadzącej do odpowiedniej sekcji Ustawień.
+- Home: dolna nawigacja pokazuje wyłącznie działające pozycje: `Główna`, `Historia`, `Więcej`.
+- History: selektor zakresu jest jednoliniowy i przewijany poziomo.
+- History: sekcja `Notatki i zdarzenia` została ukryta do czasu pełnej implementacji funkcji.
+- History: podsumowanie `MIN / ŚREDNIA / MAX` prezentowane jako kompaktowy wiersz.
+- History chart: subtelniejsze pasma zakresów, cieńsza linia, jeden marker zaznaczenia oraz tooltip bez ucinania przy prawej krawędzi.
+
+#### Poprawiono
+- Ujednolicono próg starych danych glikemii do 15 minut.
+- Android Back: na Home pojawia się potwierdzenie zamknięcia aplikacji, a na pod-ekranach cofanie wraca o jeden poziom.
+
+#### Testy
+- `./gradlew compileDebugKotlin --no-configuration-cache`: PASS
+- `./gradlew testDebugUnitTest --no-configuration-cache`: PASS
+- `./gradlew lint --no-configuration-cache`: PASS
+- `./gradlew assembleDebug --no-configuration-cache`: PASS
+- `./gradlew assembleRelease --no-configuration-cache`: PASS
+- `./gradlew bundleRelease --no-configuration-cache`: PASS
+
+#### Artefakty
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (22.6 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
+### EN
+
+#### Added
+- New `NfzDetailsScreen` full-screen NFZ reimbursement details view (replacing the non-scrollable dialog).
+- Deep-link style Settings focus for HbA1c/GMI metrics section (`SettingsFocusSection.HBA1C`).
+- User-customizable `Quick Metrics` tile order (long-press drag & drop on Home) with local persistence.
+- Accessibility fallback metric reordering in `Settings` (move up/down controls).
+
+#### Changed
+- Home: current glucose now uses `RedesignedCurrentGlucoseCard` with integrated inline medical alert.
+- Home: quick metrics use `ImprovedQuickMetricsPanel` with a working `Change metrics` action to Settings.
+- Home: bottom navigation now keeps only working destinations: `Home`, `History`, `More`.
+- History: time range selector is now single-row and horizontally scrollable.
+- History: `Notes and events` is hidden until the feature is fully implemented.
+- History: `MIN / AVERAGE / MAX` is displayed in a compact row.
+- History chart: subtler range bands, thinner line, single selected marker, and tooltip clipping fix on the right edge.
+
+#### Fixed
+- Unified stale-data threshold to 15 minutes.
+- Android Back behavior: Home shows an exit confirmation, nested screens return one level up.
+
+#### Tests
+- `./gradlew compileDebugKotlin --no-configuration-cache`: PASS
+- `./gradlew testDebugUnitTest --no-configuration-cache`: PASS
+- `./gradlew lint --no-configuration-cache`: PASS
+- `./gradlew assembleDebug --no-configuration-cache`: PASS
+- `./gradlew assembleRelease --no-configuration-cache`: PASS
+- `./gradlew bundleRelease --no-configuration-cache`: PASS
+
+#### Artifacts
+- Debug APK: `app/build/outputs/apk/debug/app-debug.apk` (22.6 MiB)
+- Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
+- Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.2 MiB)
+
 ## 1.5.0 - 2026-08-18
 
 ### PL

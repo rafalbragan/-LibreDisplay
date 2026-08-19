@@ -21,15 +21,12 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AddCircle
 import androidx.compose.material.icons.automirrored.outlined.ShowChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Refresh
-import androidx.compose.material.icons.filled.NotificationsNone
 import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material3.Badge
 import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Badge
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.CircularProgressIndicator
@@ -42,7 +39,6 @@ import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
-import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -83,8 +79,6 @@ private val AccentCritical = LibreCareColors.AccentPurple
 private enum class DashboardNavItem(val label: String) {
     GLOWNA("Główna"),
     HISTORIA("Historia"),
-    DODAJ("Dodaj"),
-    ALARMY("Alarmy"),
     WIECEJ("Więcej")
 }
 
@@ -93,6 +87,7 @@ private enum class DashboardNavItem(val label: String) {
 fun MonitoringScreen(
     refreshNonce: Int,
     onNavigateToSettings: () -> Unit,
+    onNavigateToMetricSettings: () -> Unit = onNavigateToSettings,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToAnalytics: () -> Unit = onNavigateToDiagnostics,
     onSwitchToLiveMode: () -> Unit,
@@ -100,6 +95,7 @@ fun MonitoringScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
+    var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
 
     LaunchedEffect(refreshNonce) {
@@ -121,17 +117,21 @@ fun MonitoringScreen(
         return
     }
 
-    Scaffold(
-        containerColor = DashboardBackground,
-        topBar = {
-            DashboardTopBar(
-                connectionState = state.connectionState,
-                isDemoMode = state.isDemoMode,
-                onRefresh = viewModel::refreshNow,
-                onOpenHistory = openHistory,
-                onOpenSettings = onNavigateToSettings
-            )
-        },
+    if (nfzDetailsContext != null) {
+        NfzDetailsScreen(
+            context = nfzDetailsContext!!,
+            onNavigateBack = { nfzDetailsContext = null }
+        )
+        return
+    }
+
+     Scaffold(
+         containerColor = DashboardBackground,
+         topBar = {
+             LibreTopBar(
+                 onNavigateToSettings = onNavigateToSettings
+             )
+         },
         bottomBar = {
             DashboardBottomNavigation(
                 onOpenHistory = openHistory,
@@ -155,6 +155,13 @@ fun MonitoringScreen(
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 12.dp, vertical = 10.dp)
                     Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        // Data freshness and sensor status bar (replaces status shown in cards)
+                        DataFreshnessAndSensorStatusBar(
+                            lastReadingAt = reading?.timestamp ?: state.lastMeasurementTimestamp,
+                            reading = reading,
+                            modifier = Modifier.padding(horizontal = 0.dp)
+                        )
+
                         if (state.isDemoMode) {
                             DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                         }
@@ -174,19 +181,66 @@ fun MonitoringScreen(
                         )
 
                         if (reading != null) {
-                            CurrentGlucoseHeroCard(reading, state.settings.targetLow, state.settings.targetHigh)
-                            CurrentGlucoseWarningCard(reading, state.settings.targetLow, state.settings.targetHigh)
-                            DashboardMetricTilesRow(state = state, reading = reading)
-                            GlucoseChartCard(
-                                state = state,
-                                reading = reading,
-                                onOpenHistory = openHistory
-                            )
-                            NfzStatusCompactCard(state = state, reading = reading)
-                            LastSyncFooter(state.lastSuccessfulFetchAt)
-                        } else {
-                            EmptyChartState()
-                        }
+                             // Redesigned glucose card (replaces old CurrentGlucoseHeroCard + CurrentGlucoseWarningCard)
+                             RedesignedCurrentGlucoseCard(
+                                 reading = reading,
+                                 targetLow = state.settings.targetLow,
+                                 targetHigh = state.settings.targetHigh
+                             )
+
+                             // Quick metrics panel with persisted user-defined order
+                             val metrics = buildDashboardMetrics(reading, state.settings.targetLow, state.settings.targetHigh)
+                             val metricTiles = buildQuickMetricTiles(
+                                 belowDuration = metrics.belowDuration,
+                                 belowPercent = metrics.belowPercent,
+                                 inRangeDuration = metrics.inRangeDuration,
+                                 inRangePercent = metrics.inRangePercent,
+                                 aboveDuration = metrics.aboveDuration,
+                                 abovePercent = metrics.abovePercent,
+                                 gmiValue = metrics.gmiValue,
+                                 hba1cValue = metrics.hba1cValue
+                             )
+                             ImprovedQuickMetricsPanel(
+                                 tiles = metricTiles,
+                                 orderedIds = state.quickMetricsOrder,
+                                 onOrderChanged = viewModel::saveQuickMetricsOrder
+                             )
+                             TextButton(
+                                 onClick = onNavigateToMetricSettings,
+                                 modifier = Modifier.align(Alignment.End)
+                             ) {
+                                 Text("Zmień metryki", color = AccentGreen)
+                             }
+
+                             // History preview chart
+                             GlucoseChartCard(
+                                 state = state,
+                                 reading = reading,
+                                 onOpenHistory = openHistory
+                             )
+
+                             // NFZ Refund status
+                             NfzStatusCompactCard(
+                                 state = state,
+                                 reading = reading,
+                                 onOpenDetails = { assessment, summary, attentionCount ->
+                                     nfzDetailsContext = NfzDetailsContext(
+                                         assessment = assessment,
+                                         summary = summary,
+                                         attentionCount = attentionCount,
+                                         totalCriteriaCount = assessment.criteria.size,
+                                         selectedHomeRangeDays = state.timeRange.durationDays,
+                                         selectedHomeRangeLabel = compactDashboardRangeLabel(
+                                             state.timeRange,
+                                             state.lastMeasurementTimestamp
+                                         )
+                                     )
+                                 }
+                             )
+                             LastSyncFooter(state.lastSuccessfulFetchAt)
+                         } else {
+                             EmptyChartState()
+                         }
                         ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
                     }
                 }
@@ -221,39 +275,6 @@ fun MonitoringScreen(
 }
 
 @OptIn(ExperimentalMaterial3Api::class)
-@Composable
-private fun DashboardTopBar(
-    connectionState: ConnectionState,
-    isDemoMode: Boolean,
-    onRefresh: () -> Unit,
-    onOpenHistory: () -> Unit,
-    onOpenSettings: () -> Unit
-) {
-    TopAppBar(
-        title = {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Text(stringResource(R.string.app_name), fontWeight = FontWeight.SemiBold, color = DashboardPrimaryText)
-                if (isDemoMode) {
-                    Badge(containerColor = AccentWarning.copy(alpha = 0.24f), contentColor = AccentWarning) {
-                        Text("DEMO", fontSize = 10.sp)
-                    }
-                }
-            }
-        },
-        actions = {
-            ConnectionStatusDot(connectionState)
-            IconButton(onClick = onRefresh, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Refresh, contentDescription = "Odśwież dane", tint = DashboardPrimaryText)
-            }
-            IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = "Historia glikemii", tint = DashboardPrimaryText)
-            }
-            IconButton(onClick = onOpenSettings, modifier = Modifier.size(48.dp)) {
-                Icon(Icons.Default.Settings, contentDescription = "Ustawienia", tint = DashboardPrimaryText)
-            }
-        }
-    )
-}
 
 @Composable
 private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
@@ -273,20 +294,6 @@ private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
 }
 
 
-@Composable
-private fun ConnectionStatusDot(connectionState: ConnectionState) {
-    val (label, color) = when (connectionState) {
-        ConnectionState.Connected -> "Połączono" to AccentGreen
-        ConnectionState.Connecting -> "Łączenie" to AccentWarning
-        else -> "Offline" to AccentRed
-    }
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier.padding(end = 4.dp).semantics { contentDescription = "Status połączenia: $label" }
-    ) {
-        Text("●", color = color, fontSize = 12.sp)
-    }
-}
 
 @Composable
 private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
@@ -543,8 +550,11 @@ private fun SensorActivityCard(reading: GlucoseReading, modifier: Modifier = Mod
 }
 
 @Composable
-private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReading) {
-    var showInfo by remember { mutableStateOf(false) }
+private fun NfzStatusCompactCard(
+    state: MonitoringUiState,
+    reading: GlucoseReading,
+    onOpenDetails: (NfzAssessment, NfzStatusSummaryUi, Int) -> Unit
+) {
     val profile = remember(state.labHbA1cPercent) {
         NfzPatientProfile(
             patientGroup = NfzPatientGroup.UNKNOWN,
@@ -562,6 +572,9 @@ private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReadi
         )
     }
     val summary = remember(assessment) { assessment.toStatusSummaryUi() }
+    val attentionCount = remember(assessment) {
+        assessment.criteria.count { it.status == NfzCriterionStatus.NOT_MET || it.status == NfzCriterionStatus.UNKNOWN }
+    }
 
     val color = when (summary.status) {
         NfzStatus.GREEN -> AccentGreen
@@ -575,66 +588,27 @@ private fun NfzStatusCompactCard(state: MonitoringUiState, reading: GlucoseReadi
         shape = RoundedCornerShape(18.dp),
         modifier = Modifier
             .fillMaxWidth()
+            .clickable { onOpenDetails(assessment, summary, attentionCount) }
             .semantics { contentDescription = "Status NFZ: ${assessment.headline}" }
     ) {
         Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text("Refundacja NFZ", color = DashboardSecondaryText, fontSize = 12.sp)
                 Spacer(modifier = Modifier.weight(1f))
-                MetricStatusBadge(
-                    text = when (summary.status) {
-                        NfzStatus.GREEN -> "Status dobry"
-                        NfzStatus.YELLOW -> "Wymaga uwagi"
-                        NfzStatus.RED -> "Niespełnione"
-                        NfzStatus.GRAY -> "Za mało danych"
-                    },
-                    color = color
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                IconButton(
-                    onClick = { showInfo = true },
-                    modifier = Modifier.semantics { contentDescription = "Informacje o warunkach refundacji NFZ" }
-                ) {
-                    Icon(Icons.Default.Info, contentDescription = null, tint = DashboardSecondaryText)
-                }
+                Icon(Icons.Default.Info, contentDescription = null, tint = DashboardSecondaryText)
             }
-            Text(summary.headline, color = color, fontSize = 14.sp, fontWeight = FontWeight.SemiBold)
-            Text("Szczegóły kryteriów i okres oceny znajdziesz pod ikoną informacji.", color = DashboardMutedText, fontSize = 12.sp)
+            Text(
+                text = if (attentionCount > 0) {
+                    "⚠ $attentionCount kryteria wymagają uwagi"
+                } else {
+                    "Brak kryteriów wymagających uwagi"
+                },
+                color = if (attentionCount > 0) AccentWarning else AccentGreen,
+                fontSize = 14.sp,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text("Sprawdź szczegóły >", color = color, fontSize = 12.sp)
         }
-    }
-
-    if (showInfo) {
-        AlertDialog(
-            onDismissRequest = { showInfo = false },
-            title = { Text("Warunki refundacji NFZ") },
-            text = {
-                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text("Status", fontWeight = FontWeight.Bold)
-                    Text(summary.headline)
-                    Text("Okres oceny", fontWeight = FontWeight.Bold)
-                    Text(summary.details)
-                    Text("Kryteria", fontWeight = FontWeight.Bold)
-                    assessment.criteria.forEach { criterion ->
-                        Text("• ${criterion.condition}: ${nfzStatusLabel(criterion.status)}")
-                    }
-                    Text("Dlaczego niespełnione", fontWeight = FontWeight.Bold)
-                    if (summary.keyReasons.isEmpty()) {
-                        Text("Brak głównych powodów do wyświetlenia.")
-                    } else {
-                        summary.keyReasons.forEach { Text("• $it") }
-                    }
-                    Text("Zalecenia", fontWeight = FontWeight.Bold)
-                    summary.keyRecommendations.forEach { Text("• $it") }
-                    Text("Zastrzeżenie", fontWeight = FontWeight.Bold)
-                    Text("Aplikacja nie zastępuje decyzji lekarza ani NFZ.")
-                }
-            },
-            confirmButton = {
-                TextButton(onClick = { showInfo = false }) {
-                    Text("Rozumiem")
-                }
-            }
-        )
     }
 }
 
@@ -732,8 +706,6 @@ private fun DashboardBottomNavigation(
     ) {
         DashboardBottomNavItem(true, DashboardNavItem.GLOWNA.label, Icons.Default.Home) {}
         DashboardBottomNavItem(false, DashboardNavItem.HISTORIA.label, Icons.AutoMirrored.Outlined.ShowChart, onOpenHistory)
-        DashboardBottomNavItem(false, DashboardNavItem.DODAJ.label, Icons.Default.AddCircle) {}
-        DashboardBottomNavItem(false, DashboardNavItem.ALARMY.label, Icons.Default.NotificationsNone) {}
         DashboardBottomNavItem(false, DashboardNavItem.WIECEJ.label, Icons.Default.Settings, onOpenMore)
     }
 }

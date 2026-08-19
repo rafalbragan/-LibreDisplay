@@ -1,7 +1,10 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 import androidx.compose.foundation.layout.FlowRow
@@ -9,9 +12,11 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
@@ -150,19 +155,17 @@ internal fun FullScreenGlucoseChartScreen(
             }
 
             if (extremes.minimumReading != null && extremes.maximumReading != null) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    ChartSummaryCard(
-                        title = "Min",
-                        value = "${extremes.minimumReading.value} mg/dL",
-                        subtitle = PolishDateTimeFormatter.formatAbsolute(extremes.minimumReading.timestamp, zoneId),
-                        modifier = Modifier.weight(1f)
-                    )
-                    ChartSummaryCard(
-                        title = "Max",
-                        value = "${extremes.maximumReading.value} mg/dL",
-                        subtitle = PolishDateTimeFormatter.formatAbsolute(extremes.maximumReading.timestamp, zoneId),
-                        modifier = Modifier.weight(1f)
-                    )
+                val averageValue = visible.map { it.value }.average().takeIf { it.isFinite() } ?: 0.0
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(12.dp),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(horizontal = 4.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    CompactStatistic("MIN", "${extremes.minimumReading.value}", "mg/dL", Modifier.weight(1f))
+                    CompactStatistic("ŚREDNIA", "${averageValue.toInt()}", "mg/dL", Modifier.weight(1f))
+                    CompactStatistic("MAX", "${extremes.maximumReading.value}", "mg/dL", Modifier.weight(1f))
                 }
             }
 
@@ -183,11 +186,67 @@ internal fun FullScreenGlucoseChartScreen(
                 }
             }
 
-            Card(colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Text("Legenda zakresów", color = Color.White, fontWeight = FontWeight.SemiBold)
-                    legendRows.forEach { row ->
-                        HistoryLegendRow(row)
+            // Range distribution bar
+            var showLegendDetails by remember { mutableStateOf(false) }
+            Card(
+                colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clickable { showLegendDetails = !showLegendDetails }
+            ) {
+                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text("Rozkład zakresów", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                        Spacer(modifier = Modifier.weight(1f))
+                        Text(
+                            if (showLegendDetails) "▼" else "▶",
+                            color = LibreCareColors.TextSecondary,
+                            fontSize = 12.sp
+                        )
+                    }
+
+                    // Compact bar representation
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(24.dp),
+                        horizontalArrangement = Arrangement.spacedBy(1.dp)
+                    ) {
+                        legendRows.forEach { row ->
+                            if (row.hasData && row.percent > 0) {
+                                Box(
+                                    modifier = Modifier
+                                        .weight(row.percent.toFloat())
+                                        .fillMaxHeight()
+                                        .background(row.color)
+                                )
+                            }
+                        }
+                    }
+
+                    // Detailed legend (shown when expanded)
+                    if (showLegendDetails) {
+                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                            legendRows.forEach { row ->
+                                if (row.hasData) {
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                        modifier = Modifier.fillMaxWidth()
+                                    ) {
+                                        Text("●", color = row.color, fontSize = 12.sp, modifier = Modifier.width(16.dp))
+                                        Column(modifier = Modifier.weight(1f)) {
+                                            Text(row.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                            Text(
+                                                "${row.durationLabel} · ${row.percentLabel}",
+                                                color = LibreCareColors.TextSecondary,
+                                                fontSize = 10.sp
+                                            )
+                                        }
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
             }
@@ -201,29 +260,7 @@ internal fun FullScreenGlucoseChartScreen(
                 }
             }
 
-            Card(colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Notatki i zdarzenia", color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Spacer(modifier = Modifier.weight(1f))
-                        IconButton(onClick = { }) {
-                            Icon(Icons.Default.Add, contentDescription = "Dodaj notatkę", tint = LibreCareColors.AccentTeal)
-                        }
-                    }
-                    Text(
-                        "Placeholder UI. Następny krok: dodać modele i persystencję dla wpisów, np. `HistoryEvent`, `HistoryEventRepository`, `HistoryEventDao`.",
-                        color = LibreCareColors.TextSecondary,
-                        fontSize = 12.sp
-                    )
-                    eventItems.forEach { item ->
-                        Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-                            Text(item.category, color = LibreCareColors.AccentTeal, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                            Text(item.title, color = Color.White, fontSize = 13.sp)
-                            Text(item.timeLabel, color = LibreCareColors.TextSecondary, fontSize = 11.sp)
-                        }
-                    }
-                }
-            }
+            // Notes/Events section intentionally hidden until full functionality is implemented.
         }
     }
 }
@@ -231,7 +268,13 @@ internal fun FullScreenGlucoseChartScreen(
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
 private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> Unit) {
-    FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .horizontalScroll(rememberScrollState())
+            .padding(horizontal = 4.dp),
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
         listOf(
             TimeRange.LAST_3_HOURS,
             TimeRange.LAST_6_HOURS,
@@ -261,6 +304,34 @@ private fun LocalEmptyChartState() {
 }
 
 @Composable
+private fun CompactStatistic(label: String, value: String, unit: String, modifier: Modifier = Modifier) {
+    Column(
+        verticalArrangement = Arrangement.spacedBy(3.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = modifier
+    ) {
+        Text(
+            label,
+            color = LibreCareColors.TextSecondary,
+            fontSize = 10.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            value,
+            color = LibreCareColors.TextPrimary,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Bold
+        )
+        Text(
+            unit,
+            color = LibreCareColors.TextSecondary,
+            fontSize = 9.sp
+        )
+    }
+}
+
+@Deprecated("Używaj CompactStatistic zamiast")
+@Composable
 private fun ChartSummaryCard(title: String, value: String, subtitle: String, modifier: Modifier = Modifier) {
     Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = modifier.height(90.dp)) {
         Column(
@@ -276,6 +347,7 @@ private fun ChartSummaryCard(title: String, value: String, subtitle: String, mod
     }
 }
 
+@Deprecated("Używaj kompaktowego paska rozkładu zamiast")
 @Composable
 private fun HistoryLegendRow(row: HistoryLegendRowUi) {
     Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {

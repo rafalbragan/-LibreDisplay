@@ -396,3 +396,40 @@ internal fun sensorActivityFromHistory(
         maxGap = Duration.ofMinutes(20)
     )
 }
+
+internal data class DashboardMetrics(
+    val belowDuration: Duration?,
+    val belowPercent: Int?,
+    val inRangeDuration: Duration?,
+    val inRangePercent: Int?,
+    val aboveDuration: Duration?,
+    val abovePercent: Int?,
+    val gmiValue: Double?,
+    val hba1cValue: Double?
+)
+
+internal fun buildDashboardMetrics(
+    reading: GlucoseReading,
+    targetLow: Int,
+    targetHigh: Int
+): DashboardMetrics {
+    val history = readingTimeline(reading)
+    val distribution = rangeDistributionFromHistory(history, targetLow, targetHigh)
+    val gmi = buildHbA1cKpiModel(
+        HbA1cSettings(reading.timestamp.toString(), null, null, 7.5),
+        reading.history
+    )
+
+    return DashboardMetrics(
+        belowDuration = distribution?.belowRangeDuration,
+        belowPercent = distribution?.belowRangePercent,
+        inRangeDuration = distribution?.inRangeDuration,
+        inRangePercent = distribution?.inRangePercent,
+        aboveDuration = distribution?.aboveRangeDuration,
+        abovePercent = distribution?.aboveRangePercent,
+        gmiValue = gmi.valuePercent,
+        hba1cValue = null  // TODO: Dodaj HbA1c jeśli dostępne z lab results
+    )
+}
+
+

@@ -40,7 +40,7 @@ internal data class GlucoseWarningConfig(
     val highWarningMgDl: Int = 200,
     val veryHighMgDl: Int = 300,
     val extremeHighMgDl: Int = 400,
-    val staleAfter: Duration = Duration.ofMinutes(30)
+    val staleAfter: Duration = Duration.ofMinutes(15)  // Ujednolcony próg - 15 minut
 )
 
 internal data class GlucoseWarning(

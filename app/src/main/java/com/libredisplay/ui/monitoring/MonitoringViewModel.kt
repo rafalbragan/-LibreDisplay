@@ -7,6 +7,7 @@ import com.libredisplay.LibreDisplayApp
 import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.LibreResponseDecodingException
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
+import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.data.repository.CredentialsSnapshot
 import com.libredisplay.diagnostics.DiagnosticLogger
@@ -49,7 +50,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         MonitoringUiState(
             settings = settingsRepository.loadSettings(),
             isConfigured = settingsRepository.isConfigured(),
-            isDemoMode = settingsRepository.loadSettings().useMock
+            isDemoMode = settingsRepository.loadSettings().useMock,
+            quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()
         )
     )
     val uiState: StateFlow<MonitoringUiState> = _uiState.asStateFlow()
@@ -108,11 +110,17 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 connectionState = targetState,
                 labHbA1cPercent = hba1cSettings.labHbA1cPercent,
                 labHbA1cDate = hba1cSettings.labHbA1cDate,
-                targetHbA1cPercent = hba1cSettings.targetHbA1cPercent
+                targetHbA1cPercent = hba1cSettings.targetHbA1cPercent,
+                quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()
             )
         }
         stopPollingInternal("settings reload")
         refreshController = RefreshController(intervalMs = settings.refreshInterval.coerceIn(30, 300) * 1000L)
+    }
+
+    fun saveQuickMetricsOrder(order: List<QuickMetricId>) {
+        settingsRepository.saveQuickMetricsOrder(order)
+        _uiState.update { it.copy(quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()) }
     }
 
     private fun bootstrapUsingPersistedTokenOnly() {

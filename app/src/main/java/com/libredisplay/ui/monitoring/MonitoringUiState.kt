@@ -4,6 +4,7 @@ import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
+import com.libredisplay.data.model.QuickMetricId
 import java.time.Instant
 import java.time.LocalDate
 
@@ -85,6 +86,7 @@ data class MonitoringUiState(
     val labHbA1cPercent: Double? = null,
     val labHbA1cDate: LocalDate? = null,
     val targetHbA1cPercent: Double = 7.5,
+    val quickMetricsOrder: List<QuickMetricId> = QuickMetricId.DEFAULT_ORDER,
     val timeRange: TimeRangeState = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS)
 )
 

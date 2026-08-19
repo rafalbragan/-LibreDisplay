@@ -2,9 +2,13 @@ package com.libredisplay
 
 import android.os.Bundle
 import android.view.WindowManager
+import androidx.activity.compose.BackHandler
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.material3.AlertDialog
+import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -18,6 +22,7 @@ import com.libredisplay.ui.settings.AboutScreen
 import com.libredisplay.ui.settings.DiagnosticScreen
 import com.libredisplay.ui.settings.PollingFrequencyScreen
 import com.libredisplay.ui.settings.RetentionSettingsScreen
+import com.libredisplay.ui.settings.SettingsFocusSection
 import com.libredisplay.ui.settings.SettingsScreen
 import com.libredisplay.ui.settings.StatisticsScreen
 import com.libredisplay.ui.start.StartScreen
@@ -70,6 +75,29 @@ class MainActivity : ComponentActivity() {
                 var currentScreen by remember {
                     mutableStateOf(resolveLaunchScreen())
                 }
+                var settingsFocusSection by remember { mutableStateOf(SettingsFocusSection.GENERAL) }
+                var showExitConfirmation by remember { mutableStateOf(false) }
+
+                if (showExitConfirmation) {
+                    AlertDialog(
+                        onDismissRequest = { showExitConfirmation = false },
+                        title = { Text("Czy chcesz zamknąć LibreCare?") },
+                        text = { Text("Możesz wrócić do aplikacji wybierając Anuluj.") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showExitConfirmation = false
+                                finish()
+                            }) {
+                                Text("Zamknij")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = { showExitConfirmation = false }) {
+                                Text("Anuluj")
+                            }
+                        }
+                    )
+                }
 
                 when (currentScreen) {
                     AppScreen.Start -> StartScreen(
@@ -87,76 +115,111 @@ class MainActivity : ComponentActivity() {
                         }
                     )
 
-                    AppScreen.Monitoring -> MonitoringScreen(
-                        refreshNonce = refreshNonce,
-                        onNavigateToSettings = { currentScreen = AppScreen.Settings },
-                        onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
-                        onNavigateToAnalytics = { currentScreen = AppScreen.Analytics },
-                        onSwitchToLiveMode = {
-                            app.settingsRepository.switchToLiveMode()
-                            showLoginOnly = true
-                            refreshNonce += 1
-                            currentScreen = resolveLaunchScreen()
-                        }
-                    )
+                    AppScreen.Monitoring -> {
+                        BackHandler { showExitConfirmation = true }
+                        MonitoringScreen(
+                            refreshNonce = refreshNonce,
+                            onNavigateToSettings = {
+                                settingsFocusSection = SettingsFocusSection.GENERAL
+                                currentScreen = AppScreen.Settings
+                            },
+                            onNavigateToMetricSettings = {
+                                settingsFocusSection = SettingsFocusSection.HBA1C
+                                currentScreen = AppScreen.Settings
+                            },
+                            onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
+                            onNavigateToAnalytics = { currentScreen = AppScreen.Analytics },
+                            onSwitchToLiveMode = {
+                                app.settingsRepository.switchToLiveMode()
+                                showLoginOnly = true
+                                refreshNonce += 1
+                                currentScreen = resolveLaunchScreen()
+                            }
+                        )
+                    }
 
-                    AppScreen.Analytics -> AnalyticsScreen(
-                        onNavigateBack = { currentScreen = AppScreen.Monitoring }
-                    )
+                    AppScreen.Analytics -> {
+                        BackHandler { currentScreen = AppScreen.Monitoring }
+                        AnalyticsScreen(onNavigateBack = { currentScreen = AppScreen.Monitoring })
+                    }
 
-                    AppScreen.Settings -> SettingsScreen(
-                        loginOnly = showLoginOnly,
-                        onNavigateBack = { currentScreen = resolveBackFromSettings() },
-                        onSaved = {
-                            showLoginOnly = false
-                            refreshNonce += 1
-                            currentScreen = resolveLaunchScreen()
-                        },
-                        onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
-                        onNavigateToPrivacyData = { currentScreen = AppScreen.PrivacyData },
-                        onNavigateToAbout = { currentScreen = AppScreen.About },
-                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics },
-                        onNavigateToRetention = { currentScreen = AppScreen.Retention },
-                        onNavigateToPolling = { currentScreen = AppScreen.Polling }
-                    )
+                    AppScreen.Settings -> {
+                        BackHandler { currentScreen = resolveBackFromSettings() }
+                        SettingsScreen(
+                            loginOnly = showLoginOnly,
+                            focusSection = settingsFocusSection,
+                            onNavigateBack = { currentScreen = resolveBackFromSettings() },
+                            onSaved = {
+                                showLoginOnly = false
+                                refreshNonce += 1
+                                currentScreen = resolveLaunchScreen()
+                            },
+                            onNavigateToDiagnostics = { currentScreen = AppScreen.Diagnostics },
+                            onNavigateToPrivacyData = { currentScreen = AppScreen.PrivacyData },
+                            onNavigateToAbout = { currentScreen = AppScreen.About },
+                            onNavigateToStatistics = { currentScreen = AppScreen.Statistics },
+                            onNavigateToRetention = { currentScreen = AppScreen.Retention },
+                            onNavigateToPolling = { currentScreen = AppScreen.Polling }
+                        )
+                    }
 
-                    AppScreen.Diagnostics -> DiagnosticScreen(
-                        onNavigateBack = { currentScreen = resolveBackFromSettings() }
-                    )
+                    AppScreen.Diagnostics -> {
+                        BackHandler { currentScreen = resolveBackFromSettings() }
+                        DiagnosticScreen(
+                            onNavigateBack = { currentScreen = resolveBackFromSettings() }
+                        )
+                    }
 
-                    AppScreen.PrivacyData -> PrivacyDataScreen(
-                        onNavigateBack = {
+                    AppScreen.PrivacyData -> {
+                        BackHandler {
                             currentScreen = if (resolveLaunchScreen() == AppScreen.Start) AppScreen.Start else AppScreen.Settings
-                        },
-                        onNavigateToStart = {
-                            showLoginOnly = false
-                            refreshNonce += 1
-                            currentScreen = AppScreen.Start
-                        },
-                        onNavigateToLogin = {
-                            showLoginOnly = true
-                            refreshNonce += 1
-                            currentScreen = AppScreen.Settings
-                        },
-                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
-                    )
+                        }
+                        PrivacyDataScreen(
+                            onNavigateBack = {
+                                currentScreen = if (resolveLaunchScreen() == AppScreen.Start) AppScreen.Start else AppScreen.Settings
+                            },
+                            onNavigateToStart = {
+                                showLoginOnly = false
+                                refreshNonce += 1
+                                currentScreen = AppScreen.Start
+                            },
+                            onNavigateToLogin = {
+                                showLoginOnly = true
+                                refreshNonce += 1
+                                currentScreen = AppScreen.Settings
+                            },
+                            onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
+                        )
+                    }
 
-                    AppScreen.About -> AboutScreen(
-                        onNavigateBack = { currentScreen = AppScreen.Settings },
-                        onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
-                    )
+                    AppScreen.About -> {
+                        BackHandler { currentScreen = AppScreen.Settings }
+                        AboutScreen(
+                            onNavigateBack = { currentScreen = AppScreen.Settings },
+                            onNavigateToStatistics = { currentScreen = AppScreen.Statistics }
+                        )
+                    }
 
-                    AppScreen.Statistics -> StatisticsScreen(
-                        onNavigateBack = { currentScreen = AppScreen.Settings }
-                    )
+                    AppScreen.Statistics -> {
+                        BackHandler { currentScreen = AppScreen.Settings }
+                        StatisticsScreen(
+                            onNavigateBack = { currentScreen = AppScreen.Settings }
+                        )
+                    }
 
-                    AppScreen.Retention -> RetentionSettingsScreen(
-                        onNavigateBack = { currentScreen = AppScreen.Settings }
-                    )
+                    AppScreen.Retention -> {
+                        BackHandler { currentScreen = AppScreen.Settings }
+                        RetentionSettingsScreen(
+                            onNavigateBack = { currentScreen = AppScreen.Settings }
+                        )
+                    }
 
-                    AppScreen.Polling -> PollingFrequencyScreen(
-                        onNavigateBack = { currentScreen = AppScreen.Settings }
-                    )
+                    AppScreen.Polling -> {
+                        BackHandler { currentScreen = AppScreen.Settings }
+                        PollingFrequencyScreen(
+                            onNavigateBack = { currentScreen = AppScreen.Settings }
+                        )
+                    }
                 }
             }
         }

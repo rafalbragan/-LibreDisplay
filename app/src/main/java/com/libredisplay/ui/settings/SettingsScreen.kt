@@ -17,6 +17,8 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -45,13 +47,20 @@ import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.stringResource
 import com.libredisplay.R
+import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.diagnostics.DiagnosticLogger
 import androidx.compose.ui.graphics.Color
+
+enum class SettingsFocusSection {
+    GENERAL,
+    HBA1C
+}
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SettingsScreen(
     loginOnly: Boolean = false,
+    focusSection: SettingsFocusSection = SettingsFocusSection.GENERAL,
     onNavigateBack: () -> Unit,
     onSaved: () -> Unit,
     onNavigateToDiagnostics: () -> Unit,
@@ -65,7 +74,9 @@ fun SettingsScreen(
     val context = LocalContext.current
     val settings by viewModel.settings.collectAsState()
     val hba1cSettings by viewModel.hba1cSettings.collectAsState()
+    val quickMetricsOrder by viewModel.quickMetricsOrder.collectAsState()
     val message by viewModel.message.collectAsState()
+    val scrollState = rememberScrollState()
     var passwordVisible by remember { mutableStateOf(false) }
 
     LaunchedEffect(message) {
@@ -73,6 +84,15 @@ fun SettingsScreen(
             viewModel.clearMessage()
             onSaved()
         }
+    }
+
+    LaunchedEffect(loginOnly, focusSection) {
+        if (loginOnly) return@LaunchedEffect
+        val targetOffset = when (focusSection) {
+            SettingsFocusSection.GENERAL -> 0
+            SettingsFocusSection.HBA1C -> 1500
+        }
+        scrollState.animateScrollTo(targetOffset)
     }
 
     Scaffold(
@@ -92,7 +112,7 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .padding(padding)
                 .padding(16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(scrollState),
             verticalArrangement = Arrangement.spacedBy(16.dp)
         ) {
             if (message != null && message != "Ustawienia zapisane") {
@@ -277,6 +297,34 @@ fun SettingsScreen(
             }
 
             Card(modifier = Modifier.fillMaxWidth()) {
+                Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                    Text("Kolejność szybkich metryk", fontSize = 20.sp)
+                    Text(
+                        "Dla dostępności możesz zmienić kolejność metryk przyciskami góra/dół.",
+                        fontSize = 13.sp,
+                        color = Color(0xFF94A3B8)
+                    )
+                    quickMetricsOrder.forEach { metricId ->
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
+                            Text(
+                                text = metricLabel(metricId),
+                                modifier = Modifier.weight(1f)
+                            )
+                            IconButton(onClick = { viewModel.moveQuickMetricUp(metricId) }) {
+                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Przesuń w górę")
+                            }
+                            IconButton(onClick = { viewModel.moveQuickMetricDown(metricId) }) {
+                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Przesuń w dół")
+                            }
+                        }
+                    }
+                }
+            }
+
+            Card(modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Diagnostyka", fontSize = 20.sp)
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -308,6 +356,14 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
+    QuickMetricId.BELOW -> "Poniżej"
+    QuickMetricId.IN_RANGE -> "W zakresie"
+    QuickMetricId.ABOVE -> "Powyżej"
+    QuickMetricId.GMI -> "GMI"
+    QuickMetricId.HBA1C -> "HbA1c"
 }
 
 private fun copyLog(context: Context) {

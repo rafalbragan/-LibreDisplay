@@ -16,6 +16,10 @@ internal data class NfzRefundCriteriaConfig(
     val childMinimumMeasurementsPerDay: Int = 8,
     val continuationMinMonths: Int = 4,
     val continuationMaxMonths: Int = 6,
+    val sensorActivityWindowDays: Int = 14,
+    val tirWindowDays: Int = 14,
+    val hba1cGmiWindowDays: Int = 90,
+    val monitoringFrequencyWindowDays: Int = 14,
     val fallbackActivityWindowMonths: Int = 3,
     val recommendedMaxSensorGapHours: Int = 24,
     val rulesVersion: String = "NFZ-continuation-2026-08",
@@ -49,7 +53,9 @@ internal data class NfzCriterionEvaluation(
     val requiredValue: String,
     val status: NfzCriterionStatus,
     val reason: String,
-    val recommendation: String?
+    val recommendation: String?,
+    val evaluationWindowLabel: String? = null,
+    val minimumEvaluationDays: Int? = null
 )
 
 internal data class NfzRecommendation(
@@ -263,7 +269,9 @@ private fun evaluateSensorActivityCriterion(
             requiredValue = "co najmniej ${config.minimumSensorActivityPercent}%",
             status = NfzCriterionStatus.UNKNOWN,
             reason = "Brak wystarczających danych, aby oszacować aktywność czujnika w okresie oceny.",
-            recommendation = "Zbieraj dane przez dłuższy okres i sprawdzaj, czy aplikacja regularnie pobiera odczyty."
+            recommendation = "Zbieraj dane przez dłuższy okres i sprawdzaj, czy aplikacja regularnie pobiera odczyty.",
+            evaluationWindowLabel = "${config.sensorActivityWindowDays} dni",
+            minimumEvaluationDays = config.sensorActivityWindowDays
         )
         current >= config.minimumSensorActivityPercent -> NfzCriterionEvaluation(
             condition = "Aktywność czujnika",
@@ -271,7 +279,9 @@ private fun evaluateSensorActivityCriterion(
             requiredValue = "co najmniej ${config.minimumSensorActivityPercent}%",
             status = NfzCriterionStatus.MET,
             reason = "Aktywność czujnika w danych mieści się powyżej progu pomocniczego.",
-            recommendation = null
+            recommendation = null,
+            evaluationWindowLabel = "${config.sensorActivityWindowDays} dni",
+            minimumEvaluationDays = config.sensorActivityWindowDays
         )
         else -> NfzCriterionEvaluation(
             condition = "Aktywność czujnika",
@@ -279,7 +289,9 @@ private fun evaluateSensorActivityCriterion(
             requiredValue = "co najmniej ${config.minimumSensorActivityPercent}%",
             status = NfzCriterionStatus.NOT_MET,
             reason = "Aktywność czujnika jest niższa niż wymagany próg. W danych występują długie przerwy bez odczytów.",
-            recommendation = "Staraj się utrzymywać ciągłość używania sensorów. Po wymianie sensora aktywuj nowy możliwie szybko. Sprawdź też, czy aplikacja regularnie pobiera dane."
+            recommendation = "Staraj się utrzymywać ciągłość używania sensorów. Po wymianie sensora aktywuj nowy możliwie szybko. Sprawdź też, czy aplikacja regularnie pobiera dane.",
+            evaluationWindowLabel = "${config.sensorActivityWindowDays} dni",
+            minimumEvaluationDays = config.sensorActivityWindowDays
         )
     }
 }
@@ -296,7 +308,9 @@ private fun evaluateTirCriterion(
             requiredValue = "powyżej ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.UNKNOWN,
             reason = "Brak wystarczających danych do oceny czasu w zakresie ${config.targetRangeLowMgDl}-${config.targetRangeHighMgDl} mg/dL.",
-            recommendation = "Zbieraj dane przez dłuższy okres, aby aplikacja mogła policzyć TIR."
+            recommendation = "Zbieraj dane przez dłuższy okres, aby aplikacja mogła policzyć TIR.",
+            evaluationWindowLabel = "${config.tirWindowDays} dni",
+            minimumEvaluationDays = config.tirWindowDays
         )
         tir >= config.minimumTirPercent -> NfzCriterionEvaluation(
             condition = "TIR 70-180 mg/dL",
@@ -304,7 +318,9 @@ private fun evaluateTirCriterion(
             requiredValue = "powyżej ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.MET,
             reason = "Czas w zakresie ${config.targetRangeLowMgDl}-${config.targetRangeHighMgDl} mg/dL jest na poziomie pomocniczego progu lub wyżej.",
-            recommendation = null
+            recommendation = null,
+            evaluationWindowLabel = "${config.tirWindowDays} dni",
+            minimumEvaluationDays = config.tirWindowDays
         )
         else -> NfzCriterionEvaluation(
             condition = "TIR 70-180 mg/dL",
@@ -312,7 +328,9 @@ private fun evaluateTirCriterion(
             requiredValue = "powyżej ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.NOT_MET,
             reason = "Czas w zakresie ${config.targetRangeLowMgDl}-${config.targetRangeHighMgDl} mg/dL jest poniżej progu.",
-            recommendation = "Omów wyniki z lekarzem. Sprawdź okresy podwyższonej lub obniżonej glikemii i możliwe przyczyny."
+            recommendation = "Omów wyniki z lekarzem. Sprawdź okresy podwyższonej lub obniżonej glikemii i możliwe przyczyny.",
+            evaluationWindowLabel = "${config.tirWindowDays} dni",
+            minimumEvaluationDays = config.tirWindowDays
         )
     }
 }
@@ -331,7 +349,9 @@ private fun evaluateHbA1cCriterion(
             requiredValue = "HbA1c < ${config.maxHbA1cPercent.toString().replace('.', ',')}% lub cel indywidualny",
             status = NfzCriterionStatus.MET,
             reason = "Profil wskazuje osiągnięcie indywidualnego celu terapeutycznego ustalonego z lekarzem.",
-            recommendation = null
+            recommendation = null,
+            evaluationWindowLabel = "${config.hba1cGmiWindowDays} dni",
+            minimumEvaluationDays = config.hba1cGmiWindowDays
         )
         hbA1c != null && hbA1c < config.maxHbA1cPercent -> NfzCriterionEvaluation(
             condition = "HbA1c / GMI",
@@ -339,7 +359,9 @@ private fun evaluateHbA1cCriterion(
             requiredValue = "HbA1c < ${config.maxHbA1cPercent.toString().replace('.', ',')}% lub TIR > ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.MET,
             reason = "Wprowadzony wynik HbA1c mieści się poniżej progu pomocniczego.",
-            recommendation = null
+            recommendation = null,
+            evaluationWindowLabel = "${config.hba1cGmiWindowDays} dni",
+            minimumEvaluationDays = config.hba1cGmiWindowDays
         )
         hbA1c != null -> NfzCriterionEvaluation(
             condition = "HbA1c / GMI",
@@ -347,7 +369,9 @@ private fun evaluateHbA1cCriterion(
             requiredValue = "HbA1c < ${config.maxHbA1cPercent.toString().replace('.', ',')}% lub TIR > ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.NOT_MET,
             reason = "Wprowadzony wynik HbA1c jest powyżej progu pomocniczego.",
-            recommendation = "Skonsultuj wyniki z lekarzem i oceń, czy potrzebne są zmiany w planie leczenia."
+            recommendation = "Skonsultuj wyniki z lekarzem i oceń, czy potrzebne są zmiany w planie leczenia.",
+            evaluationWindowLabel = "${config.hba1cGmiWindowDays} dni",
+            minimumEvaluationDays = config.hba1cGmiWindowDays
         )
         gmi != null -> NfzCriterionEvaluation(
             condition = "HbA1c / GMI",
@@ -360,6 +384,9 @@ private fun evaluateHbA1cCriterion(
                 "Szacowany GMI jest podwyższony. To wskaźnik pomocniczy i nie zastępuje laboratoryjnego HbA1c."
             },
             recommendation = if (gmi < config.maxHbA1cPercent) null else "Jeśli to możliwe, uzupełnij aktualny wynik HbA1c i omów wyniki z lekarzem."
+                ,
+            evaluationWindowLabel = "${config.hba1cGmiWindowDays} dni",
+            minimumEvaluationDays = config.hba1cGmiWindowDays
         )
         else -> NfzCriterionEvaluation(
             condition = "HbA1c / GMI",
@@ -367,7 +394,9 @@ private fun evaluateHbA1cCriterion(
             requiredValue = "HbA1c < ${config.maxHbA1cPercent.toString().replace('.', ',')}% lub TIR > ${config.minimumTirPercent}%",
             status = NfzCriterionStatus.UNKNOWN,
             reason = "Brak wystarczających danych do obliczenia GMI albo brak informacji o HbA1c.",
-            recommendation = "Zbieraj dane przez dłuższy okres albo uzupełnij wynik HbA1c, jeśli aplikacja obsługuje takie pole."
+            recommendation = "Zbieraj dane przez dłuższy okres albo uzupełnij wynik HbA1c, jeśli aplikacja obsługuje takie pole.",
+            evaluationWindowLabel = "${config.hba1cGmiWindowDays} dni",
+            minimumEvaluationDays = config.hba1cGmiWindowDays
         )
     }
 }
@@ -385,7 +414,9 @@ private fun evaluateMonitoringFrequencyCriterion(
             requiredValue = "dotyczy wybranych grup, np. dzieci: co najmniej ${config.childMinimumMeasurementsPerDay} odczytów/dzień",
             status = NfzCriterionStatus.NOT_APPLICABLE,
             reason = "To kryterium częściej dotyczy wybranych grup pediatrycznych i wymaga potwierdzenia z lekarzem.",
-            recommendation = null
+            recommendation = null,
+            evaluationWindowLabel = "${config.monitoringFrequencyWindowDays} dni",
+            minimumEvaluationDays = config.monitoringFrequencyWindowDays
         )
         NfzPatientGroup.CHILD -> when {
             readingsPerDay == null -> NfzCriterionEvaluation(
@@ -394,7 +425,9 @@ private fun evaluateMonitoringFrequencyCriterion(
                 requiredValue = "co najmniej ${config.childMinimumMeasurementsPerDay} odczytów/dzień",
                 status = NfzCriterionStatus.UNKNOWN,
                 reason = "Brak wystarczających danych do oceny regularności monitorowania.",
-                recommendation = "Zwiększ regularność monitorowania i zapisuj odczyty codziennie."
+                recommendation = "Zwiększ regularność monitorowania i zapisuj odczyty codziennie.",
+                evaluationWindowLabel = "${config.monitoringFrequencyWindowDays} dni",
+                minimumEvaluationDays = config.monitoringFrequencyWindowDays
             )
             readingsPerDay >= config.childMinimumMeasurementsPerDay -> NfzCriterionEvaluation(
                 condition = "Regularność monitorowania",
@@ -402,7 +435,9 @@ private fun evaluateMonitoringFrequencyCriterion(
                 requiredValue = "co najmniej ${config.childMinimumMeasurementsPerDay} odczytów/dzień",
                 status = NfzCriterionStatus.MET,
                 reason = "Średnia liczba odczytów na dobę wygląda na wystarczającą dla tego kryterium pomocniczego.",
-                recommendation = null
+                recommendation = null,
+                evaluationWindowLabel = "${config.monitoringFrequencyWindowDays} dni",
+                minimumEvaluationDays = config.monitoringFrequencyWindowDays
             )
             else -> NfzCriterionEvaluation(
                 condition = "Regularność monitorowania",
@@ -410,7 +445,9 @@ private fun evaluateMonitoringFrequencyCriterion(
                 requiredValue = "co najmniej ${config.childMinimumMeasurementsPerDay} odczytów/dzień",
                 status = NfzCriterionStatus.NOT_MET,
                 reason = "Średnia liczba odczytów na dobę jest zbyt niska.",
-                recommendation = "Zwiększ regularność monitorowania. Upewnij się, że odczyty są zapisywane codziennie."
+                recommendation = "Zwiększ regularność monitorowania. Upewnij się, że odczyty są zapisywane codziennie.",
+                evaluationWindowLabel = "${config.monitoringFrequencyWindowDays} dni",
+                minimumEvaluationDays = config.monitoringFrequencyWindowDays
             )
         }
         NfzPatientGroup.UNKNOWN -> NfzCriterionEvaluation(
@@ -419,7 +456,9 @@ private fun evaluateMonitoringFrequencyCriterion(
             requiredValue = "dla wybranych grup: co najmniej ${config.childMinimumMeasurementsPerDay} odczytów/dzień",
             status = NfzCriterionStatus.UNKNOWN,
             reason = "Brak profilu pacjenta, więc aplikacja nie wie, czy to kryterium dotyczy tej osoby.",
-            recommendation = "Uzupełnij dane pacjenta potrzebne do oceny refundacji."
+            recommendation = "Uzupełnij dane pacjenta potrzebne do oceny refundacji.",
+            evaluationWindowLabel = "${config.monitoringFrequencyWindowDays} dni",
+            minimumEvaluationDays = config.monitoringFrequencyWindowDays
         )
     }
 }
@@ -437,7 +476,9 @@ private fun evaluateEvaluationPeriodCriterion(
             requiredValue = "zwykle ${config.continuationMinMonths}-${config.continuationMaxMonths} mies. od pierwszej realizacji",
             status = NfzCriterionStatus.UNKNOWN,
             reason = "Brak daty pierwszej realizacji zlecenia. Aplikacja pokazuje metryki z technicznego okna danych, ale nie może potwierdzić właściwego okresu kontynuacji.",
-            recommendation = "Przed złożeniem zlecenia zweryfikuj aktualne zasady z lekarzem, NFZ lub punktem realizacji zleceń."
+            recommendation = "Przed złożeniem zlecenia zweryfikuj aktualne zasady z lekarzem, NFZ lub punktem realizacji zleceń.",
+            evaluationWindowLabel = "${config.continuationMinMonths}-${config.continuationMaxMonths} mies.",
+            minimumEvaluationDays = config.continuationMinMonths * 30
         )
     } else {
         val months = Duration.between(start, metrics.evaluationEnd).toDays() / 30.0
@@ -448,7 +489,9 @@ private fun evaluateEvaluationPeriodCriterion(
             requiredValue = "${config.continuationMinMonths}-${config.continuationMaxMonths} mies. od pierwszej realizacji",
             status = if (met) NfzCriterionStatus.MET else NfzCriterionStatus.NOT_MET,
             reason = if (met) "Okres między pierwszą realizacją a końcem ocenianych danych mieści się w pomocniczym przedziale." else "Okres ocenianych danych nie mieści się w pomocniczym przedziale dla kontynuacji.",
-            recommendation = if (met) null else "Zweryfikuj datę pierwszej realizacji z lekarzem lub punktem realizacji zlecenia."
+            recommendation = if (met) null else "Zweryfikuj datę pierwszej realizacji z lekarzem lub punktem realizacji zlecenia.",
+            evaluationWindowLabel = "${config.continuationMinMonths}-${config.continuationMaxMonths} mies.",
+            minimumEvaluationDays = config.continuationMinMonths * 30
         )
     }
 }
