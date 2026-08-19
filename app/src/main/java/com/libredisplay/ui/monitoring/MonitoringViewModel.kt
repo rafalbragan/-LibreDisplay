@@ -143,7 +143,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         lastSuccessfulFetchAt = localSnapshot.reading.timestamp,
                         lastMeasurementTimestamp = localSnapshot.reading.timestamp,
                         isDataStale = true,
-                        staleInfoMessage = "Dane z lokalnej historii. Ostatnia synchronizacja: ${localSnapshot.reading.timestamp}"
+                        staleInfoMessage = "Dane z lokalnej historii. Ostatnia synchronizacja: ${PolishDateTimeFormatter.formatUserFacing(localSnapshot.reading.timestamp)}"
                     )
                 }
             }

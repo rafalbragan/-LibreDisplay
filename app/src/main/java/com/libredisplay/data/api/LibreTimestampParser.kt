@@ -3,6 +3,7 @@ package com.libredisplay.data.api
 import java.time.Instant
 import java.time.LocalDateTime
 import java.time.OffsetDateTime
+import java.time.ZoneId
 import java.time.ZoneOffset
 import java.time.format.DateTimeFormatter
 import java.time.format.DateTimeFormatterBuilder
@@ -46,7 +47,10 @@ internal object LibreTimestampParser {
             .toFormatter(Locale.US)
     )
 
-    fun parse(raw: String?): Instant? {
+    fun parse(
+        raw: String?,
+        fallbackZoneId: ZoneId = ZoneId.systemDefault()
+    ): Instant? {
         if (raw.isNullOrBlank()) return null
         val normalized = raw.trim()
 
@@ -60,7 +64,7 @@ internal object LibreTimestampParser {
         for (formatter in localFormatters) {
             try {
                 val local = LocalDateTime.parse(normalized, formatter)
-                return local.toInstant(ZoneOffset.UTC)
+                return local.atZone(fallbackZoneId).toInstant()
             } catch (_: DateTimeParseException) {
                 // Try next formatter.
             }

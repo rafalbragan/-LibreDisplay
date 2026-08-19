@@ -5,6 +5,7 @@ import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Test
 import java.time.Instant
+import java.time.ZoneId
 
 class LibreTimestampParserTest {
 
@@ -28,14 +29,30 @@ class LibreTimestampParserTest {
 
     @Test
     fun parsesUsAmPmFormat() {
-        val parsed = LibreTimestampParser.parse("7/6/2026 10:15:00 AM")
-        assertEquals(Instant.parse("2026-07-06T10:15:00Z"), parsed)
+        val parsed = LibreTimestampParser.parse(
+            raw = "7/6/2026 10:15:00 AM",
+            fallbackZoneId = ZoneId.of("Europe/Warsaw")
+        )
+        assertEquals(Instant.parse("2026-07-06T08:15:00Z"), parsed)
     }
 
     @Test
     fun parsesTwentyFourHourFormat() {
-        val parsed = LibreTimestampParser.parse("2026-07-06 23:10:00")
-        assertEquals(Instant.parse("2026-07-06T23:10:00Z"), parsed)
+        val parsed = LibreTimestampParser.parse(
+            raw = "2026-07-06 23:10:00",
+            fallbackZoneId = ZoneId.of("Europe/Warsaw")
+        )
+        assertEquals(Instant.parse("2026-07-06T21:10:00Z"), parsed)
+    }
+
+    @Test
+    fun parsesNaiveIsoTimestampInPhoneTimezone() {
+        val parsed = LibreTimestampParser.parse(
+            raw = "2026-08-19T12:10:00",
+            fallbackZoneId = ZoneId.of("Europe/Warsaw")
+        )
+
+        assertEquals(Instant.parse("2026-08-19T10:10:00Z"), parsed)
     }
 
     @Test

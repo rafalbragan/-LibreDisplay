@@ -2,6 +2,30 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.8.1 - 2026-08-19
+
+### PL
+
+#### Fixed
+- Naprawiono interpretację znaczników czasu Libre bez jawnej strefy czasowej: są teraz odczytywane w strefie czasowej telefonu, zamiast być wymuszane jako UTC.
+- W efekcie wykres, tooltipy i etykiety czasu pokazują lokalny czas telefonu także dla rekordów typu `2026-08-19T12:10:00` lub `2026-07-06 23:10:00`.
+- Dodano testy potwierdzające poprawną konwersję dla strefy `Europe/Warsaw`.
+
+#### Tests
+- `LibreTimestampParserTest`: rozszerzony o przypadki dla timestampów bez offsetu.
+- `PolishFormattersTest`: utrzymane testy formatowania czasu lokalnego.
+
+### EN
+
+#### Fixed
+- Fixed Libre timestamps without an explicit timezone: they are now interpreted in the phone timezone instead of being forced to UTC.
+- As a result, the chart, tooltips, and user-facing time labels now show the phone's local time for records such as `2026-08-19T12:10:00` and `2026-07-06 23:10:00`.
+- Added tests covering `Europe/Warsaw` conversion for naive timestamps.
+
+#### Tests
+- `LibreTimestampParserTest`: expanded with naive timestamp scenarios.
+- `PolishFormattersTest`: local timezone formatting tests kept green.
+
 ## 1.8.0 - 2026-08-19
 
 ### PL

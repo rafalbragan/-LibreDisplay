@@ -61,7 +61,8 @@ class HistoryUiModelsTest {
         val coverage = computeDataCoverage(
             history = history,
             selectedRange = java.time.Duration.ofHours(24),
-            selectedRangeLabel = "24 godz."
+            selectedRangeLabel = "24 godz.",
+            now = history.maxOf { it.timestamp }
         )
         val section = historyStatsSection(
             history = history,
@@ -83,7 +84,8 @@ class HistoryUiModelsTest {
         val coverage = computeDataCoverage(
             history = history,
             selectedRange = java.time.Duration.ofMinutes(30), // less than 1h
-            selectedRangeLabel = "30 min"
+            selectedRangeLabel = "30 min",
+            now = history.maxOf { it.timestamp }
         )
         val section = historyStatsSection(
             history = history,
