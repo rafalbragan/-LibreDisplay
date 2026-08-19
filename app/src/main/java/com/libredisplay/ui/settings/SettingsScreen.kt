@@ -38,6 +38,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -214,19 +215,17 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     Text("Zakres docelowy", fontSize = 20.sp)
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                        OutlinedTextField(
-                            value = settings.targetLow.toString(),
-                            onValueChange = viewModel::onTargetLowChange,
-                            label = { Text("Dolna granica") },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        NumericRangeField(
+                            externalValue = settings.targetLow,
+                            onValueCommit = viewModel::onTargetLowChange,
+                            label = "Dolna granica",
+                            modifier = Modifier.weight(1f)
                         )
-                        OutlinedTextField(
-                            value = settings.targetHigh.toString(),
-                            onValueChange = viewModel::onTargetHighChange,
-                            label = { Text("Górna granica") },
-                            modifier = Modifier.weight(1f),
-                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        NumericRangeField(
+                            externalValue = settings.targetHigh,
+                            onValueCommit = viewModel::onTargetHighChange,
+                            label = "Górna granica",
+                            modifier = Modifier.weight(1f)
                         )
                     }
                     Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
@@ -356,6 +355,61 @@ fun SettingsScreen(
             }
         }
     }
+}
+
+/**
+ * Pole numeryczne z lokalnym buforem tekstu.
+ *
+ * Problem który rozwiązuje:
+ * Standardowy kontrolowany TextField (`value = state.toString()`) przy każdym naciśnięciu
+ * klawisza wymusza natychmiastowe zatwierdzenie wartości. Gdy użytkownik kasuje "180" do "18",
+ * ViewModel coerces 18 → 60, pole pokazuje "60", a kolejne wciśnięcia klawiszy
+ * dodają cyfry do "60" zamiast tworzyć nową liczbę.
+ *
+ * Rozwiązanie: lokalna zmienna tekstu w kompozablu. ViewModel dostaje wartość
+ * dopiero gdy użytkownik opuści pole (focus lost).
+ */
+@Composable
+private fun NumericRangeField(
+    externalValue: Int,
+    onValueCommit: (String) -> Unit,
+    label: String,
+    modifier: Modifier = Modifier
+) {
+    var localText by remember { mutableStateOf(externalValue.toString()) }
+    var hasFocus by remember { mutableStateOf(false) }
+
+    // Sync from external value only when field is NOT focused
+    // (prevents overwriting what the user is currently typing)
+    LaunchedEffect(externalValue) {
+        if (!hasFocus) {
+            localText = externalValue.toString()
+        }
+    }
+
+    OutlinedTextField(
+        value = localText,
+        onValueChange = { newText ->
+            // Allow only digits and empty string (user clearing the field)
+            if (newText.isEmpty() || newText.all { it.isDigit() }) {
+                localText = newText
+            }
+        },
+        label = { Text(label) },
+        modifier = modifier.onFocusChanged { focusState ->
+            if (focusState.isFocused) {
+                hasFocus = true
+            } else if (hasFocus) {
+                // Focus lost → commit current text to ViewModel
+                hasFocus = false
+                onValueCommit(localText)
+                // ViewModel will coerce the value and update externalValue,
+                // which will be synced back via LaunchedEffect above.
+            }
+        },
+        keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
+        singleLine = true
+    )
 }
 
 private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
