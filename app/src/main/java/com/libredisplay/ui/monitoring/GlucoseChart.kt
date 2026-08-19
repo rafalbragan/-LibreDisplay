@@ -259,11 +259,11 @@ internal fun prepareChartData(points: List<GlucoseHistoryPoint>): PreparedChartD
 
     val rawMin = prepared.minOf { it.value }
     val rawMax = prepared.maxOf { it.value }
-    val (minValue, maxValue) = if (rawMin == rawMax) {
-        ((rawMin - 20).coerceAtLeast(40)) to ((rawMax + 20).coerceAtMost(420))
-    } else {
-        ((rawMin - 20).coerceAtLeast(40)) to ((rawMax + 20).coerceAtMost(420))
-    }
+    // Do NOT cap maxValue at 420 – CGM readings can exceed that level.
+    // Add proportional top margin so labels don't overlap data points.
+    val topMargin = if (rawMax > 350) 40 else 25
+    val minValue = (rawMin - 20).coerceAtLeast(40)
+    val maxValue = rawMax + topMargin
 
     return PreparedChartData(points = prepared, minValue = minValue, maxValue = maxValue)
 }

@@ -2,7 +2,54 @@
 
 All notable changes to LibreCare will be documented in this file.
 
-## 1.7.0 - 2026-08-19
+## 1.8.0 - 2026-08-19
+
+### PL
+
+#### Naprawiono
+- **Wykres – przepełnienie osi Y**: dane > 420 mg/dL wychodziły poza obszar wykresu. Usunięto twarde ograniczenie `coerceAtMost(420)`.
+- **Statystyki – 0% w zakresie**: `toInt()` ucinał wartości < 1%; zmieniono na `roundToInt()`.
+- **Brak lokalnego odliczania pokrycia**: `computeDataCoverage` używało `newest - oldest` zamiast `now - oldest`; licznik teraz biegnie bez sieci.
+- **Brak auto-odświeżania czasu**: „chwilę temu", „Sensor: X dni" nie aktualizowały się między synchronizacjami.
+
+#### Dodano
+- Lokalny ticker 30 s w `MonitoringScreen` i `FullScreenGlucoseChartScreen` (bez żądań sieciowych).
+- Parametr `now: Instant` w `computeDataCoverage`, `RedesignedCurrentGlucoseCard`, `GlucoseChartCard`.
+
+#### Testy
+- Zaktualizowano `DataCoverageModelTest` – przekazywanie `now` wprost dla determinizmu.
+- Wszystkie 274 testy jednostkowe: PASS.
+
+#### Artefakty
+- `LibreCare-1.8.0-debug.apk` (~22,1 MB)
+- `LibreCare-1.8.0-release.apk` (~2,9 MB)
+- `LibreCare-1.8.0-release.aab` (~5,4 MB)
+
+---
+
+### EN
+
+#### Fixed
+- **Chart Y-axis overflow**: readings > 420 mg/dL were plotted outside chart bounds. Removed `coerceAtMost(420)` hard cap.
+- **Statistics – 0% in-range**: `toInt()` truncated sub-1% values; changed to `roundToInt()`.
+- **Coverage countdown not ticking**: `computeDataCoverage` used `newest - oldest` instead of `now - oldest`; countdown now runs locally.
+- **No local time refresh**: "chwilę temu", sensor remaining time did not update between network syncs.
+
+#### Added
+- 30-second local ticker in `MonitoringScreen` and `FullScreenGlucoseChartScreen` (no network requests).
+- `now: Instant` parameter in `computeDataCoverage`, `RedesignedCurrentGlucoseCard`, `GlucoseChartCard`.
+
+#### Tests
+- Updated `DataCoverageModelTest` – now passes `now` explicitly for determinism.
+- All 274 unit tests: PASS.
+
+#### Artifacts
+- `LibreCare-1.8.0-debug.apk` (~22.1 MB)
+- `LibreCare-1.8.0-release.apk` (~2.9 MB)
+- `LibreCare-1.8.0-release.aab` (~5.4 MB)
+
+---
+
 
 ### PL
 

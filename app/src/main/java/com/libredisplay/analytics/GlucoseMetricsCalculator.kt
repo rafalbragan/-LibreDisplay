@@ -5,6 +5,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.LocalDate
 import java.time.ZoneId
+import kotlin.math.roundToInt
 
 data class RangeDistribution(
     val belowCriticalPercent: Int,
@@ -83,7 +84,7 @@ object GlucoseMetricsCalculator {
         fun pct(duration: Duration): Int {
             if (covered.isZero) return 0
             return ((duration.toMillis().toDouble() / covered.toMillis().toDouble()) * 100.0)
-                .toInt()
+                .roundToInt()
                 .coerceIn(0, 100)
         }
 

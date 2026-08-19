@@ -43,11 +43,12 @@ fun RedesignedCurrentGlucoseCard(
     reading: GlucoseReading,
     targetLow: Int,
     targetHigh: Int,
+    now: Instant = Instant.now(),
     modifier: Modifier = Modifier
 ) {
     val presentation = buildGlucoseStatusPresentation(
         reading = reading,
-        now = Instant.now(),
+        now = now,
         config = GlucoseWarningConfig(targetLowMgDl = targetLow, targetHighMgDl = targetHigh)
     )
     val primaryWarning = presentation.primary

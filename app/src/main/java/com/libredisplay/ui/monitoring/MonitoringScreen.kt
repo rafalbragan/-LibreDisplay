@@ -46,6 +46,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -97,6 +98,16 @@ fun MonitoringScreen(
     var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
     var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
+
+    // Local ticker: refreshes time-sensitive UI every 30 s without any network request.
+    // Covers: "chwilę temu", "Sensor: X dni", coverage countdown, reading age.
+    var currentTime by remember { mutableStateOf(java.time.Instant.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            currentTime = java.time.Instant.now()
+        }
+    }
 
     LaunchedEffect(refreshNonce) {
         viewModel.onScreenVisible(refreshNonce)
@@ -159,6 +170,7 @@ fun MonitoringScreen(
                         DataFreshnessAndSensorStatusBar(
                             lastReadingAt = reading?.timestamp ?: state.lastMeasurementTimestamp,
                             reading = reading,
+                            now = currentTime,
                             modifier = Modifier.padding(horizontal = 0.dp)
                         )
 
@@ -185,7 +197,8 @@ fun MonitoringScreen(
                             RedesignedCurrentGlucoseCard(
                                 reading = reading,
                                 targetLow = state.settings.targetLow,
-                                targetHigh = state.settings.targetHigh
+                                targetHigh = state.settings.targetHigh,
+                                now = currentTime
                             )
 
                             // Subtle divider before metrics
@@ -228,7 +241,8 @@ fun MonitoringScreen(
                             GlucoseChartCard(
                                 state = state,
                                 reading = reading,
-                                onOpenHistory = openHistory
+                                onOpenHistory = openHistory,
+                                now = currentTime
                             )
 
                             // Subtle divider before NFZ
@@ -656,15 +670,16 @@ private fun CriterionCard(criterion: NfzCriterionEvaluation) {
 }
 
 @Composable
-private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?, onOpenHistory: () -> Unit) {
+private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?, onOpenHistory: () -> Unit, now: Instant = Instant.now()) {
     var selectedPoint by remember(reading) { mutableStateOf<GlucoseHistoryPoint?>(null) }
     val chartPoints = remember(reading) {
         if (reading != null) readingTimeline(reading) else emptyList()
     }
     val zoneId = DateTimeFormatterProvider.deviceZoneId()
 
-    // Coverage: separate selected range from actually available data
-    val coverage = remember(chartPoints, state.timeRange) {
+    // Coverage: separate selected range from actually available data.
+    // 'now' included in remember key so the countdown ticks locally every 30 s.
+    val coverage = remember(chartPoints, state.timeRange, now) {
         computeDataCoverage(
             history = chartPoints,
             selectedRange = java.time.Duration.ofSeconds(state.timeRange.durationSeconds),
@@ -676,7 +691,8 @@ private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?,
                 PresetTimeRange.LAST_30_DAYS -> "30 dni"
                 PresetTimeRange.LAST_90_DAYS -> "90 dni"
                 PresetTimeRange.LAST_12_MONTHS -> "12 mies."
-            }
+            },
+            now = now
         )
     }
 

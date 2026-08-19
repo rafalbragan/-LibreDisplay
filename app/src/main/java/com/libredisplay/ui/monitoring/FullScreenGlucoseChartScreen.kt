@@ -39,6 +39,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -68,17 +69,28 @@ internal fun FullScreenGlucoseChartScreen(
     var range by remember(state.selectedPatientId) { mutableStateOf(initialRange) }
     var selectedPoint by remember { mutableStateOf<GlucoseHistoryPoint?>(null) }
 
+    // Local ticker for coverage countdown – no network needed.
+    var currentTime by remember { mutableStateOf(Instant.now()) }
+    LaunchedEffect(Unit) {
+        while (true) {
+            delay(30_000L)
+            currentTime = Instant.now()
+        }
+    }
+
     val history = reading?.let(::readingTimeline).orEmpty()
     val end = history.maxOfOrNull { it.timestamp } ?: Instant.now()
     val start = end.minus(range.duration)
     val visible = history.filter { !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end) }
 
-    // Coverage model: separates SELECTED range from AVAILABLE data
-    val coverage = remember(visible, range) {
+    // Coverage model: separates SELECTED range from AVAILABLE data.
+    // 'currentTime' in key so countdown ticks locally.
+    val coverage = remember(visible, range, currentTime) {
         computeDataCoverage(
             history = visible,
             selectedRange = range.duration,
-            selectedRangeLabel = range.toSelectedRangeLabel()
+            selectedRangeLabel = range.toSelectedRangeLabel(),
+            now = currentTime
         )
     }
 

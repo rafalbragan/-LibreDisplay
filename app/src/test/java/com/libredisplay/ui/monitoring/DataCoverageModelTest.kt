@@ -37,14 +37,15 @@ class DataCoverageModelTest {
         val coverage = computeDataCoverage(
             history = history,
             selectedRange = Duration.ofHours(24),
-            selectedRangeLabel = "24 godz."
+            selectedRangeLabel = "24 godz.",
+            now = now  // explicit now so test is deterministic
         )
 
         assertFalse(coverage.hasFullCoverage)
         // Available span should be approximately 8h
         val spanHours = coverage.availableSpan.toHours()
         assertTrue("Expected ~8h span, got $spanHours", spanHours in 7..9)
-        // Time until full should be approximately 16h
+        // Time until full should be approximately 16h (24h - 8h)
         assertNotNull(coverage.timeUntilFullCoverage)
         val untilHours = coverage.timeUntilFullCoverage!!.toHours()
         assertTrue("Expected ~16h until full, got $untilHours", untilHours in 14..17)
@@ -61,7 +62,8 @@ class DataCoverageModelTest {
         val coverage = computeDataCoverage(
             history = history,
             selectedRange = Duration.ofHours(24),
-            selectedRangeLabel = "24 godz."
+            selectedRangeLabel = "24 godz.",
+            now = now  // explicit now so test is deterministic
         )
 
         assertTrue(coverage.hasFullCoverage)

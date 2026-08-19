@@ -82,11 +82,13 @@ data class DataCoverageModel(
  * @param history      All history points (filtered to the selected range at most).
  * @param selectedRange Duration requested by the user.
  * @param selectedRangeLabel Polish short label for the range (e.g. "24 godz.").
+ * @param now          Current time (default: Instant.now()). Used for countdown ticking.
  */
 fun computeDataCoverage(
     history: List<GlucoseHistoryPoint>,
     selectedRange: Duration,
-    selectedRangeLabel: String
+    selectedRangeLabel: String,
+    now: Instant = Instant.now()
 ): DataCoverageModel {
     if (history.isEmpty()) {
         return DataCoverageModel(
@@ -102,10 +104,16 @@ fun computeDataCoverage(
 
     val oldest = history.minOf { it.timestamp }
     val newest = history.maxOf { it.timestamp }
+    // availableSpan = actual span between first and last reading
     val span = Duration.between(oldest, newest)
-    val hasFullCoverage = !span.isNegative && span >= selectedRange
+
+    // hasFullCoverage: does our data go back far enough from NOW to cover selectedRange?
+    // This allows the countdown to tick locally without waiting for new network data.
+    val timeSinceOldest = Duration.between(oldest, now).let { if (it.isNegative) Duration.ZERO else it }
+    val hasFullCoverage = timeSinceOldest >= selectedRange
+
     val timeUntil = if (!hasFullCoverage) {
-        val needed = selectedRange - span
+        val needed = selectedRange - timeSinceOldest
         if (needed.isNegative || needed.isZero) null else needed
     } else null
 
