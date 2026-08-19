@@ -68,7 +68,7 @@ fun LibreTopBar(
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = LibreCareColors.SurfaceElevated
+            containerColor = LibreCareColors.Background
         ),
         modifier = modifier
     )
@@ -96,18 +96,16 @@ fun DataFreshnessAndSensorStatusBar(
     val sensorStatus = SensorStatusCalculator.calculateSensorStatus(reading, now)
 
     if (isStale) {
-        // Prominent alert for stale data
         Column(
             modifier = modifier
                 .fillMaxWidth()
-                .background(LibreCareColors.AccentRed.copy(alpha = 0.1f))
-                .padding(horizontal = 12.dp, vertical = 8.dp),
-            verticalArrangement = Arrangement.spacedBy(4.dp)
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp)
         ) {
             Text(
-                text = "BRAK AKTUALNYCH DANYCH",
+                text = "Brak aktualnych danych",
                 color = LibreCareColors.AccentRed,
-                fontSize = 13.sp,
+                fontSize = 12.sp,
                 fontWeight = FontWeight.SemiBold
             )
             lastReadingAt?.let {
@@ -119,15 +117,12 @@ fun DataFreshnessAndSensorStatusBar(
             }
         }
     } else {
-        // Compact normal status
-        Row(
+        Column(
             modifier = modifier
                 .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.spacedBy(12.dp),
-            verticalAlignment = Alignment.CenterVertically
+                .padding(horizontal = 12.dp, vertical = 2.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
         ) {
-            // Data freshness
             val freshnessText = freshnessDuration?.let {
                 RelativeTimeFormatter.formatDurationAgo(it)
             } ?: "brak danych"
@@ -137,15 +132,6 @@ fun DataFreshnessAndSensorStatusBar(
                 color = LibreCareColors.TextSecondary,
                 fontSize = 11.sp
             )
-
-            // Bullet separator
-            Text(
-                text = "•",
-                color = LibreCareColors.TextSecondary,
-                fontSize = 11.sp
-            )
-
-            // Sensor status
             Text(
                 text = sensorStatus.statusMessage,
                 color = if (sensorStatus.isError) LibreCareColors.AccentRed

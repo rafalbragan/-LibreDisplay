@@ -15,22 +15,21 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material.icons.filled.Add
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -315,27 +314,48 @@ private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> 
         modifier = Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
-            .padding(horizontal = 4.dp),
+            .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        listOf(
-            TimeRange.LAST_3_HOURS,
-            TimeRange.LAST_6_HOURS,
-            TimeRange.LAST_12_HOURS,
-            TimeRange.LAST_24_HOURS,
-            TimeRange.LAST_7_DAYS,
-            TimeRange.LAST_30_DAYS,
-            TimeRange.LAST_90_DAYS,
-            TimeRange.LAST_365_DAYS
-        ).forEach { candidate ->
-            if (candidate == range) {
-                TextButton(onClick = { onRangeSelected(candidate) }) { Text(candidate.shortLabel) }
-            } else {
-                OutlinedButton(onClick = { onRangeSelected(candidate) }) { Text(candidate.shortLabel) }
+        historySelectableRanges().forEach { candidate ->
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally,
+                modifier = Modifier
+                    .clickable { onRangeSelected(candidate) }
+                    .padding(horizontal = 6.dp, vertical = 4.dp)
+            ) {
+                Text(
+                    text = candidate.shortLabel,
+                    color = if (candidate == range) LibreCareColors.TextPrimary else LibreCareColors.TextSecondary,
+                    fontSize = 12.sp,
+                    fontWeight = if (candidate == range) FontWeight.SemiBold else FontWeight.Normal
+                )
+                if (candidate == range) {
+                    Box(
+                        modifier = Modifier
+                            .padding(top = 4.dp)
+                            .size(width = 22.dp, height = 2.dp)
+                            .background(LibreCareColors.AccentTeal)
+                    )
+                } else {
+                    Spacer(modifier = Modifier.height(6.dp))
+                }
             }
         }
     }
+    HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(horizontal = 4.dp))
 }
+
+internal fun historySelectableRanges(): List<TimeRange> = listOf(
+    TimeRange.LAST_3_HOURS,
+    TimeRange.LAST_6_HOURS,
+    TimeRange.LAST_12_HOURS,
+    TimeRange.LAST_24_HOURS,
+    TimeRange.LAST_7_DAYS,
+    TimeRange.LAST_30_DAYS,
+    TimeRange.LAST_90_DAYS,
+    TimeRange.LAST_365_DAYS
+)
 
 @Composable
 private fun LocalEmptyChartState() {

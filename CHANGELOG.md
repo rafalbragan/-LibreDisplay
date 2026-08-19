@@ -2,6 +2,48 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.9.1 - 2026-08-19
+
+### PL
+
+#### Changed
+- Dodatkowo skompaktowano górną część Home: top bar ma teraz wspólne tło ekranu, a pasek świeżości danych i status sensora jest bardziej tekstowy i mniej blokowy.
+- `TimeRangeDisplay` na Home jest jeszcze lżejszy: tekst „Zakres”, jedna linia informacji i akcja „Historia”.
+- Selektor zakresu czasu na ekranie historii nie używa już przycisków / pills; został zastąpiony płaskim selektorem tekstowym z subtelnym underline dla aktywnej opcji.
+
+#### Fixed
+- Odzyskano dodatkowe pionowe miejsce w górnej części ekranu.
+- Usunięto kolejny obszar, który nadal wizualnie przypominał zestaw chipów/przycisków.
+
+#### Tests
+- Dodano `HistorySelectorModelTest`.
+- Zweryfikowano pełny build/test/lint dla wersji 1.9.1.
+
+#### Artifacts
+- `LibreCare-1.9.1-debug.apk`
+- `LibreCare-1.9.1-release.apk`
+- `LibreCare-1.9.1-release.aab`
+
+### EN
+
+#### Changed
+- Further compacted the Home top area: the top bar now uses the shared screen background, and the freshness/sensor block is more text-first and less block-like.
+- `TimeRangeDisplay` on Home is lighter: “Zakres” label, one information line, and a “Historia” action.
+- The history time-range selector no longer uses buttons/pills; it is now a flat text selector with a subtle underline for the active option.
+
+#### Fixed
+- Recovered additional vertical space in the upper part of the screen.
+- Removed another area that still visually resembled a set of chips/buttons.
+
+#### Tests
+- Added `HistorySelectorModelTest`.
+- Verified full build/test/lint for version 1.9.1.
+
+#### Artifacts
+- `LibreCare-1.9.1-debug.apk`
+- `LibreCare-1.9.1-release.apk`
+- `LibreCare-1.9.1-release.aab`
+
 ## 1.9.0 - 2026-08-19
 
 ### PL

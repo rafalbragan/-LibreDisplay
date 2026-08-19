@@ -23,8 +23,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AccessTime
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -39,6 +37,7 @@ private val DashboardSurface = Color(0xFF182033)
 private val DashboardElevatedSurface = Color(0xFF202A3D)
 private val DashboardPrimaryText = Color(0xFFF3F6FA)
 private val DashboardSecondaryText = Color(0xFFAAB3C2)
+private val DashboardMutedText = Color(0xFF7C8798)
 private val AccentGreen = Color(0xFF43C59E)
 private val AccentWarning = Color(0xFFF2B84B)
 private val AccentRed = Color(0xFFE05A6A)
@@ -58,7 +57,7 @@ fun CompactPersonSwitcherBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 4.dp),
+            .padding(horizontal = 16.dp, vertical = 1.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
@@ -267,21 +266,30 @@ fun TimeRangeDisplay(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 2.dp),
-        verticalAlignment = Alignment.CenterVertically,
+            .padding(horizontal = 16.dp, vertical = 1.dp),
+        verticalAlignment = Alignment.Top,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Icon(Icons.Default.AccessTime, contentDescription = null, tint = DashboardSecondaryText)
-        Text(
-            text = compactDashboardRangeLabel(timeRange, latestReadingAt),
-            color = DashboardSecondaryText,
-            fontSize = 12.sp,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f)
-        )
-        TextButton(onClick = onChangeClick) {
-            Text(text = "Zmień", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+        Column(
+            modifier = Modifier.weight(1f),
+            verticalArrangement = Arrangement.spacedBy(1.dp)
+        ) {
+            Text(
+                text = "Zakres",
+                color = DashboardMutedText,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Normal
+            )
+            Text(
+                text = compactDashboardRangeLabel(timeRange, latestReadingAt),
+                color = DashboardSecondaryText,
+                fontSize = 12.sp,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+        TextButton(onClick = onChangeClick, modifier = Modifier.padding(top = 2.dp)) {
+            Text(text = "Historia", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
     HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DashboardSurface)
