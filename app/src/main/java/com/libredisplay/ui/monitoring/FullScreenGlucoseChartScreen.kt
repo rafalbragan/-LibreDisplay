@@ -72,6 +72,16 @@ internal fun FullScreenGlucoseChartScreen(
     val end = history.maxOfOrNull { it.timestamp } ?: Instant.now()
     val start = end.minus(range.duration)
     val visible = history.filter { !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end) }
+
+    // Coverage model: separates SELECTED range from AVAILABLE data
+    val coverage = remember(visible, range) {
+        computeDataCoverage(
+            history = visible,
+            selectedRange = range.duration,
+            selectedRangeLabel = range.toSelectedRangeLabel()
+        )
+    }
+
     val chartPoints = remember(visible, range, state.settings.targetLow, state.settings.targetHigh) {
         buildHistoryChartSeries(
             readings = visible,
@@ -87,9 +97,10 @@ internal fun FullScreenGlucoseChartScreen(
     val stats = remember(visible, range, state.settings.targetLow, state.settings.targetHigh) {
         historyStatsSection(
             history = visible,
-            rangeLabel = range.label,
+            rangeLabel = range.toSelectedRangeLabel(),
             targetLow = state.settings.targetLow,
-            targetHigh = state.settings.targetHigh
+            targetHigh = state.settings.targetHigh,
+            coverage = coverage
         )
     }
     val eventItems = remember { placeholderHistoryEvents() }
@@ -133,7 +144,11 @@ internal fun FullScreenGlucoseChartScreen(
 
             Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Text(range.label, color = Color(0xFFCBD5E1), fontSize = 13.sp)
+                    // Show actual available data span, not selected range
+                    Text(coverage.sectionHeaderLabel, color = Color(0xFFCBD5E1), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                    coverage.selectedRangeNote?.let { note ->
+                        Text(note, color = Color(0xFF64748B), fontSize = 11.sp)
+                    }
                     Text("Przeciągnij po wykresie, aby podejrzeć punkt.", color = Color(0xFF94A3B8), fontSize = 12.sp)
                     if (chartPoints.isEmpty()) {
                         LocalEmptyChartState()
@@ -149,6 +164,15 @@ internal fun FullScreenGlucoseChartScreen(
                             chartHeight = 380.dp,
                             maxVisiblePoints = 280,
                             modifier = Modifier.fillMaxWidth()
+                        )
+                    }
+                    // Coverage estimate shown below chart
+                    coverage.fullCoverageEstimate?.let { estimate ->
+                        Text(
+                            text = estimate,
+                            color = Color(0xFF64748B),
+                            fontSize = 11.sp,
+                            lineHeight = 15.sp
                         )
                     }
                 }
@@ -196,8 +220,15 @@ internal fun FullScreenGlucoseChartScreen(
             ) {
                 Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Text("Rozkład zakresów", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                        Spacer(modifier = Modifier.weight(1f))
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text("Czas w zakresach", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                            Text(
+                                text = if (coverage.hasFullCoverage) coverage.selectedRangeLabel
+                                       else "${coverage.availableSpanLabel} danych",
+                                color = LibreCareColors.TextSecondary,
+                                fontSize = 11.sp
+                            )
+                        }
                         Text(
                             if (showLegendDetails) "▼" else "▶",
                             color = LibreCareColors.TextSecondary,

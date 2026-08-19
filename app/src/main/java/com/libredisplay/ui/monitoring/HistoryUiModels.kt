@@ -101,9 +101,15 @@ internal fun historyStatsSection(
     history: List<GlucoseHistoryPoint>,
     rangeLabel: String,
     targetLow: Int,
-    targetHigh: Int
+    targetHigh: Int,
+    coverage: DataCoverageModel? = null
 ): HistoryStatsSectionUi {
-    val title = "Statystyki - $rangeLabel"
+    // Use actual available span in title, not selected range
+    val title = if (coverage != null && !coverage.hasFullCoverage && !coverage.availableSpan.isZero) {
+        "Statystyki · ${coverage.availableSpanLabel} danych"
+    } else {
+        "Statystyki · $rangeLabel"
+    }
     if (history.size < 2) {
         return HistoryStatsSectionUi(
             title = title,

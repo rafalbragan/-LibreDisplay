@@ -129,21 +129,11 @@ fun PollingFrequencyScreen(
                 }
             }
 
-            // Warning
-            Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2E18)),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Text(
-                    stringResource(R.string.polling_battery_warning),
-                    color = Color(0xFFF8FAFC),
-                    fontSize = 12.sp,
-                    modifier = Modifier.padding(12.dp)
-                )
-            }
+            // Warning removed: generic "battery may increase" was imprecise and unhelpful.
+            // Specific info is shown per-option via dataUsage label.
 
             Text(
-                "Szacowane zuzycie po zmianie: ${state.estimatedUsageLabel}",
+                "Szacowane zużycie po zmianie: ${state.estimatedUsageLabel}",
                 color = DashboardSecondaryText,
                 fontSize = 12.sp
             )

@@ -16,7 +16,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -126,81 +125,64 @@ internal fun ImprovedQuickMetricsPanel(
     val tileWidth = 112.dp
     val slotStepPx = 120f
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface),
-        shape = RoundedCornerShape(16.dp),
-        modifier = modifier.fillMaxWidth()
+    // Flat section – no Card wrapper. Use spacing/dividers for visual separation.
+    Column(
+        modifier = modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(
-            modifier = Modifier.padding(horizontal = 10.dp, vertical = 10.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "Szybkie metryki",
-                    color = LibreCareColors.TextPrimary,
-                    fontWeight = FontWeight.SemiBold,
-                    fontSize = 13.sp
-                )
-                Box(modifier = Modifier.weight(1f))
-                TextButton(onClick = { reorderMode = !reorderMode }) {
-                    Text(if (reorderMode) "Zakończ" else "Zmień kolejność", fontSize = 12.sp)
-                }
-            }
+        if (reorderMode) {
+            Text(
+                text = "Przytrzymaj kafelek i przeciągnij, aby zmienić kolejność.",
+                color = LibreCareColors.TextSecondary,
+                fontSize = 11.sp,
+                modifier = Modifier.padding(horizontal = 4.dp)
+            )
+        }
 
-            if (reorderMode) {
-                Text(
-                    text = "Przytrzymaj kafelek i przeciągnij, aby zmienić kolejność.",
-                    color = LibreCareColors.TextSecondary,
-                    fontSize = 11.sp
-                )
-            }
-
-            LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                items(visibleOrder, key = { it.storageId }) { metricId ->
-                    val tile = tileById[metricId] ?: return@items
-                    QuickMetricTile(
-                        tile = tile,
-                        reorderMode = reorderMode,
-                        isDragging = draggingId == metricId,
-                        modifier = Modifier
-                            .width(tileWidth)
-                            .pointerInput(reorderMode, visibleOrder, metricId) {
-                                detectDragGesturesAfterLongPress(
-                                    onDragStart = {
-                                        if (!reorderMode) reorderMode = true
-                                        draggingId = metricId
-                                        dragDistance = 0f
-                                    },
-                                    onDragCancel = {
-                                        draggingId = null
-                                        dragDistance = 0f
-                                    },
-                                    onDragEnd = {
-                                        draggingId = null
-                                        dragDistance = 0f
-                                        onOrderChanged(orderState.toList())
-                                    }
-                                ) { change, dragAmount ->
-                                    if (draggingId != metricId) return@detectDragGesturesAfterLongPress
-                                    dragDistance += dragAmount.x
-                                    val shift = (dragDistance / slotStepPx).toInt()
-                                    if (shift != 0) {
-                                        val from = orderState.indexOf(metricId)
-                                        if (from != -1) {
-                                            val to = (from + shift).coerceIn(0, orderState.lastIndex)
-                                            if (to != from) {
-                                                orderState.removeAt(from)
-                                                orderState.add(to, metricId)
-                                                dragDistance -= shift * slotStepPx
-                                            }
+        LazyRow(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
+            items(visibleOrder, key = { it.storageId }) { metricId ->
+                val tile = tileById[metricId] ?: return@items
+                QuickMetricTile(
+                    tile = tile,
+                    reorderMode = reorderMode,
+                    isDragging = draggingId == metricId,
+                    modifier = Modifier
+                        .width(tileWidth)
+                        .pointerInput(reorderMode, visibleOrder, metricId) {
+                            detectDragGesturesAfterLongPress(
+                                onDragStart = {
+                                    if (!reorderMode) reorderMode = true
+                                    draggingId = metricId
+                                    dragDistance = 0f
+                                },
+                                onDragCancel = {
+                                    draggingId = null
+                                    dragDistance = 0f
+                                },
+                                onDragEnd = {
+                                    draggingId = null
+                                    dragDistance = 0f
+                                    onOrderChanged(orderState.toList())
+                                }
+                            ) { change, dragAmount ->
+                                if (draggingId != metricId) return@detectDragGesturesAfterLongPress
+                                dragDistance += dragAmount.x
+                                val shift = (dragDistance / slotStepPx).toInt()
+                                if (shift != 0) {
+                                    val from = orderState.indexOf(metricId)
+                                    if (from != -1) {
+                                        val to = (from + shift).coerceIn(0, orderState.lastIndex)
+                                        if (to != from) {
+                                            orderState.removeAt(from)
+                                            orderState.add(to, metricId)
+                                            dragDistance -= shift * slotStepPx
                                         }
                                     }
-                                    change.consume()
                                 }
+                                change.consume()
                             }
-                    )
-                }
+                        }
+                )
             }
         }
     }

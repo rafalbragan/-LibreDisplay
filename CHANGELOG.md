@@ -2,7 +2,61 @@
 
 All notable changes to LibreCare will be documented in this file.
 
-## 1.6.0 - 2026-08-19
+## 1.7.0 - 2026-08-19
+
+### PL
+
+#### Dodano
+- `DataCoverageModel` – centralny model oddzielający WYBRANY ZAKRES od DOSTĘPNYCH DANYCH.
+- `formatNaturalDuration()` – naturalny polski format czasu trwania: „15 min", „8 godz. 02 min", „24 godz.", „7 dni".
+- `TimeRange.toSelectedRangeLabel()` – krótkie polskie etykiety zakresów.
+- Informacja o dostępnym spanie danych bezpośrednio przy wykresie i nagłówkach statystyk.
+- Szacowany czas do pełnego zakresu: „Przy ciągłym zapisie pełny zakres 24 godz. będzie dostępny za ok. X godz. Y min."
+- `DataCoverageModelTest` – 8 nowych przypadków testowych.
+
+#### Zmieniono
+- `ImprovedQuickMetricsPanel` – usunięto opakowanie w Card; metryki bezpośrednio na tle.
+- `GlucoseChartCard` – usunięto opakowanie w Card; sekcja oddzielona subtelnymi separatorami.
+- `TimeRangeDisplay` – usunięto opakowanie w Surface/pill; płaski wiersz z ikoną.
+- Tytuł statystyk: „Statystyki · 8 godz. 02 min danych" zamiast „Statystyki - Ostatnie 24 godz."
+- Sekcja „Czas w zakresach" pokazuje faktyczny span danych, nie wybrany zakres.
+- Nagłówek wykresu i statystyk w HistoryScreen używa rzeczywistego span zamiast range.label.
+- Zmniejszono promienie zaokrągleń: karta glukozy 20→14dp, NFZ 18→12dp, MedicalAlert 12→8dp.
+
+#### Poprawiono
+- Usunięto ogólny komunikat „Zużycie baterii może wzrosnąć" z ustawień pollingu (zastąpiony precyzyjnym opisem w kontekście opcji).
+- Spójne formatowanie polskich nazw czasów trwania w całej aplikacji.
+
+#### Testy
+- `./gradlew testDebugUnitTest`: PASS (274 testów)
+- `./gradlew lint`: PASS
+- `./gradlew assembleDebug`: PASS
+- `./gradlew assembleRelease`: PASS
+- `./gradlew bundleRelease`: PASS
+
+#### Artefakty
+- `release-artifacts/LibreCare-1.7.0-debug.apk` (~22 657 KB)
+- `release-artifacts/LibreCare-1.7.0-release.apk` (~2 984 KB)
+- `release-artifacts/LibreCare-1.7.0-release.aab` (~5 483 KB)
+
+### EN
+
+#### Added
+- `DataCoverageModel` – central model separating SELECTED RANGE from AVAILABLE DATA.
+- `formatNaturalDuration()` – natural Polish duration formatting.
+- Coverage info and estimate shown below chart and in statistics headers.
+
+#### Changed
+- `ImprovedQuickMetricsPanel` – removed Card wrapper; flat layout.
+- `GlucoseChartCard` – removed Card wrapper; uses dividers.
+- `TimeRangeDisplay` – removed Surface/pill; flat row.
+- Statistics title uses actual available span, not selected range.
+- Reduced corner radii throughout.
+
+#### Fixed
+- Removed vague battery warning from polling settings.
+
+
 
 ### PL
 

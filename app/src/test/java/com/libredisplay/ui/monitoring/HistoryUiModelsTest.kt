@@ -44,14 +44,58 @@ class HistoryUiModelsTest {
     fun historyStatsSection_returnsCompactCards() {
         val section = historyStatsSection(
             history = sampleHistory(),
-            rangeLabel = "Ostatnie 24 godz.",
+            rangeLabel = "24 godz.",
             targetLow = 70,
             targetHigh = 180
         )
 
-        assertTrue(section.title.contains("Statystyki - Ostatnie 24 godz."))
+        // When coverage is not provided (null), title uses rangeLabel
+        assertTrue(section.title.contains("Statystyki · 24 godz."))
         assertEquals(listOf("Średnia", "GMI", "CV", "Czas w zakresie"), section.cards.map { it.label })
         assertTrue(section.cards.none { it.value.isBlank() })
+    }
+
+    @Test
+    fun historyStatsSection_withPartialCoverage_usesAvailableSpanInTitle() {
+        val history = sampleHistory() // spans 1 hour
+        val coverage = computeDataCoverage(
+            history = history,
+            selectedRange = java.time.Duration.ofHours(24),
+            selectedRangeLabel = "24 godz."
+        )
+        val section = historyStatsSection(
+            history = history,
+            rangeLabel = "24 godz.",
+            targetLow = 70,
+            targetHigh = 180,
+            coverage = coverage
+        )
+
+        // Should show actual data span, not selected range
+        assertTrue("Title should contain 'danych', got: ${section.title}", section.title.contains("danych"))
+        assertTrue("Title should NOT contain '24 godz.' as primary label, got: ${section.title}",
+            !section.title.startsWith("Statystyki · 24 godz."))
+    }
+
+    @Test
+    fun historyStatsSection_withFullCoverage_usesSelectedRangeLabel() {
+        val history = sampleHistory() // spans 1 hour
+        val coverage = computeDataCoverage(
+            history = history,
+            selectedRange = java.time.Duration.ofMinutes(30), // less than 1h
+            selectedRangeLabel = "30 min"
+        )
+        val section = historyStatsSection(
+            history = history,
+            rangeLabel = "30 min",
+            targetLow = 70,
+            targetHigh = 180,
+            coverage = coverage
+        )
+
+        // Full coverage → show selected range label
+        assertTrue("Title should use selected range label, got: ${section.title}",
+            section.title.contains("30 min"))
     }
 
     @Test

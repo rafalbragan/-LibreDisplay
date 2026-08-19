@@ -56,7 +56,7 @@ fun RedesignedCurrentGlucoseCard(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface),
-        shape = RoundedCornerShape(20.dp),
+        shape = RoundedCornerShape(14.dp),
         modifier = modifier.fillMaxWidth()
     ) {
         Column(
@@ -168,7 +168,7 @@ private fun MedicalAlertInline(
     Box(
         modifier = Modifier
             .fillMaxWidth()
-            .background(glucoseColor.copy(alpha = 0.12f), RoundedCornerShape(12.dp))
+            .background(glucoseColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
             .padding(12.dp)
     ) {
         Row(

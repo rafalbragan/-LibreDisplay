@@ -124,5 +124,35 @@ internal object PolishDateTimeFormatter {
         instant: Instant,
         zoneId: ZoneId = DateTimeFormatterProvider.deviceZoneId()
     ): LocalDate = instant.atZone(zoneId).toLocalDate()
+
+    /**
+     * Formats duration in natural Polish language:
+     * - null / zero → "chwilę temu"
+     * - < 1 min     → "chwilę temu"
+     * - 15 min      → "15 min"
+     * - 1h 15min    → "1 godz. 15 min"
+     * - 8h 2min     → "8 godz. 02 min"
+     * - 24h exactly → "24 godz."
+     * - 7d          → "7 dni"
+     */
+    fun formatNaturalDuration(duration: Duration?): String {
+        if (duration == null || duration.isNegative || duration.isZero) return "chwilę temu"
+        val totalMinutes = duration.toMinutes()
+        if (totalMinutes < 1) return "chwilę temu"
+        if (totalMinutes < 60) return "$totalMinutes min"
+        val totalHours = totalMinutes / 60
+        val minutes = totalMinutes % 60
+        // Show in hours if <= 24h (user's range selectors go up to 24h)
+        if (totalHours <= 24) {
+            return if (minutes > 0) {
+                "$totalHours godz. ${minutes.toString().padStart(2, '0')} min"
+            } else {
+                "$totalHours godz."
+            }
+        }
+        val days = totalHours / 24
+        val hours = totalHours % 24
+        return if (hours > 0) "$days dni $hours godz." else "$days dni"
+    }
 }
 

@@ -266,6 +266,7 @@ private fun CompactStatBox(
 
 /**
  * Time range display showing selected period clearly.
+ * Flat design – no Surface/pill wrapper. Just a row with subtle separator.
  */
 @Composable
 fun TimeRangeDisplay(
@@ -274,33 +275,24 @@ fun TimeRangeDisplay(
     onChangeClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        color = DashboardElevatedSurface,
-        shape = RoundedCornerShape(16.dp),
+    Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .heightIn(min = 44.dp)
+            .padding(horizontal = 16.dp, vertical = 2.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(start = 12.dp, end = 6.dp, top = 4.dp, bottom = 4.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Icon(Icons.Default.AccessTime, contentDescription = null, tint = DashboardSecondaryText)
-            Text(
-                text = compactDashboardRangeLabel(timeRange, latestReadingAt),
-                color = DashboardSecondaryText,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.weight(1f)
-            )
-            TextButton(onClick = onChangeClick) {
-                Text(text = "Zmień", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-            }
+        Icon(Icons.Default.AccessTime, contentDescription = null, tint = DashboardSecondaryText)
+        Text(
+            text = compactDashboardRangeLabel(timeRange, latestReadingAt),
+            color = DashboardSecondaryText,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        TextButton(onClick = onChangeClick) {
+            Text(text = "Zmień", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
 }

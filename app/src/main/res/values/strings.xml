@@ -200,7 +200,7 @@
     <string name="polling_estimated_usage">Szacowane zuzycie po zmianie</string>
     <string name="polling_current_frequency">Obecna czestotliwosc</string>
     <string name="polling_after_change">Po zmianie</string>
-    <string name="polling_battery_warning">Zuzycie baterii moze wzrosnac</string>
+    <string name="polling_battery_warning">Częstsze pobieranie danych może zwiększyć transfer i zużycie baterii przy bardzo krótkich interwałach.</string>
     <string name="polling_data_per_day">MB / dzien</string>
     <string name="polling_not_implemented">Tlo odpytywanie nie jest w pelni zaimplementowane</string>
     <!-- Monitoring header -->

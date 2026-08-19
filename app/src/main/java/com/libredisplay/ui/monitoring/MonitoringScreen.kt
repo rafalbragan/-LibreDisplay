@@ -181,66 +181,84 @@ fun MonitoringScreen(
                         )
 
                         if (reading != null) {
-                             // Redesigned glucose card (replaces old CurrentGlucoseHeroCard + CurrentGlucoseWarningCard)
-                             RedesignedCurrentGlucoseCard(
-                                 reading = reading,
-                                 targetLow = state.settings.targetLow,
-                                 targetHigh = state.settings.targetHigh
-                             )
+                            // Redesigned glucose card
+                            RedesignedCurrentGlucoseCard(
+                                reading = reading,
+                                targetLow = state.settings.targetLow,
+                                targetHigh = state.settings.targetHigh
+                            )
 
-                             // Quick metrics panel with persisted user-defined order
-                             val metrics = buildDashboardMetrics(reading, state.settings.targetLow, state.settings.targetHigh)
-                             val metricTiles = buildQuickMetricTiles(
-                                 belowDuration = metrics.belowDuration,
-                                 belowPercent = metrics.belowPercent,
-                                 inRangeDuration = metrics.inRangeDuration,
-                                 inRangePercent = metrics.inRangePercent,
-                                 aboveDuration = metrics.aboveDuration,
-                                 abovePercent = metrics.abovePercent,
-                                 gmiValue = metrics.gmiValue,
-                                 hba1cValue = metrics.hba1cValue
-                             )
-                             ImprovedQuickMetricsPanel(
-                                 tiles = metricTiles,
-                                 orderedIds = state.quickMetricsOrder,
-                                 onOrderChanged = viewModel::saveQuickMetricsOrder
-                             )
-                             TextButton(
-                                 onClick = onNavigateToMetricSettings,
-                                 modifier = Modifier.align(Alignment.End)
-                             ) {
-                                 Text("Zmień metryki", color = AccentGreen)
-                             }
+                            // Subtle divider before metrics
+                            androidx.compose.material3.HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                color = DashboardSurface
+                            )
 
-                             // History preview chart
-                             GlucoseChartCard(
-                                 state = state,
-                                 reading = reading,
-                                 onOpenHistory = openHistory
-                             )
+                            // Quick metrics panel – flat, no card wrapper
+                            val metrics = buildDashboardMetrics(reading, state.settings.targetLow, state.settings.targetHigh)
+                            val metricTiles = buildQuickMetricTiles(
+                                belowDuration = metrics.belowDuration,
+                                belowPercent = metrics.belowPercent,
+                                inRangeDuration = metrics.inRangeDuration,
+                                inRangePercent = metrics.inRangePercent,
+                                aboveDuration = metrics.aboveDuration,
+                                abovePercent = metrics.abovePercent,
+                                gmiValue = metrics.gmiValue,
+                                hba1cValue = metrics.hba1cValue
+                            )
+                            ImprovedQuickMetricsPanel(
+                                tiles = metricTiles,
+                                orderedIds = state.quickMetricsOrder,
+                                onOrderChanged = viewModel::saveQuickMetricsOrder
+                            )
+                            TextButton(
+                                onClick = onNavigateToMetricSettings,
+                                modifier = Modifier.align(Alignment.End)
+                            ) {
+                                Text("Zmień metryki", color = AccentGreen)
+                            }
 
-                             // NFZ Refund status
-                             NfzStatusCompactCard(
-                                 state = state,
-                                 reading = reading,
-                                 onOpenDetails = { assessment, summary, attentionCount ->
-                                     nfzDetailsContext = NfzDetailsContext(
-                                         assessment = assessment,
-                                         summary = summary,
-                                         attentionCount = attentionCount,
-                                         totalCriteriaCount = assessment.criteria.size,
-                                         selectedHomeRangeDays = state.timeRange.durationDays,
-                                         selectedHomeRangeLabel = compactDashboardRangeLabel(
-                                             state.timeRange,
-                                             state.lastMeasurementTimestamp
-                                         )
-                                     )
-                                 }
-                             )
-                             LastSyncFooter(state.lastSuccessfulFetchAt)
-                         } else {
-                             EmptyChartState()
-                         }
+                            // Subtle divider before chart
+                            androidx.compose.material3.HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                color = DashboardSurface
+                            )
+
+                            // History preview chart (flat section, no card wrapper)
+                            GlucoseChartCard(
+                                state = state,
+                                reading = reading,
+                                onOpenHistory = openHistory
+                            )
+
+                            // Subtle divider before NFZ
+                            androidx.compose.material3.HorizontalDivider(
+                                modifier = Modifier.padding(horizontal = 8.dp),
+                                color = DashboardSurface
+                            )
+
+                            // NFZ Refund status
+                            NfzStatusCompactCard(
+                                state = state,
+                                reading = reading,
+                                onOpenDetails = { assessment, summary, attentionCount ->
+                                    nfzDetailsContext = NfzDetailsContext(
+                                        assessment = assessment,
+                                        summary = summary,
+                                        attentionCount = attentionCount,
+                                        totalCriteriaCount = assessment.criteria.size,
+                                        selectedHomeRangeDays = state.timeRange.durationDays,
+                                        selectedHomeRangeLabel = compactDashboardRangeLabel(
+                                            state.timeRange,
+                                            state.lastMeasurementTimestamp
+                                        )
+                                    )
+                                }
+                            )
+                            LastSyncFooter(state.lastSuccessfulFetchAt)
+                        } else {
+                            EmptyChartState()
+                        }
                         ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
                     }
                 }
@@ -585,7 +603,7 @@ private fun NfzStatusCompactCard(
 
     Card(
         colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(18.dp),
+        shape = RoundedCornerShape(12.dp),
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpenDetails(assessment, summary, attentionCount) }
@@ -644,52 +662,99 @@ private fun GlucoseChartCard(state: MonitoringUiState, reading: GlucoseReading?,
         if (reading != null) readingTimeline(reading) else emptyList()
     }
     val zoneId = DateTimeFormatterProvider.deviceZoneId()
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(18.dp),
-        modifier = Modifier
-            .fillMaxWidth()
-            .semantics { contentDescription = "Wykres historii glukozy. Dotknij punkt lub przeciągnij, aby podejrzeć pomiar. Dotknij tła wykresu, aby powiększyć." }
-    ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 16.sp, fontWeight = FontWeight.SemiBold)
-                Spacer(modifier = Modifier.weight(1f))
-                IconButton(onClick = onOpenHistory) {
-                    Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = "Powiększyć wykres", tint = DashboardSecondaryText)
-                }
+
+    // Coverage: separate selected range from actually available data
+    val coverage = remember(chartPoints, state.timeRange) {
+        computeDataCoverage(
+            history = chartPoints,
+            selectedRange = java.time.Duration.ofSeconds(state.timeRange.durationSeconds),
+            selectedRangeLabel = when (state.timeRange.presetRange) {
+                PresetTimeRange.LAST_12_HOURS -> "12 godz."
+                PresetTimeRange.LAST_24_HOURS -> "24 godz."
+                PresetTimeRange.LAST_7_DAYS -> "7 dni"
+                PresetTimeRange.LAST_14_DAYS -> "14 dni"
+                PresetTimeRange.LAST_30_DAYS -> "30 dni"
+                PresetTimeRange.LAST_90_DAYS -> "90 dni"
+                PresetTimeRange.LAST_12_MONTHS -> "12 mies."
             }
-            Text("Dotknij wykresu, aby otworzyć pełny ekran.", color = DashboardMutedText, fontSize = 12.sp)
-            if (chartPoints.isEmpty()) {
-                EmptyChartState()
-            } else {
-                GlucoseChart(
-                    points = chartPoints,
+        )
+    }
+
+    // Flat section – no Card wrapper, separated by spacing from surrounding content
+    Column(
+        modifier = Modifier.fillMaxWidth(),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
+    ) {
+        // Header row
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    "Historia glikemii",
+                    color = DashboardPrimaryText,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold
+                )
+                // Show actual available span, not selected range
+                Text(
+                    text = coverage.sectionHeaderLabel,
+                    color = DashboardSecondaryText,
+                    fontSize = 12.sp
+                )
+            }
+            IconButton(onClick = onOpenHistory) {
+                Icon(Icons.AutoMirrored.Outlined.ShowChart, contentDescription = "Powiększyć wykres", tint = DashboardSecondaryText)
+            }
+        }
+
+        if (chartPoints.isEmpty()) {
+            EmptyChartState()
+        } else {
+            GlucoseChart(
+                points = chartPoints,
+                targetLow = state.settings.targetLow,
+                targetHigh = state.settings.targetHigh,
+                zoneId = zoneId,
+                selectedPoint = selectedPoint,
+                onPointSelected = { point -> selectedPoint = point },
+                onPointSelectionCleared = { selectedPoint = null },
+                onChartTapped = onOpenHistory,
+                modifier = Modifier.fillMaxWidth()
+            )
+            selectedPoint?.let { point ->
+                val label = formatChartPointLabel(
+                    point = point,
                     targetLow = state.settings.targetLow,
                     targetHigh = state.settings.targetHigh,
-                    zoneId = zoneId,
-                    selectedPoint = selectedPoint,
-                    onPointSelected = { point -> selectedPoint = point },
-                    onPointSelectionCleared = { selectedPoint = null },
-                    onChartTapped = onOpenHistory,
-                    modifier = Modifier.fillMaxWidth()
+                    zoneId = zoneId
                 )
-                selectedPoint?.let { point ->
-                    val label = formatChartPointLabel(
-                        point = point,
-                        targetLow = state.settings.targetLow,
-                        targetHigh = state.settings.targetHigh,
-                        zoneId = zoneId
-                    )
-                    Text(
-                        text = "${label.valueText} • ${label.dateTime} • ${label.statusText}",
-                        color = DashboardSecondaryText,
-                        fontSize = 12.sp,
-                        maxLines = 2,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                }
+                Text(
+                    text = "${label.valueText} • ${label.dateTime} • ${label.statusText}",
+                    color = DashboardSecondaryText,
+                    fontSize = 12.sp,
+                    maxLines = 2,
+                    overflow = TextOverflow.Ellipsis
+                )
             }
+        }
+
+        // Coverage note and estimate
+        coverage.selectedRangeNote?.let { note ->
+            Text(
+                text = note,
+                color = DashboardMutedText,
+                fontSize = 11.sp
+            )
+        }
+        coverage.fullCoverageEstimate?.let { estimate ->
+            Text(
+                text = estimate,
+                color = DashboardMutedText,
+                fontSize = 11.sp,
+                lineHeight = 15.sp
+            )
         }
     }
 }
