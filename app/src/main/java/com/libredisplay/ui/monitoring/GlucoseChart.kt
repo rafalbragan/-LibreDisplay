@@ -254,15 +254,15 @@ internal fun prepareChartData(points: List<GlucoseHistoryPoint>): PreparedChartD
     }.sortedBy { it.epochMillis }
 
     if (prepared.isEmpty()) {
-        return PreparedChartData(points = emptyList(), minValue = 40, maxValue = 240)
+        return PreparedChartData(points = emptyList(), minValue = 0, maxValue = 240)
     }
 
-    val rawMin = prepared.minOf { it.value }
     val rawMax = prepared.maxOf { it.value }
+    // Scale always starts at 0 so the chart shows full proportional context.
     // Do NOT cap maxValue at 420 – CGM readings can exceed that level.
     // Add proportional top margin so labels don't overlap data points.
     val topMargin = if (rawMax > 350) 40 else 25
-    val minValue = (rawMin - 20).coerceAtLeast(40)
+    val minValue = 0
     val maxValue = rawMax + topMargin
 
     return PreparedChartData(points = prepared, minValue = minValue, maxValue = maxValue)
