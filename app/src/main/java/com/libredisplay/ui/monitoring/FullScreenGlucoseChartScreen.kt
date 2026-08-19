@@ -154,41 +154,39 @@ internal fun FullScreenGlucoseChartScreen(
         ) {
             TimeRangeSelector(range = range, onRangeSelected = { range = it })
 
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    // Show actual available data span, not selected range
-                    Text(coverage.sectionHeaderLabel, color = Color(0xFFCBD5E1), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
-                    coverage.selectedRangeNote?.let { note ->
-                        Text(note, color = Color(0xFF64748B), fontSize = 11.sp)
-                    }
-                    Text("Przeciągnij po wykresie, aby podejrzeć punkt.", color = Color(0xFF94A3B8), fontSize = 12.sp)
-                    if (chartPoints.isEmpty()) {
-                        LocalEmptyChartState()
-                    } else {
-                        GlucoseChart(
-                            points = chartPoints,
-                            targetLow = state.settings.targetLow,
-                            targetHigh = state.settings.targetHigh,
-                            zoneId = zoneId,
-                            selectedPoint = selectedPoint,
-                            onPointSelected = { point -> selectedPoint = point },
-                            onPointSelectionCleared = { selectedPoint = null },
-                            chartHeight = 380.dp,
-                            maxVisiblePoints = 280,
-                            modifier = Modifier.fillMaxWidth()
-                        )
-                    }
-                    // Coverage estimate shown below chart
-                    coverage.fullCoverageEstimate?.let { estimate ->
-                        Text(
-                            text = estimate,
-                            color = Color(0xFF64748B),
-                            fontSize = 11.sp,
-                            lineHeight = 15.sp
-                        )
-                    }
+            Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(coverage.sectionHeaderLabel, color = Color(0xFFCBD5E1), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                coverage.selectedRangeNote?.let { note ->
+                    Text(note, color = Color(0xFF64748B), fontSize = 11.sp)
+                }
+                Text("Przeciągnij po wykresie, aby podejrzeć punkt.", color = Color(0xFF94A3B8), fontSize = 12.sp)
+                if (chartPoints.isEmpty()) {
+                    LocalEmptyChartState()
+                } else {
+                    GlucoseChart(
+                        points = chartPoints,
+                        targetLow = state.settings.targetLow,
+                        targetHigh = state.settings.targetHigh,
+                        zoneId = zoneId,
+                        selectedPoint = selectedPoint,
+                        onPointSelected = { point -> selectedPoint = point },
+                        onPointSelectionCleared = { selectedPoint = null },
+                        chartHeight = 380.dp,
+                        maxVisiblePoints = 280,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
+                coverage.fullCoverageEstimate?.let { estimate ->
+                    Text(
+                        text = estimate,
+                        color = Color(0xFF64748B),
+                        fontSize = 11.sp,
+                        lineHeight = 15.sp
+                    )
                 }
             }
+
+            androidx.compose.material3.HorizontalDivider(color = LibreCareColors.Surface)
 
             if (extremes.minimumReading != null && extremes.maximumReading != null) {
                 val averageValue = visible.map { it.value }.average().takeIf { it.isFinite() } ?: 0.0
@@ -212,86 +210,88 @@ internal fun FullScreenGlucoseChartScreen(
                     targetHigh = state.settings.targetHigh,
                     zoneId = zoneId
                 )
-                Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF1F2937)), modifier = Modifier.fillMaxWidth()) {
-                    Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        Text(label.valueText, color = Color.White, fontWeight = FontWeight.Bold)
-                        Text(label.dateTime, color = Color.White, fontWeight = FontWeight.SemiBold)
-                        Text(label.statusText, color = Color(0xFFCBD5E1))
-                        label.trendText?.let { Text(it, color = Color(0xFFCBD5E1), fontSize = 12.sp) }
-                    }
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(LibreCareColors.Surface.copy(alpha = 0.35f))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text(label.valueText, color = Color.White, fontWeight = FontWeight.Bold)
+                    Text(label.dateTime, color = Color.White, fontWeight = FontWeight.SemiBold)
+                    Text(label.statusText, color = Color(0xFFCBD5E1))
+                    label.trendText?.let { Text(it, color = Color(0xFFCBD5E1), fontSize = 12.sp) }
                 }
             }
 
             // Range distribution bar
             var showLegendDetails by remember { mutableStateOf(false) }
-            Card(
-                colors = CardDefaults.cardColors(containerColor = LibreCareColors.Surface),
+            Column(
                 modifier = Modifier
                     .fillMaxWidth()
                     .clickable { showLegendDetails = !showLegendDetails }
+                    .padding(vertical = 4.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
             ) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text("Czas w zakresach", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
-                            Text(
-                                text = if (coverage.hasFullCoverage) coverage.selectedRangeLabel
-                                       else "${coverage.availableSpanLabel} danych",
-                                color = LibreCareColors.TextSecondary,
-                                fontSize = 11.sp
-                            )
-                        }
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Czas w zakresach", color = Color.White, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
                         Text(
-                            if (showLegendDetails) "▼" else "▶",
+                            text = if (coverage.hasFullCoverage) coverage.selectedRangeLabel
+                                   else "${coverage.availableSpanLabel} danych",
                             color = LibreCareColors.TextSecondary,
-                            fontSize = 12.sp
+                            fontSize = 11.sp
                         )
                     }
+                    Text(
+                        if (showLegendDetails) "▼" else "▶",
+                        color = LibreCareColors.TextSecondary,
+                        fontSize = 12.sp
+                    )
+                }
 
-                    // Compact bar representation
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(24.dp),
-                        horizontalArrangement = Arrangement.spacedBy(1.dp)
-                    ) {
-                        legendRows.forEach { row ->
-                            if (row.hasData && row.percent > 0) {
-                                Box(
-                                    modifier = Modifier
-                                        .weight(row.percent.toFloat())
-                                        .fillMaxHeight()
-                                        .background(row.color)
-                                )
-                            }
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(1.dp)
+                ) {
+                    legendRows.forEach { row ->
+                        if (row.hasData && row.percent > 0) {
+                            Box(
+                                modifier = Modifier
+                                    .weight(row.percent.toFloat())
+                                    .fillMaxHeight()
+                                    .background(row.color)
+                            )
                         }
                     }
+                }
 
-                    // Detailed legend (shown when expanded)
-                    if (showLegendDetails) {
-                        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                            legendRows.forEach { row ->
-                                if (row.hasData) {
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp),
-                                        modifier = Modifier.fillMaxWidth()
-                                    ) {
-                                        Text("●", color = row.color, fontSize = 12.sp, modifier = Modifier.width(16.dp))
-                                        Column(modifier = Modifier.weight(1f)) {
-                                            Text(row.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-                                            Text(
-                                                "${row.durationLabel} · ${row.percentLabel}",
-                                                color = LibreCareColors.TextSecondary,
-                                                fontSize = 10.sp
-                                            )
-                                        }
+                if (showLegendDetails) {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        legendRows.forEach { row ->
+                            if (row.hasData) {
+                                Row(
+                                    verticalAlignment = Alignment.CenterVertically,
+                                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                                    modifier = Modifier.fillMaxWidth()
+                                ) {
+                                    Text("●", color = row.color, fontSize = 12.sp, modifier = Modifier.width(16.dp))
+                                    Column(modifier = Modifier.weight(1f)) {
+                                        Text(row.label, color = Color.White, fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
+                                        Text(
+                                            "${row.durationLabel} · ${row.percentLabel}",
+                                            color = LibreCareColors.TextSecondary,
+                                            fontSize = 10.sp
+                                        )
                                     }
                                 }
                             }
                         }
                     }
                 }
+                androidx.compose.material3.HorizontalDivider(color = LibreCareColors.Surface)
             }
 
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -408,15 +408,16 @@ private fun HistoryLegendRow(row: HistoryLegendRowUi) {
 
 @Composable
 private fun HistoryStatCard(card: HistoryStatCardUi) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = LibreCareColors.SurfaceElevated),
-        modifier = Modifier.width(160.dp)
+    Column(
+        modifier = Modifier
+            .width(160.dp)
+            .background(LibreCareColors.Surface.copy(alpha = 0.28f))
+            .padding(10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text(card.label, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
-            Text(card.value, color = card.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 2)
-            Text(card.supportingText, color = LibreCareColors.TextMuted, fontSize = 11.sp)
-        }
+        Text(card.label, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+        Text(card.value, color = card.accent, fontWeight = FontWeight.Bold, fontSize = 18.sp, maxLines = 2)
+        Text(card.supportingText, color = LibreCareColors.TextMuted, fontSize = 11.sp)
     }
 }
 

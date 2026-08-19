@@ -3,18 +3,21 @@ package com.libredisplay.ui.monitoring
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -122,7 +125,7 @@ internal fun ImprovedQuickMetricsPanel(
 
     val tileById = remember(tiles) { tiles.associateBy { it.id } }
     val visibleOrder = orderState.filter { tileById.containsKey(it) }
-    val tileWidth = 112.dp
+    val tileWidth = 98.dp
     val slotStepPx = 120f
 
     // Flat section – no Card wrapper. Use spacing/dividers for visual separation.
@@ -139,9 +142,14 @@ internal fun ImprovedQuickMetricsPanel(
             )
         }
 
-        LazyRow(horizontalArrangement = Arrangement.spacedBy(0.dp)) {
-            items(visibleOrder, key = { it.storageId }) { metricId ->
-                val tile = tileById[metricId] ?: return@items
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .horizontalScroll(rememberScrollState()),
+            horizontalArrangement = Arrangement.spacedBy(0.dp)
+        ) {
+            visibleOrder.forEachIndexed { index, metricId ->
+                val tile = tileById[metricId] ?: return@forEachIndexed
                 QuickMetricTile(
                     tile = tile,
                     reorderMode = reorderMode,
@@ -183,8 +191,18 @@ internal fun ImprovedQuickMetricsPanel(
                             }
                         }
                 )
+                if (index < visibleOrder.lastIndex) {
+                    Box(
+                        modifier = Modifier
+                            .padding(vertical = 8.dp)
+                            .width(1.dp)
+                            .height(46.dp)
+                            .background(LibreCareColors.SurfaceElevated)
+                    )
+                }
             }
         }
+        HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(top = 4.dp))
     }
 }
 
@@ -198,16 +216,17 @@ private fun QuickMetricTile(
     isDragging: Boolean,
     modifier: Modifier = Modifier
 ) {
+    val isRangeTile = tile.id == QuickMetricId.BELOW || tile.id == QuickMetricId.IN_RANGE || tile.id == QuickMetricId.ABOVE
     Box(
         modifier = modifier
             .background(
-                if (tile.emphasized || isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
-                RoundedCornerShape(12.dp)
+                if (isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
+                RoundedCornerShape(8.dp)
             )
-            .padding(8.dp)
+            .padding(horizontal = 6.dp, vertical = 8.dp)
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(4.dp),
+            verticalArrangement = Arrangement.spacedBy(2.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
             modifier = Modifier.fillMaxWidth()
         ) {
@@ -217,27 +236,55 @@ private fun QuickMetricTile(
                 fontSize = 10.sp,
                 fontWeight = FontWeight.Normal
             )
-            Text(
-                text = tile.primaryValue,
-                color = tile.accent,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Clip
-            )
-            Text(
-                text = tile.secondaryValue,
-                color = if (reorderMode) LibreCareColors.TextSecondary else tile.accent,
-                fontSize = if (reorderMode) 12.sp else 16.sp,
-                fontWeight = if (reorderMode) FontWeight.Normal else FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
+            if (isRangeTile && !reorderMode) {
+                Text(
+                    text = tile.secondaryValue,
+                    color = tile.accent,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+                Text(
+                    text = tile.primaryValue,
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+            } else {
+                Text(
+                    text = tile.primaryValue,
+                    color = tile.accent,
+                    fontSize = 14.sp,
+                    fontWeight = FontWeight.Bold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+                Text(
+                    text = tile.secondaryValue,
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
+            if (tile.emphasized && !reorderMode && !isDragging) {
+                Spacer(modifier = Modifier.height(2.dp))
+                Box(
+                    modifier = Modifier
+                        .width(22.dp)
+                        .height(2.dp)
+                        .background(tile.accent)
+                )
+            }
         }
     }
 }
 
-private fun formatDurationQuickly(duration: Duration?): String {
+internal fun formatDurationQuickly(duration: Duration?): String {
     val safeDuration = duration ?: return "—"
     if (safeDuration.isNegative || safeDuration.isZero) return "0m"
 

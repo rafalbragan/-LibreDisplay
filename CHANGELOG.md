@@ -2,6 +2,52 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 1.9.0 - 2026-08-19
+
+### PL
+
+#### Changed
+- Przebudowano layout Home i History tak, aby ekran przestał wyglądać jak stos dużych kart jedna pod drugą.
+- Usunięto większość pełnoekranowych `Card` / `Surface` wrapperów z sekcji glikemii, historii i NFZ.
+- Quick metrics są teraz prezentowane jako płaski, kompaktowy pas z subtelnymi separatorami zamiast osobnych dużych boxów.
+- Sekcja glikemii na ekranie głównym działa bez zewnętrznej karty; hierarchia została oparta o typografię i odstępy.
+- Ekran historii używa płaskich sekcji dla wykresu, selected point, zakresów i statystyk.
+- Person switcher przestał być zestawem dużych pills; wybrana osoba jest oznaczana bardziej lekko, linią pod nazwą.
+
+#### Fixed
+- Odzyskano miejsce pionowe na ekranie przez zmniejszenie liczby dużych kontenerów i redukcję warstw tła.
+
+#### Tests
+- Dodano `RedesignedMetricsTest`.
+- Zweryfikowano pełny build/test/lint dla wersji 1.9.0.
+
+#### Artifacts
+- `LibreCare-1.9.0-debug.apk`
+- `LibreCare-1.9.0-release.apk`
+- `LibreCare-1.9.0-release.aab`
+
+### EN
+
+#### Changed
+- Rebuilt Home and History layout so the app no longer looks like a stack of large rounded cards.
+- Removed most full-width `Card` / `Surface` wrappers from glucose, history, and NFZ sections.
+- Quick metrics now use a flat compact strip with subtle separators instead of large individual boxes.
+- The main glucose section on Home no longer relies on an outer card; hierarchy now comes from typography and spacing.
+- History screen now uses flat sections for chart, selected point, range distribution, and stats.
+- Person switcher is no longer a row of large pills; the selected person uses a lighter underline treatment.
+
+#### Fixed
+- Recovered vertical screen space by reducing large containers and stacked background layers.
+
+#### Tests
+- Added `RedesignedMetricsTest`.
+- Verified full build/test/lint for version 1.9.0.
+
+#### Artifacts
+- `LibreCare-1.9.0-debug.apk`
+- `LibreCare-1.9.0-release.apk`
+- `LibreCare-1.9.0-release.aab`
+
 ## 1.8.1 - 2026-08-19
 
 ### PL

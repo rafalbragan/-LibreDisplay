@@ -165,7 +165,7 @@ fun MonitoringScreen(
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 12.dp, vertical = 10.dp)
-                    Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(6.dp)) {
                         // Data freshness and sensor status bar (replaces status shown in cards)
                         DataFreshnessAndSensorStatusBar(
                             lastReadingAt = reading?.timestamp ?: state.lastMeasurementTimestamp,
@@ -310,17 +310,21 @@ fun MonitoringScreen(
 
 @Composable
 private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2E18)), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            Text("Tryb demo", color = Color(0xFFFDE68A), fontWeight = FontWeight.Bold)
-            Text(
-                "Tryb demo używa przykładowych danych. Nie używaj ich do podejmowania decyzji medycznych.",
-                color = Color(0xFFF8FAFC),
-                fontSize = 12.sp
-            )
-            OutlinedButton(onClick = onSwitchToLiveMode, modifier = Modifier.fillMaxWidth()) {
-                Text("Przełącz na tryb Live")
-            }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF3A2E18).copy(alpha = 0.55f))
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalArrangement = Arrangement.spacedBy(4.dp)
+    ) {
+        Text("Tryb demo", color = Color(0xFFFDE68A), fontWeight = FontWeight.Bold)
+        Text(
+            "Tryb demo używa przykładowych danych. Nie używaj ich do podejmowania decyzji medycznych.",
+            color = Color(0xFFF8FAFC),
+            fontSize = 12.sp
+        )
+        OutlinedButton(onClick = onSwitchToLiveMode, modifier = Modifier.fillMaxWidth()) {
+            Text("Przełącz na tryb Live")
         }
     }
 }
@@ -615,32 +619,31 @@ private fun NfzStatusCompactCard(
         NfzStatus.GRAY -> DashboardMutedText
     }
 
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(12.dp),
+    Column(
         modifier = Modifier
             .fillMaxWidth()
             .clickable { onOpenDetails(assessment, summary, attentionCount) }
             .semantics { contentDescription = "Status NFZ: ${assessment.headline}" }
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text("Refundacja NFZ", color = DashboardSecondaryText, fontSize = 12.sp)
-                Spacer(modifier = Modifier.weight(1f))
-                Icon(Icons.Default.Info, contentDescription = null, tint = DashboardSecondaryText)
-            }
-            Text(
-                text = if (attentionCount > 0) {
-                    "⚠ $attentionCount kryteria wymagają uwagi"
-                } else {
-                    "Brak kryteriów wymagających uwagi"
-                },
-                color = if (attentionCount > 0) AccentWarning else AccentGreen,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text("Sprawdź szczegóły >", color = color, fontSize = 12.sp)
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text("Refundacja NFZ", color = DashboardSecondaryText, fontSize = 12.sp)
+            Spacer(modifier = Modifier.weight(1f))
+            Icon(Icons.Default.Info, contentDescription = null, tint = DashboardSecondaryText)
         }
+        Text(
+            text = if (attentionCount > 0) {
+                "⚠ $attentionCount kryteria wymagają uwagi"
+            } else {
+                "Brak kryteriów wymagających uwagi"
+            },
+            color = if (attentionCount > 0) AccentWarning else AccentGreen,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text("Sprawdź szczegóły >", color = color, fontSize = 12.sp)
+        androidx.compose.material3.HorizontalDivider(color = DashboardSurface)
     }
 }
 
@@ -826,7 +829,6 @@ private fun EmptyChartState() {
         modifier = Modifier
             .fillMaxWidth()
             .height(210.dp)
-            .background(DashboardElevatedSurface, RoundedCornerShape(16.dp))
             .padding(18.dp),
         verticalArrangement = Arrangement.Center,
         horizontalAlignment = Alignment.CenterHorizontally
@@ -870,16 +872,20 @@ private fun LastSyncFooter(lastSuccessfulFetchAt: Instant?) {
 @Composable
 private fun ErrorPanel(errorMessage: String?, canRetry: Boolean, cooldownSeconds: Long, viewModel: MonitoringViewModel) {
     if (errorMessage == null) return
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF3A2024)), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(14.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(errorMessage, color = DashboardPrimaryText, fontSize = 14.sp)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = { viewModel.connectManually() }, enabled = canRetry && cooldownSeconds <= 0) {
-                    Text("Połącz")
-                }
-                OutlinedButton(onClick = { viewModel.stopPolling() }) {
-                    Text("Zatrzymaj")
-                }
+    Column(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(Color(0xFF3A2024).copy(alpha = 0.45f))
+            .padding(14.dp),
+        verticalArrangement = Arrangement.spacedBy(8.dp)
+    ) {
+        Text(errorMessage, color = DashboardPrimaryText, fontSize = 14.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            OutlinedButton(onClick = { viewModel.connectManually() }, enabled = canRetry && cooldownSeconds <= 0) {
+                Text("Połącz")
+            }
+            OutlinedButton(onClick = { viewModel.stopPolling() }) {
+                Text("Zatrzymaj")
             }
         }
     }

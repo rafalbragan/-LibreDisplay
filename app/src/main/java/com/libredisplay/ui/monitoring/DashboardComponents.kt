@@ -12,13 +12,11 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
@@ -71,18 +69,13 @@ fun CompactPersonSwitcherBar(
             modifier = Modifier.weight(1f)
         )
         if (isDemoMode) {
-            Surface(
-                color = AccentWarning.copy(alpha = 0.16f),
-                shape = RoundedCornerShape(999.dp)
-            ) {
-                Text(
-                    text = "DEMO",
-                    color = AccentWarning,
-                    fontSize = 10.sp,
-                    fontWeight = FontWeight.Bold,
-                    modifier = Modifier.padding(horizontal = 10.dp, vertical = 7.dp)
-                )
-            }
+            Text(
+                text = "DEMO",
+                color = AccentWarning,
+                fontSize = 10.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(end = 2.dp)
+            )
         }
     }
 }
@@ -99,18 +92,12 @@ fun VisiblePersonSwitcher(
     modifier: Modifier = Modifier
 ) {
     if (persons.isEmpty()) {
-        Surface(
-            color = DashboardElevatedSurface,
-            shape = RoundedCornerShape(12.dp),
-            modifier = modifier.heightIn(min = 40.dp)
-        ) {
-            Text(
-                text = stringResource(R.string.no_persons),
-                color = DashboardSecondaryText,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp)
-            )
-        }
+        Text(
+            text = stringResource(R.string.no_persons),
+            color = DashboardSecondaryText,
+            fontSize = 12.sp,
+            modifier = modifier.padding(horizontal = 4.dp, vertical = 8.dp)
+        )
         return
     }
 
@@ -160,23 +147,33 @@ private fun PersonChip(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    Surface(
-        color = if (isSelected) AccentGreen.copy(alpha = 0.18f) else DashboardElevatedSurface,
-        shape = RoundedCornerShape(999.dp),
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clickable(enabled = !isSelected) { onClick() }
             .heightIn(min = 36.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
         Text(
             text = name,
             color = if (isSelected) AccentGreen else DashboardSecondaryText,
             fontSize = 12.sp,
-            fontWeight = if (isSelected) FontWeight.Bold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 14.dp, vertical = 8.dp),
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
         )
+        if (isSelected) {
+            Box(
+                modifier = Modifier
+                    .padding(top = 2.dp)
+                    .size(width = 28.dp, height = 2.dp)
+                    .background(AccentGreen)
+            )
+        } else {
+            Spacer(modifier = Modifier.height(4.dp))
+        }
     }
 }
 
@@ -234,33 +231,25 @@ private fun CompactStatBox(
     accentColor: Color = AccentWarning,
     modifier: Modifier = Modifier
 ) {
-    Card(
-        colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-        shape = RoundedCornerShape(8.dp),
-        modifier = modifier.height(60.dp)
+    Column(
+        modifier = modifier.height(60.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.Center
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(6.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.Center
-        ) {
-            Text(
-                label,
-                color = DashboardSecondaryText,
-                fontSize = 9.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            Text(
-                value,
-                color = accentColor,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
+        Text(
+            label,
+            color = DashboardSecondaryText,
+            fontSize = 9.sp,
+            fontWeight = FontWeight.SemiBold
+        )
+        Text(
+            value,
+            color = accentColor,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Bold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
     }
 }
 
@@ -295,6 +284,7 @@ fun TimeRangeDisplay(
             Text(text = "Zmień", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
         }
     }
+    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DashboardSurface)
 }
 
 
