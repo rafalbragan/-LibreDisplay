@@ -12,13 +12,13 @@ import java.time.Instant
 class HomeChartModelsTest {
 
     @Test
-    fun homeChartAvailablePoints_limitsTimelineToLast12Hours() {
+    fun homeChartAvailablePoints_limitsTimelineToLast24Hours() {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         val points = samplePoints(now = now, hours = 24)
 
         val available = homeChartAvailablePoints(points, now = now)
 
-        assertTrue(available.all { !it.timestamp.isBefore(now.minus(Duration.ofHours(12))) })
+        assertTrue(available.all { !it.timestamp.isBefore(now.minus(Duration.ofHours(24))) })
         assertEquals(now, available.last().timestamp)
     }
 

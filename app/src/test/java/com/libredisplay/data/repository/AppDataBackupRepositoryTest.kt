@@ -16,6 +16,7 @@ import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Assert.fail
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -182,6 +183,62 @@ class AppDataBackupRepositoryTest {
         assertEquals("real-person-restored", restoredReadings.first().patientId)
         assertEquals(AppMode.NONE, settingsRepository.loadSettings().appMode)
         assertNull(settingsRepository.loadSettings().selectedPatientId)
+    }
+
+    @Test
+    fun restoreBackup_whenJsonMalformed_returnsReadableError() = runBlocking {
+        tmpFile.writeText("{ malformed-json", Charsets.UTF_8)
+
+        try {
+            backupRepository.restoreFromUri(Uri.fromFile(tmpFile))
+            fail("Expected IllegalArgumentException for malformed backup JSON")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("Nie mozna odczytac kopii zapasowej"))
+        }
+    }
+
+    @Test
+    fun restoreBackup_whenFieldTypesMismatch_returnsReadableError() = runBlocking {
+        val payloadWithWrongType = """
+            {
+              "schemaVersion": 1,
+              "generatedAtEpochMillis": 1,
+              "appVersion": "test",
+              "settings": {
+                "email": "user@example.com",
+                "password": "secret",
+                "selectedPatientId": null,
+                "region": "EU",
+                "regionMode": "EU",
+                "customBaseUrl": "",
+                "refreshInterval": 120,
+                "targetLow": 80,
+                "targetHigh": 180,
+                "trendWindowMinutes": 3,
+                "showStatistics": true,
+                "kioskMode": false,
+                "appMode": "LIVE",
+                "useAuthV3": true,
+                "retentionHours": 720,
+                "backgroundPollingMinutes": 30
+              },
+              "quickMetricOrder": ["below", "in_range", "above", "gmi", "hba1c"],
+              "persistedSession": null,
+              "livePersons": {
+                "patientId": "wrong-shape"
+              },
+              "liveReadings": [],
+              "livePatientSettings": []
+            }
+        """.trimIndent()
+        tmpFile.writeText(payloadWithWrongType, Charsets.UTF_8)
+
+        try {
+            backupRepository.restoreFromUri(Uri.fromFile(tmpFile))
+            fail("Expected IllegalArgumentException for schema mismatch")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("Nie mozna odczytac kopii zapasowej"))
+        }
     }
 
     private fun seedData() = runBlocking {

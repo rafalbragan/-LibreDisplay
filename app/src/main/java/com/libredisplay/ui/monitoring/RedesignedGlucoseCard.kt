@@ -146,37 +146,39 @@ private fun TrendSummary(
     color: Color,
     modifier: Modifier = Modifier
 ) {
-    Column(
-        horizontalAlignment = Alignment.End,
-        verticalArrangement = Arrangement.spacedBy(1.dp),
+    Row(
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        verticalAlignment = Alignment.CenterVertically,
         modifier = modifier.semantics { contentDescription = "Trend: $label, status: $status" }
     ) {
-        Text(text = "Trend", color = LibreCareColors.TextSecondary, fontSize = 12.sp, lineHeight = 13.sp)
+        Text(text = "Trend", color = LibreCareColors.TextSecondary, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal)
         Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
             Text(
                 text = arrow,
                 color = color,
-                fontSize = 24.sp,
+                fontSize = 28.sp,
                 fontWeight = FontWeight.Bold,
                 textAlign = TextAlign.End
             )
-            Text(
-                text = label,
-                color = color,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Clip
-            )
+            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                Text(
+                    text = label,
+                    color = color,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Clip
+                )
+                Text(
+                    text = status,
+                    color = color,
+                    fontSize = 13.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
-        Text(
-            text = status,
-            color = color,
-            fontSize = 13.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
     }
 }
 

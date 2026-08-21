@@ -5,6 +5,7 @@ import android.net.Uri
 import androidx.room.withTransaction
 import com.google.gson.Gson
 import com.google.gson.GsonBuilder
+import com.google.gson.JsonParseException
 import com.libredisplay.BuildConfig
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.local.GlucoseReadingDao
@@ -52,8 +53,28 @@ class AppDataBackupRepository(
     }
 
     suspend fun restoreFromUri(uri: Uri): BackupSummary {
-        val payload: BackupPayload? = openReader(uri).use { reader ->
-            gson.fromJson(reader, BackupPayload::class.java)
+        val payload: BackupPayload? = try {
+            openReader(uri).use { reader ->
+                gson.fromJson(reader, BackupPayload::class.java)
+            }
+        } catch (error: JsonParseException) {
+            DiagnosticLogger.logError(
+                "AppDataBackupRepository",
+                "BACKUP RESTORE failed reason=invalid_json message=${error.message}"
+            )
+            throw IllegalArgumentException("Nie mozna odczytac kopii zapasowej. Plik ma nieprawidlowy format JSON.")
+        } catch (error: ClassCastException) {
+            DiagnosticLogger.logError(
+                "AppDataBackupRepository",
+                "BACKUP RESTORE failed reason=type_cast message=${error.message}"
+            )
+            throw IllegalArgumentException("Nie mozna odczytac kopii zapasowej. Format danych jest niezgodny z oczekiwanym schematem.")
+        } catch (error: IllegalStateException) {
+            DiagnosticLogger.logError(
+                "AppDataBackupRepository",
+                "BACKUP RESTORE failed reason=illegal_state message=${error.message}"
+            )
+            throw IllegalArgumentException("Nie mozna odczytac kopii zapasowej. Plik jest uszkodzony lub niekompletny.")
         }
 
         require(payload != null) { "Plik kopii zapasowej jest pusty lub uszkodzony." }
@@ -63,14 +84,41 @@ class AppDataBackupRepository(
 
         val safePersons = payload.livePersons
             .filterNot { it.patientId.startsWith(DEMO_PREFIX) }
-            .map { it.toEntity() }
+            .mapNotNull { person ->
+                runCatching { person.toEntity() }
+                    .onFailure { error ->
+                        DiagnosticLogger.logWarning(
+                            "AppDataBackupRepository",
+                            "BACKUP RESTORE skipped person patientId=${person.patientId} reason=${error.message}"
+                        )
+                    }
+                    .getOrNull()
+            }
         val safeReadings = payload.liveReadings
             .filterNot { it.patientId.startsWith(DEMO_PREFIX) }
             .filterNot { it.source.equals(DEMO_SOURCE, ignoreCase = true) }
-            .map { it.toEntity() }
+            .mapNotNull { reading ->
+                runCatching { reading.toEntity() }
+                    .onFailure { error ->
+                        DiagnosticLogger.logWarning(
+                            "AppDataBackupRepository",
+                            "BACKUP RESTORE skipped reading id=${reading.id} patientId=${reading.patientId} reason=${error.message}"
+                        )
+                    }
+                    .getOrNull()
+            }
         val safePatientSettings = payload.livePatientSettings
             .filterNot { it.patientId.startsWith(DEMO_PREFIX) }
-            .map { it.toEntity() }
+            .mapNotNull { settings ->
+                runCatching { settings.toEntity() }
+                    .onFailure { error ->
+                        DiagnosticLogger.logWarning(
+                            "AppDataBackupRepository",
+                            "BACKUP RESTORE skipped patient settings patientId=${settings.patientId} reason=${error.message}"
+                        )
+                    }
+                    .getOrNull()
+            }
 
         val restoredSettings = payload.settings
             .copy(
@@ -281,7 +329,16 @@ class AppDataBackupRepository(
             highMgDl = highMgDl,
             hba1cTargetPercent = hba1cTargetPercent,
             labHba1cPercent = labHba1cPercent,
-            labHba1cDate = labHba1cDateIso?.let(LocalDate::parse),
+            labHba1cDate = labHba1cDateIso?.let { dateText ->
+                runCatching { LocalDate.parse(dateText) }
+                    .getOrElse {
+                        DiagnosticLogger.logWarning(
+                            "AppDataBackupRepository",
+                            "BACKUP RESTORE skipped invalid labHba1cDate patientId=$patientId value=$dateText"
+                        )
+                        null
+                    }
+            },
             updatedAt = Instant.parse(updatedAtIso)
         )
 

@@ -2,6 +2,64 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.2.3 - 2026-08-21
+
+### PL
+
+#### Added
+- Dodano testy regresyjne dla przywracania kopii zapasowej z uszkodzonym JSON i niezgodnym typem pol.
+
+#### Changed
+- Ustawiono domene nawigatora wykresu Home na stale 24h, aby okno 12h zajmowalo dokladnie polowe suwaka.
+- Zageszczono opisy osi czasu na Home (5 etykiet) przy zachowaniu formatu `godz:min`.
+- Rozszerzono domyslne okno danych Home do 24h, aby przelacznik `24h` mial kompletne dane zrodlowe.
+
+#### Fixed
+- Naprawiono blad przywracania kopii zapasowej typu `cannot be cast to k3` przez obsluge bledow parsowania JSON i niezgodnych typow.
+- Dodano bezpieczne pomijanie uszkodzonych rekordow backupu (osoby/odczyty/ustawienia pacjenta) z logowaniem diagnostycznym.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Testy podlaczone: brak urzadzenia/emulatora (`adb` niedostepne w PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.3-debug.apk` (23 480 386 B)
+- `release-artifacts/LibreCare-2.2.3-release.apk` (3 178 014 B)
+- `release-artifacts/LibreCare-2.2.3-release.aab` (5 814 564 B)
+
+### EN
+
+#### Added
+- Added regression tests for backup restore with malformed JSON and mismatched field types.
+
+#### Changed
+- Set Home chart navigator domain to a fixed 24h window so the 12h viewport equals half of the track.
+- Increased Home time-axis density (5 labels) while keeping `HH:mm` formatting.
+- Expanded the default Home source window to 24h so the `24h` selector uses complete source data.
+
+#### Fixed
+- Fixed backup restore `cannot be cast to k3` failures by handling invalid JSON and incompatible payload shapes.
+- Added safe skip behavior for corrupted backup rows (people/readings/patient settings) with diagnostic logs.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Connected tests: no device/emulator available (`adb` not present in PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.3-debug.apk` (23,480,386 B)
+- `release-artifacts/LibreCare-2.2.3-release.apk` (3,178,014 B)
+- `release-artifacts/LibreCare-2.2.3-release.aab` (5,814,564 B)
+
 ## 2.2.2 - 2026-08-21
 
 ### PL

@@ -192,7 +192,7 @@ private fun PersonChip(
         Text(
             text = name,
             color = if (isSelected) AccentGreen else DashboardSecondaryText,
-            fontSize = 14.sp,
+            fontSize = 17.sp,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
             modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             maxLines = 1,

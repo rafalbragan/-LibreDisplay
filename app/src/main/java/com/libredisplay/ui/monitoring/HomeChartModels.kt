@@ -55,7 +55,7 @@ internal fun homeChartRanges(): List<HomeChartRange> = HomeChartRange.entries
 internal fun homeChartAvailablePoints(
     points: List<GlucoseHistoryPoint>,
     now: Instant = points.maxOfOrNull { it.timestamp } ?: Instant.now(),
-    maxWindow: Duration = Duration.ofHours(12)
+    maxWindow: Duration = Duration.ofHours(24)
 ): List<GlucoseHistoryPoint> {
     if (points.isEmpty()) return emptyList()
     val start = now.minus(maxWindow)

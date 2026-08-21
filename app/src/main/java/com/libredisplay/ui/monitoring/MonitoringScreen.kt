@@ -751,7 +751,7 @@ private fun GlucoseChartCard(
     val dataAvailability = remember(fullHistory, now) { buildHomeCoverageSummary(fullHistory, now) }
     val availableEnd = chartPoints.maxOfOrNull { it.timestamp }
     val navigationDomainStart = remember(availableEnd) {
-        availableEnd?.minus(HomeChartRange.LAST_12_HOURS.duration)
+        availableEnd?.minus(HomeChartRange.LAST_24_HOURS.duration)
     }
     val navigationDuration = remember(navigationDomainStart, availableEnd) {
         if (navigationDomainStart == null || availableEnd == null) Duration.ZERO
@@ -882,7 +882,7 @@ private fun GlucoseChartCard(
                     onChartTapped = onOpenHistory,
                     chartHeight = chartHeight,
                     maxYAxisLabels = 4,
-                    maxXAxisLabels = 3,
+                    maxXAxisLabels = 5,
                     axisLeftPaddingPx = 48f,
                     axisRightPaddingPx = 16f,
                     axisBottomPaddingPx = 52f,
@@ -1016,8 +1016,8 @@ private fun HomeChartNavigator(
                         viewportFraction = fraction,
                         windowFraction = windowFraction
                     )
-                    val movableWidth = (geometry.trackWidth - geometry.viewportWidth).coerceAtLeast(1f)
-                    val deltaFraction = dragAmount.x / movableWidth
+                    // Drag amount relative to full track width (24h range)
+                    val deltaFraction = dragAmount.x / geometry.trackWidth
                     onViewportChanged((fraction + deltaFraction).coerceIn(0f, 1f))
                     change.consume()
                 }
