@@ -35,6 +35,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
+import com.libredisplay.data.repository.PersonCoverageStats
 import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
 
 private val DashboardBackground = Color(0xFF101318)
@@ -165,7 +166,63 @@ fun StatisticsScreen(
                 )
             )
 
+            PersonCoverageSection(
+                entries = state.personCoverageStats,
+                modifier = Modifier.fillMaxWidth()
+            )
+
             Spacer(modifier = Modifier.height(16.dp))
+        }
+    }
+}
+
+@Composable
+private fun PersonCoverageSection(
+    entries: List<PersonCoverageStats>,
+    modifier: Modifier = Modifier
+) {
+    if (entries.isEmpty()) return
+    Column(modifier = modifier) {
+        Text(
+            text = "Pokrycie danych osob (LIVE)",
+            color = DashboardPrimaryText,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        Card(
+            colors = CardDefaults.cardColors(containerColor = DashboardSurface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
+                entries.forEachIndexed { index, item ->
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+                        Text(item.displayName, color = DashboardPrimaryText, fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
+                        Text(
+                            text = "Dane od: ${formatInstant(item.firstReadingAt)}",
+                            color = DashboardSecondaryText,
+                            fontSize = 11.sp
+                        )
+                        val windowsLabel = item.windows.joinToString(" | ") { window ->
+                            "${window.days}d ${window.coveragePercent}%"
+                        }
+                        Text(
+                            text = "Wypelnienie: $windowsLabel",
+                            color = DashboardPrimaryText,
+                            fontSize = 11.sp,
+                            fontWeight = FontWeight.Medium
+                        )
+                    }
+                    if (index < entries.lastIndex) {
+                        Spacer(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .height(1.dp)
+                                .background(DashboardElevatedSurface)
+                        )
+                    }
+                }
+            }
         }
     }
 }

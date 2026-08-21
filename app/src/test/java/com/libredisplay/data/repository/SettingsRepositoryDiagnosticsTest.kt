@@ -55,5 +55,24 @@ class SettingsRepositoryDiagnosticsTest {
         assertEquals(12, loaded.retentionHours)
         assertEquals(60, loaded.backgroundPollingMinutes)
     }
+
+    @Test
+    fun saveAndLoad_largeRetention_isClampedToExpandedMaximum() {
+        val context = RuntimeEnvironment.getApplication()
+        val repo = SettingsRepository(context)
+        repo.clearAll()
+
+        repo.saveSettings(
+            AppSettings(
+                email = "u@example.com",
+                password = "x",
+                appMode = AppMode.LIVE,
+                retentionHours = AppSettings.MAX_RETENTION_HOURS + 24
+            )
+        )
+
+        val loaded = repo.loadSettings()
+        assertEquals(AppSettings.MAX_RETENTION_HOURS, loaded.retentionHours)
+    }
 }
 

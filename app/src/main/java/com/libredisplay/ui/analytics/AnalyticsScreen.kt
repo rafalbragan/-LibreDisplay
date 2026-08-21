@@ -86,6 +86,7 @@ fun AnalyticsScreen(
             CompactPersonSwitcherBar(
                 persons = state.persons,
                 selectedPatientId = state.selectedPatientId,
+                recentPatientIds = emptyList(),
                 onPersonSelected = viewModel::onPersonSelected,
                 isDemoMode = false,
                 modifier = Modifier.fillMaxWidth()

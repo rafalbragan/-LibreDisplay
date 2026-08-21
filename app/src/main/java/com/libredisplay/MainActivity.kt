@@ -16,6 +16,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
+import android.content.res.Configuration
 import com.libredisplay.diagnostics.UiAuditCaptureResult
 import com.libredisplay.diagnostics.UiAuditCaptureContext
 import com.libredisplay.diagnostics.UiAuditExporter
@@ -167,11 +168,6 @@ class MainActivity : ComponentActivity() {
 
                 LaunchedEffect(uiAuditNonce) {
                     if (uiAuditNonce == 0 || uiAuditInProgress) return@LaunchedEffect
-                    val currentEmail = app.settingsRepository.loadSettings().email
-                    if (!UiAuditExporter.isAllowedEmail(currentEmail)) {
-                        uiAuditResultPath = "Brak dostępu: funkcja dostępna tylko dla rafal.b.ragan@gmail.com"
-                        return@LaunchedEffect
-                    }
 
                     uiAuditInProgress = true
                     val previousNavigationState = navigationState
@@ -220,6 +216,7 @@ class MainActivity : ComponentActivity() {
                         val settings = app.settingsRepository.loadSettings()
                         val metadataFileName = String.format("%02d_%s.json", index + 1, safeName)
                         val metadataFile = File(sessionDir, metadataFileName)
+                        val configuration = resources.configuration
                         val metadataWritten = captureSuccess && UiAuditExporter.writeCaptureMetadata(
                             activity = this@MainActivity,
                             destinationFile = metadataFile,
@@ -240,7 +237,15 @@ class MainActivity : ComponentActivity() {
                             step = step,
                             screenshotFileName = screenshotFileName,
                             captureSuccess = captureSuccess,
-                            metadataFileName = metadataFileName.takeIf { metadataWritten }
+                            metadataFileName = metadataFileName.takeIf { metadataWritten },
+                            screenWidthDp = configuration.screenWidthDp,
+                            fontScale = configuration.fontScale,
+                            orientation = when (configuration.orientation) {
+                                Configuration.ORIENTATION_LANDSCAPE -> "landscape"
+                                Configuration.ORIENTATION_PORTRAIT -> "portrait"
+                                else -> "undefined"
+                            },
+                            darkTheme = (configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
                         )
                     }
 

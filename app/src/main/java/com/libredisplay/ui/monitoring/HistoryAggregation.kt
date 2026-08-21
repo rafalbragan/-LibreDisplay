@@ -187,9 +187,9 @@ internal fun chartModeForRange(range: TimeRange): String = when (range) {
     TimeRange.LAST_3_HOURS,
     TimeRange.LAST_6_HOURS,
     TimeRange.LAST_12_HOURS,
-    TimeRange.LAST_24_HOURS -> "line"
-    TimeRange.LAST_3_DAYS,
-    TimeRange.LAST_7_DAYS -> "aggregated"
+    TimeRange.LAST_24_HOURS,
+    TimeRange.LAST_7_DAYS -> "line"
+    TimeRange.LAST_3_DAYS -> "aggregated"
     TimeRange.LAST_30_DAYS,
     TimeRange.LAST_90_DAYS,
     TimeRange.LAST_365_DAYS -> "bar"
@@ -209,9 +209,9 @@ internal fun rangeStartInstant(range: TimeRange, end: Instant = Instant.now()): 
 
 internal fun bucketSizeForRange(range: TimeRange): Duration = when (range) {
     TimeRange.LAST_3_HOURS -> Duration.ofMinutes(5)
-    TimeRange.LAST_6_HOURS -> Duration.ofMinutes(10)
-    TimeRange.LAST_12_HOURS -> Duration.ofMinutes(15)
-    TimeRange.LAST_24_HOURS -> Duration.ofMinutes(30)
+    TimeRange.LAST_6_HOURS -> Duration.ofMinutes(5)
+    TimeRange.LAST_12_HOURS -> Duration.ofMinutes(5)
+    TimeRange.LAST_24_HOURS -> Duration.ofMinutes(10)
     TimeRange.LAST_3_DAYS -> Duration.ofHours(1)
     TimeRange.LAST_7_DAYS -> Duration.ofHours(3)
     TimeRange.LAST_30_DAYS -> Duration.ofDays(1)

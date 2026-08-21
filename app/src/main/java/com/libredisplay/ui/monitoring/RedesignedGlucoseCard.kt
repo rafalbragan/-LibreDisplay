@@ -1,18 +1,13 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -46,7 +41,6 @@ import java.time.Instant
  * - More prominent glucose value hierarchy
  * - Medical alert integrated naturally (not separate card)
  */
-@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RedesignedCurrentGlucoseCard(
     reading: GlucoseReading,
@@ -82,76 +76,55 @@ fun RedesignedCurrentGlucoseCard(
             .semantics(mergeDescendants = true) {
                 contentDescription = "Aktualna glikemia: ${reading.value} miligramów na decylitr. ${primaryWarning.title}. Trend: ${trend.label}."
             }
-            .padding(horizontal = 4.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 4.dp, vertical = 4.dp),
+        verticalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text(
                 text = "Aktualna glikemia",
                 color = LibreCareColors.TextSecondary,
-                fontSize = 18.sp,
+                fontSize = 16.sp,
                 fontWeight = FontWeight.Normal
             )
 
-            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-                val stackTrend = maxWidth < 392.dp
-                Column(verticalArrangement = Arrangement.spacedBy(if (stackTrend) 4.dp else 2.dp)) {
-                    FlowRow(
-                        horizontalArrangement = Arrangement.spacedBy(10.dp),
-                        verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxWidth()
-                    ) {
-                        Row(
-                            verticalAlignment = Alignment.Bottom,
-                            horizontalArrangement = Arrangement.spacedBy(6.dp),
-                            modifier = Modifier.heightIn(min = 72.dp)
-                        ) {
-                            Text(
-                                text = reading.value.toString(),
-                                color = glucoseColor,
-                                fontSize = 68.sp,
-                                lineHeight = 72.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1
-                            )
-                            Text(
-                                text = "mg/dL",
-                                color = glucoseColor,
-                                fontSize = 26.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                modifier = Modifier.padding(bottom = 10.dp)
-                            )
-                        }
-
-                        if (!stackTrend) {
-                            TrendSummary(
-                                arrow = trend.arrow,
-                                label = trendText ?: trend.label,
-                                color = trendColor
-                            )
-                        }
-                    }
-
-                    if (stackTrend) {
-                        TrendSummary(
-                            arrow = trend.arrow,
-                            label = trendText ?: trend.label,
-                            color = trendColor
-                        )
-                    }
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Row(
+                    verticalAlignment = Alignment.Bottom,
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    modifier = Modifier
+                        .weight(1f)
+                        .heightIn(min = 72.dp)
+                ) {
+                    Text(
+                        text = reading.value.toString(),
+                        color = glucoseColor,
+                        fontSize = 58.sp,
+                        lineHeight = 60.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "mg/dL",
+                        color = glucoseColor,
+                        fontSize = 21.sp,
+                        fontWeight = FontWeight.SemiBold,
+                        modifier = Modifier.padding(bottom = 7.dp)
+                    )
                 }
+
+                TrendSummary(
+                    arrow = trend.arrow,
+                    label = trendText ?: trend.label,
+                    status = statusText,
+                    color = trendColor,
+                    modifier = Modifier.weight(1f)
+                )
             }
         }
-
-        Text(
-            text = statusText,
-            color = glucoseColor,
-            fontSize = 19.sp,
-            lineHeight = 24.sp,
-            fontWeight = FontWeight.SemiBold,
-            maxLines = 2,
-            overflow = TextOverflow.Clip
-        )
 
         if (primaryWarning.level != GlucoseWarningLevel.IN_RANGE) {
             MedicalAlertInline(
@@ -166,27 +139,40 @@ fun RedesignedCurrentGlucoseCard(
 private fun TrendSummary(
     arrow: String,
     label: String,
-    color: Color
+    status: String,
+    color: Color,
+    modifier: Modifier = Modifier
 ) {
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
-        modifier = Modifier.semantics { contentDescription = "Trend: $label" }
+    Column(
+        horizontalAlignment = Alignment.End,
+        verticalArrangement = Arrangement.spacedBy(1.dp),
+        modifier = modifier.semantics { contentDescription = "Trend: $label, status: $status" }
     ) {
+        Text(text = "Trend", color = LibreCareColors.TextSecondary, fontSize = 12.sp, lineHeight = 13.sp)
+        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = arrow,
+                color = color,
+                fontSize = 24.sp,
+                fontWeight = FontWeight.Bold,
+                textAlign = TextAlign.End
+            )
+            Text(
+                text = label,
+                color = color,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Clip
+            )
+        }
         Text(
-            text = arrow,
+            text = status,
             color = color,
-            fontSize = 28.sp,
-            fontWeight = FontWeight.Bold,
-            textAlign = TextAlign.End
-        )
-        Text(
-            text = label,
-            color = color,
-            fontSize = 18.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 2,
-            overflow = TextOverflow.Clip
+            fontSize = 13.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -203,11 +189,11 @@ private fun MedicalAlertInline(
         modifier = Modifier
             .fillMaxWidth()
             .background(glucoseColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-            .padding(horizontal = 16.dp, vertical = 13.dp)
+            .padding(horizontal = 9.dp, vertical = 8.dp)
     ) {
         Row(
             verticalAlignment = Alignment.Top,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(6.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Icon(
@@ -221,18 +207,18 @@ private fun MedicalAlertInline(
                 modifier = Modifier.padding(top = 2.dp)
             )
 
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                 Text(
                     text = "⚠ Zalecenie",
                     color = glucoseColor,
-                    fontSize = 15.sp,
+                    fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = warning.message,
                     color = LibreCareColors.TextPrimary,
-                    fontSize = 16.sp,
-                    lineHeight = 21.sp
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp
                 )
             }
         }

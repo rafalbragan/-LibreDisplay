@@ -21,6 +21,10 @@ class LocalGlucoseHistoryRepository(
     private val syncRunDao: SyncRunDao
 ) {
 
+    companion object {
+        val HOME_HISTORY_WINDOW: java.time.Duration = java.time.Duration.ofHours(24)
+    }
+
     suspend fun upsertObservedPersons(persons: List<LibreConnectionPerson>, now: Instant) {
         val entities = persons.map { person ->
             ObservedPersonEntity(
@@ -115,7 +119,7 @@ class LocalGlucoseHistoryRepository(
         } ?: persons.first()
 
         val latest = glucoseReadingDao.getLatestByPatient(selected.patientId) ?: return null
-        val historyStart = latest.timestamp.minus(12, ChronoUnit.HOURS)
+        val historyStart = latest.timestamp.minus(HOME_HISTORY_WINDOW)
         val historyEntities = glucoseReadingDao.getRangeByPatient(
             patientId = selected.patientId,
             fromInclusive = historyStart,

@@ -59,6 +59,21 @@ data class RetentionEstimate(
     val insufficientData: Boolean
 )
 
+data class CoverageWindowStat(
+    val days: Int,
+    val readings: Long,
+    val expectedReadings: Long,
+    val coveragePercent: Int
+)
+
+data class PersonCoverageStats(
+    val patientId: String,
+    val displayName: String,
+    val firstReadingAt: Instant,
+    val lastReadingAt: Instant,
+    val windows: List<CoverageWindowStat>
+)
+
 class DiagnosticsStatsRepository(
     private val context: Context,
     private val glucoseReadingDao: GlucoseReadingDao,
@@ -237,6 +252,35 @@ class DiagnosticsStatsRepository(
         )
     }
 
+    suspend fun loadPerPersonCoverageStats(now: Instant = Instant.now()): List<PersonCoverageStats> {
+        val rows = glucoseReadingDao.loadPersonCoverageRows(
+            from14d = now.minus(Duration.ofDays(14)),
+            from30d = now.minus(Duration.ofDays(30)),
+            from60d = now.minus(Duration.ofDays(60)),
+            from90d = now.minus(Duration.ofDays(90)),
+            from360d = now.minus(Duration.ofDays(360))
+        )
+
+        return rows.map { row ->
+            val windows = listOf(
+                CoverageWindowStat(14, row.readings14d, expectedReadingsForDays(14), coveragePercent(row.readings14d, expectedReadingsForDays(14))),
+                CoverageWindowStat(30, row.readings30d, expectedReadingsForDays(30), coveragePercent(row.readings30d, expectedReadingsForDays(30))),
+                CoverageWindowStat(60, row.readings60d, expectedReadingsForDays(60), coveragePercent(row.readings60d, expectedReadingsForDays(60))),
+                CoverageWindowStat(90, row.readings90d, expectedReadingsForDays(90), coveragePercent(row.readings90d, expectedReadingsForDays(90))),
+                CoverageWindowStat(360, row.readings360d, expectedReadingsForDays(360), coveragePercent(row.readings360d, expectedReadingsForDays(360)))
+            )
+            PersonCoverageStats(
+                patientId = row.patientId,
+                displayName = row.displayName,
+                firstReadingAt = row.firstTimestamp,
+                lastReadingAt = row.lastTimestamp,
+                windows = windows
+            )
+        }.filter { stats ->
+            stats.windows.any { it.readings > 0L }
+        }
+    }
+
     fun formatBytes(bytes: Long): String {
         val b = bytes.coerceAtLeast(0)
         val kb = 1024.0
@@ -295,6 +339,14 @@ class DiagnosticsStatsRepository(
             uploadPerMonth = upPerDay * 30,
             totalPerDay = downPerDay + upPerDay
         )
+    }
+
+    private fun expectedReadingsForDays(days: Int): Long = (days.toLong() * 24L * 60L)
+
+    private fun coveragePercent(readings: Long, expectedReadings: Long): Int {
+        if (expectedReadings <= 0L) return 0
+        val percent = (readings.toDouble() / expectedReadings.toDouble()) * 100.0
+        return percent.coerceIn(0.0, 100.0).toInt()
     }
 
     private fun File.lengthSafe(): Long = if (exists()) length().coerceAtLeast(0) else 0

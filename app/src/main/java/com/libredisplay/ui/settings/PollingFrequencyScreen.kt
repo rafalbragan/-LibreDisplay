@@ -3,18 +3,14 @@ package com.libredisplay.ui.settings
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -81,59 +77,34 @@ fun PollingFrequencyScreen(
                 .padding(padding)
                 .verticalScroll(rememberScrollState())
                 .padding(16.dp),
-            verticalArrangement = Arrangement.spacedBy(16.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             Text(
-                stringResource(R.string.polling_frequency_description),
+                "Jak czesto LibreCare sprawdza nowe dane w LibreLinkUp.",
                 color = DashboardSecondaryText,
                 fontSize = 13.sp
             )
 
-            // Current Usage
-            Card(
-                colors = CardDefaults.cardColors(containerColor = DashboardSurface),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                Column(modifier = Modifier.padding(12.dp)) {
-                    Text(
-                        stringResource(R.string.polling_current_usage),
-                        color = DashboardSecondaryText,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Spacer(modifier = Modifier.height(4.dp))
-                    Text(
-                        state.currentUsageLabel,
-                        color = DashboardPrimaryText,
-                        fontSize = 16.sp,
-                        fontWeight = FontWeight.Bold
-                    )
-                }
-            }
-
-            Text(
-                "Opcje częstotliwości:",
-                color = DashboardPrimaryText,
-                fontSize = 13.sp,
-                fontWeight = FontWeight.SemiBold
-            )
+            Text("Szacowany transfer: ${state.currentUsageLabel}", color = DashboardSecondaryText, fontSize = 12.sp)
 
             Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
                 state.options.forEach { option ->
                     PollingOption(
                         frequency = option.label,
-                        dataUsage = if (option.minutes == state.selectedMinutes) state.estimatedUsageLabel else "",
+                        dataUsage = if (option.minutes == state.selectedMinutes) state.estimatedUsageLabel else "~",
                         isSelected = option.minutes == state.selectedMinutes,
-                        onSelect = { viewModel.savePolling(option.minutes) }
+                        onSelect = { viewModel.savePolling(option.minutes) },
+                        enabled = !state.isSaving
                     )
                 }
             }
-
-            // Warning removed: generic "battery may increase" was imprecise and unhelpful.
-            // Specific info is shown per-option via dataUsage label.
-
             Text(
                 "Szacowane zużycie po zmianie: ${state.estimatedUsageLabel}",
+                color = DashboardSecondaryText,
+                fontSize = 12.sp
+            )
+            Text(
+                "Czestsza synchronizacja oznacza wiecej zapytan i wiekszy transfer danych.",
                 color = DashboardSecondaryText,
                 fontSize = 12.sp
             )
@@ -147,6 +118,7 @@ private fun PollingOption(
     dataUsage: String,
     isSelected: Boolean,
     onSelect: () -> Unit,
+    enabled: Boolean,
     modifier: Modifier = Modifier
 ) {
     Surface(
@@ -156,6 +128,7 @@ private fun PollingOption(
             .selectable(
                 selected = isSelected,
                 onClick = onSelect,
+                enabled = enabled,
                 role = Role.RadioButton
             )
     ) {

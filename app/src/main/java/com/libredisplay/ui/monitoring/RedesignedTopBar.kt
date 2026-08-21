@@ -1,27 +1,22 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.PhotoCamera
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -31,6 +26,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libredisplay.R
+import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.ui.theme.LibreCareColors
 import java.time.Duration
 import java.time.Instant
@@ -47,41 +43,160 @@ import java.time.Instant
  * - App title
  * - Settings icon (only action-able icon)
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibreTopBar(
+    lastReadingAt: Instant?,
+    reading: GlucoseReading?,
+    appVersionLabel: String,
+    dbRangeLabel: String,
+    defaultDataRangeLabel: String,
+    now: Instant = Instant.now(),
     onRunUiAudit: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    TopAppBar(
-        title = {
-            Text(
-                stringResource(R.string.app_name),
-                fontWeight = FontWeight.SemiBold,
-                color = LibreCareColors.TextPrimary,
-                fontSize = 29.sp,
-                maxLines = 1
-            )
-        },
-        actions = {
-            if (onRunUiAudit != null) {
-                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(48.dp)) {
-                    Icon(
-                        Icons.Default.PhotoCamera,
-                        contentDescription = "Raport UI",
-                        tint = LibreCareColors.TextPrimary,
-                        modifier = Modifier.width(20.dp)
-                    )
-                }
-            }
-        },
-        colors = TopAppBarDefaults.topAppBarColors(
-            containerColor = LibreCareColors.Background
-        ),
-        windowInsets = WindowInsets.statusBars,
+    val freshnessDuration = lastReadingAt?.let { Duration.between(it, now) }
+    val freshnessText = freshnessDuration?.let { RelativeTimeFormatter.formatDurationAgo(it) } ?: "brak danych"
+    val sensorStatus = SensorStatusCalculator.calculateSensorStatus(reading, now)
+    val sensorRemaining = SensorStatusCalculator.formatSensorDuration(sensorStatus.remainingDuration)
+    val sensorText = "Sensor koniec za: $sensorRemaining"
+    val readingText = "Odczyt: $freshnessText"
+    val rangeText = "Zakres: $defaultDataRangeLabel"
+
+    Surface(
+        color = LibreCareColors.Background,
         modifier = modifier
             .statusBarsPadding()
-            .height(68.dp)
+            .fillMaxWidth()
+    ) {
+        BoxWithConstraints(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 4.dp)
+        ) {
+            val compactLayout = maxWidth < 392.dp
+            if (compactLayout) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.Top,
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        Column(
+                            modifier = Modifier.weight(1f),
+                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                        ) {
+                            Text(
+                                text = stringResource(R.string.app_name),
+                                fontWeight = FontWeight.SemiBold,
+                                color = LibreCareColors.TextPrimary,
+                                fontSize = 25.sp,
+                                lineHeight = 27.sp,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "v$appVersionLabel · DB: $dbRangeLabel",
+                                color = LibreCareColors.TextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 13.sp,
+                                maxLines = 1
+                            )
+                        }
+                        if (onRunUiAudit != null) {
+                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp)) {
+                                Icon(
+                                    Icons.Default.PhotoCamera,
+                                    contentDescription = "Raport UI",
+                                    tint = LibreCareColors.TextPrimary,
+                                    modifier = Modifier.width(16.dp)
+                                )
+                            }
+                        }
+                    }
+                    CompactTopBarMetaLine(
+                        primary = readingText,
+                        secondary = sensorText,
+                        secondaryColor = if (sensorStatus.isError) LibreCareColors.AccentRed else LibreCareColors.TextSecondary,
+                        trailing = rangeText
+                    )
+                }
+            } else {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.Top,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Column(
+                        modifier = Modifier.weight(1f),
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.app_name),
+                            fontWeight = FontWeight.SemiBold,
+                            color = LibreCareColors.TextPrimary,
+                            fontSize = 27.sp,
+                            lineHeight = 29.sp,
+                            maxLines = 1
+                        )
+                        Text(
+                            text = "v$appVersionLabel · DB: $dbRangeLabel",
+                            color = LibreCareColors.TextSecondary,
+                            fontSize = 12.sp,
+                            lineHeight = 13.sp,
+                            maxLines = 1
+                        )
+                    }
+                    Column(
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                    ) {
+                        CompactTopBarText(readingText)
+                        CompactTopBarText(
+                            sensorText,
+                            color = if (sensorStatus.isError) LibreCareColors.AccentRed else LibreCareColors.TextSecondary
+                        )
+                        CompactTopBarText(rangeText)
+                    }
+                    if (onRunUiAudit != null) {
+                        IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp)) {
+                            Icon(
+                                Icons.Default.PhotoCamera,
+                                contentDescription = "Raport UI",
+                                tint = LibreCareColors.TextPrimary,
+                                modifier = Modifier.width(16.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun CompactTopBarMetaLine(
+    primary: String,
+    secondary: String,
+    secondaryColor: Color,
+    trailing: String
+) {
+    Column(verticalArrangement = Arrangement.spacedBy(0.dp)) {
+        CompactTopBarText(primary)
+        CompactTopBarText(secondary, color = secondaryColor)
+        CompactTopBarText(trailing)
+    }
+}
+
+@Composable
+private fun CompactTopBarText(
+    text: String,
+    color: Color = LibreCareColors.TextSecondary
+) {
+    Text(
+        text = text,
+        color = color,
+        fontSize = 11.sp,
+        lineHeight = 12.sp,
+        maxLines = 1
     )
 }
 

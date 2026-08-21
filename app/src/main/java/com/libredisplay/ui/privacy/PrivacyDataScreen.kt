@@ -2,6 +2,8 @@ package com.libredisplay.ui.privacy
 
 import android.content.Intent
 import android.net.Uri
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
@@ -59,6 +61,17 @@ fun PrivacyDataScreen(
     val event by viewModel.event.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     var pendingAction by remember { mutableStateOf<PrivacyAction?>(null) }
+    val backupCreateLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("application/json")
+    ) { uri ->
+        if (uri != null) viewModel.exportBackup(uri)
+    }
+    val backupOpenLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.OpenDocument()
+    ) { uri ->
+        if (uri != null) viewModel.restoreBackup(uri)
+    }
+    var showStoredDataDetails by remember { mutableStateOf(false) }
 
     LaunchedEffect(event) {
         val value = event ?: return@LaunchedEffect
@@ -90,21 +103,52 @@ fun PrivacyDataScreen(
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             Text(
-                "Usunięcie danych lokalnych usuwa dane zapisane przez LibreCare na tym urządzeniu. Nie usuwa danych z konta LibreLinkUp.\n\n" +
-                    "Lokalnie zapisane dane mogą obejmować:\n" +
-                    "- nazwę monitorowanej osoby\n" +
-                    "- identyfikator monitorowanej osoby\n" +
-                    "- odczyty glikemii\n" +
-                    "- trendy glikemii\n" +
-                    "- czas odczytów\n" +
-                    "- wybraną monitorowaną osobę\n" +
-                    "- ustawienia aplikacji\n" +
-                    "- dane sesji potrzebne do połączenia z LibreLinkUp\n\n" +
-                    "LibreCare nie jest wyrobem medycznym i nie zastępuje porady lekarza.",
-                fontSize = 14.sp
+                "LibreCare zapisuje część danych lokalnie na tym urządzeniu.",
+                fontSize = 13.sp
+            )
+
+            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { showStoredDataDetails = !showStoredDataDetails }) {
+                Text(if (showStoredDataDetails) "Jakie dane są przechowywane? ▲" else "Jakie dane są przechowywane? ▼")
+            }
+
+            if (showStoredDataDetails) {
+                Text(
+                    "- nazwa i identyfikator monitorowanej osoby\n" +
+                        "- odczyty oraz trendy glikemii\n" +
+                        "- ustawienia aplikacji\n" +
+                        "- dane sesji wymagane do polaczenia z LibreLinkUp\n\n" +
+                        "Przed odinstalowaniem utworz kopie danych i ustawien.",
+                    fontSize = 12.sp
+                )
+            }
+
+            Text("Kopia danych", fontSize = 13.sp)
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    backupCreateLauncher.launch("LibreCare-live-backup-${System.currentTimeMillis()}.json")
+                }
+            ) {
+                Text("Utworz kopie danych i ustawien")
+            }
+
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = {
+                    backupOpenLauncher.launch(arrayOf("application/json", "text/plain"))
+                }
+            ) {
+                Text("Przywroc kopie")
+            }
+
+            Text(
+                "Plik kopii moze zawierac prywatne dane medyczne - przechowuj go bezpiecznie.",
+                fontSize = 12.sp,
+                color = androidx.compose.ui.graphics.Color(0xFF94A3B8)
             )
 
             OutlinedButton(

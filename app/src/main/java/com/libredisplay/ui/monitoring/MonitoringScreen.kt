@@ -46,7 +46,6 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
-import androidx.compose.material3.Slider
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
@@ -56,6 +55,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -81,9 +81,9 @@ import com.libredisplay.analytics.GlucoseMetricsCalculator
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.ui.theme.LibreCareColors
-import com.libredisplay.diagnostics.UiAuditExporter
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
 private val DashboardBackground = LibreCareColors.Background
@@ -111,10 +111,10 @@ fun MonitoringScreen(
     viewModel: MonitoringViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
-    val canRunUiAudit = BuildConfig.DEBUG && UiAuditExporter.isAllowedEmail(state.settings.email)
     var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
     var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
+    var recentPersonIds by rememberSaveable { mutableStateOf(listOf<String>()) }
 
     // Local ticker: refreshes time-sensitive UI every 30 s without any network request.
     // Covers: "chwilę temu", "Sensor: X dni", coverage countdown, reading age.
@@ -128,6 +128,11 @@ fun MonitoringScreen(
 
     LaunchedEffect(refreshNonce) {
         viewModel.onScreenVisible(refreshNonce)
+    }
+
+    LaunchedEffect(state.selectedPatientId) {
+        val selected = state.selectedPatientId ?: return@LaunchedEffect
+        recentPersonIds = (listOf(selected) + recentPersonIds.filterNot { it == selected }).take(8)
     }
 
     val openFullScreenHistory: () -> Unit = {
@@ -157,7 +162,12 @@ fun MonitoringScreen(
          containerColor = DashboardBackground,
          topBar = {
              LibreTopBar(
-                 onRunUiAudit = if (canRunUiAudit) onRunUiAudit else null
+                  lastReadingAt = state.reading?.timestamp ?: state.lastMeasurementTimestamp,
+                  reading = state.reading,
+                  appVersionLabel = BuildConfig.VERSION_NAME,
+                  dbRangeLabel = compactDbRangeLabel(state.reading),
+                  defaultDataRangeLabel = "12g",
+                  onRunUiAudit = onRunUiAudit
              )
          },
          contentWindowInsets = WindowInsets(0, 0, 0, 0),
@@ -188,14 +198,6 @@ fun MonitoringScreen(
                         .verticalScroll(rememberScrollState())
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                     Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                        // Data freshness and sensor status bar (replaces status shown in cards)
-                        DataFreshnessAndSensorStatusBar(
-                            lastReadingAt = reading?.timestamp ?: state.lastMeasurementTimestamp,
-                            reading = reading,
-                            now = currentTime,
-                            modifier = Modifier.padding(horizontal = 0.dp)
-                        )
-
                         if (state.isDemoMode) {
                             DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
                         }
@@ -204,12 +206,20 @@ fun MonitoringScreen(
                         CompactPersonSwitcherBar(
                             persons = state.availablePersons,
                             selectedPatientId = state.selectedPatientId,
+                            recentPatientIds = recentPersonIds,
                             onPersonSelected = viewModel::onPersonSelected,
                             isDemoMode = state.isDemoMode
                         )
 
                         if (reading != null) {
                             val metrics = buildDashboardMetrics(reading, state.settings.targetLow, state.settings.targetHigh)
+                            val fullTimeline = readingTimeline(reading)
+                            val averageMgDl = fullTimeline.takeIf { it.isNotEmpty() }?.map { it.value }?.average()?.roundToInt()
+                            val sensorActivityPercent = sensorActivityFromHistory(
+                                history = fullTimeline,
+                                periodStart = currentTime.minus(Duration.ofDays(14)),
+                                periodEnd = currentTime
+                            )?.activityPercent?.roundToInt()
                             val metricTiles = buildQuickMetricTiles(
                                 belowDuration = metrics.belowDuration,
                                 belowPercent = metrics.belowPercent,
@@ -218,7 +228,9 @@ fun MonitoringScreen(
                                 aboveDuration = metrics.aboveDuration,
                                 abovePercent = metrics.abovePercent,
                                 gmiValue = metrics.gmiValue,
-                                hba1cValue = metrics.hba1cValue
+                                hba1cValue = metrics.hba1cValue,
+                                averageValueMgDl = averageMgDl,
+                                sensorActivityPercent = sensorActivityPercent
                             )
                             if (isLandscapeHome) {
                                 Row(
@@ -235,12 +247,6 @@ fun MonitoringScreen(
                                             targetLow = state.settings.targetLow,
                                             targetHigh = state.settings.targetHigh,
                                             now = currentTime
-                                        )
-                                        ImprovedQuickMetricsPanel(
-                                            tiles = metricTiles,
-                                            orderedIds = state.quickMetricsOrder,
-                                            onOrderChanged = viewModel::saveQuickMetricsOrder,
-                                            onEditClick = onNavigateToMetricSettings
                                         )
                                         NfzStatusCompactCard(
                                             state = state,
@@ -274,6 +280,13 @@ fun MonitoringScreen(
                                         )
                                     }
                                 }
+                                ImprovedQuickMetricsPanel(
+                                    tiles = metricTiles,
+                                    orderedIds = state.quickMetricsOrder,
+                                    visibility = state.quickMetricsVisibility,
+                                    onOrderChanged = viewModel::saveQuickMetricsOrder,
+                                    onEditClick = onNavigateToMetricSettings
+                                )
                             } else {
                                 RedesignedCurrentGlucoseCard(
                                     reading = reading,
@@ -281,18 +294,19 @@ fun MonitoringScreen(
                                     targetHigh = state.settings.targetHigh,
                                     now = currentTime
                                 )
-                                ImprovedQuickMetricsPanel(
-                                    tiles = metricTiles,
-                                    orderedIds = state.quickMetricsOrder,
-                                    onOrderChanged = viewModel::saveQuickMetricsOrder,
-                                    onEditClick = onNavigateToMetricSettings
-                                )
                                 GlucoseChartCard(
                                     state = state,
                                     reading = reading,
                                     onOpenHistory = openFullScreenHistory,
                                     now = currentTime,
                                     chartHeight = 220.dp
+                                )
+                                ImprovedQuickMetricsPanel(
+                                    tiles = metricTiles,
+                                    orderedIds = state.quickMetricsOrder,
+                                    visibility = state.quickMetricsVisibility,
+                                    onOrderChanged = viewModel::saveQuickMetricsOrder,
+                                    onEditClick = onNavigateToMetricSettings
                                 )
                                 NfzStatusCompactCard(
                                     state = state,
@@ -735,31 +749,34 @@ private fun GlucoseChartCard(
     val chartPoints = remember(fullHistory) { homeChartAvailablePoints(fullHistory) }
     val zoneId = DateTimeFormatterProvider.deviceZoneId()
     val dataAvailability = remember(fullHistory, now) { buildHomeCoverageSummary(fullHistory, now) }
-    val availableStart = chartPoints.minOfOrNull { it.timestamp }
     val availableEnd = chartPoints.maxOfOrNull { it.timestamp }
-    val availableDuration = remember(availableStart, availableEnd) {
-        if (availableStart == null || availableEnd == null) Duration.ZERO else Duration.between(availableStart, availableEnd).coerceAtLeast(Duration.ZERO)
+    val navigationDomainStart = remember(availableEnd) {
+        availableEnd?.minus(HomeChartRange.LAST_12_HOURS.duration)
     }
+    val navigationDuration = remember(navigationDomainStart, availableEnd) {
+        if (navigationDomainStart == null || availableEnd == null) Duration.ZERO
+        else Duration.between(navigationDomainStart, availableEnd).coerceAtLeast(Duration.ZERO)
+    }
+    val databaseSpanLabel = remember(fullHistory, now) { homeDatabaseSpanLabel(fullHistory, now) }
     var homeChartRange by remember(state.selectedPatientId) { mutableStateOf(HomeChartRange.default) }
     var viewportStartMillis by remember(state.selectedPatientId, chartPoints) { mutableStateOf<Long?>(null) }
     var viewportDurationMillis by remember(state.selectedPatientId, chartPoints) { mutableStateOf(homeChartRange.duration.toMillis()) }
     var chartWidthPx by remember { mutableStateOf(1f) }
     var zoomNonce by remember { mutableStateOf(0L) }
 
-    LaunchedEffect(state.selectedPatientId, availableEnd) {
-        val effectiveDuration = minOf(homeChartRange.duration.toMillis(), availableDuration.toMillis().coerceAtLeast(homeChartRange.duration.toMillis()))
-        viewportDurationMillis = if (availableDuration.isZero) homeChartRange.duration.toMillis() else minOf(homeChartRange.duration.toMillis(), availableDuration.toMillis().coerceAtLeast(1L))
-        viewportStartMillis = if (availableStart != null && availableEnd != null) {
-            (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(availableStart.toEpochMilli())
+    LaunchedEffect(state.selectedPatientId, navigationDomainStart, availableEnd) {
+        viewportDurationMillis = homeChartRange.duration.toMillis()
+        viewportStartMillis = if (navigationDomainStart != null && availableEnd != null) {
+            (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(navigationDomainStart.toEpochMilli())
         } else {
             null
         }
     }
 
-    LaunchedEffect(homeChartRange, availableEnd) {
-        if (availableStart == null || availableEnd == null) return@LaunchedEffect
-        viewportDurationMillis = minOf(homeChartRange.duration.toMillis(), availableDuration.toMillis().coerceAtLeast(1L))
-        viewportStartMillis = (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(availableStart.toEpochMilli())
+    LaunchedEffect(homeChartRange, navigationDomainStart, availableEnd) {
+        if (navigationDomainStart == null || availableEnd == null) return@LaunchedEffect
+        viewportDurationMillis = homeChartRange.duration.toMillis()
+        viewportStartMillis = (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(navigationDomainStart.toEpochMilli())
     }
 
     LaunchedEffect(zoomNonce) {
@@ -767,21 +784,19 @@ private fun GlucoseChartCard(
         delay(220L)
         val snapped = snapHomeChartRange(Duration.ofMillis(viewportDurationMillis))
         homeChartRange = snapped
-        if (!availableDuration.isZero) {
-            viewportDurationMillis = minOf(snapped.duration.toMillis(), availableDuration.toMillis().coerceAtLeast(1L))
-        }
+        viewportDurationMillis = snapped.duration.toMillis()
     }
 
-    val viewport = remember(availableStart, availableEnd, viewportStartMillis, viewportDurationMillis) {
-        if (availableStart == null || availableEnd == null) {
+    val viewport = remember(navigationDomainStart, availableEnd, viewportStartMillis, viewportDurationMillis) {
+        if (navigationDomainStart == null || availableEnd == null) {
             null
         } else {
             buildViewport(
-                selectedRangeStart = availableStart,
+                selectedRangeStart = navigationDomainStart,
                 selectedRangeEnd = availableEnd,
                 requestedStartMillis = viewportStartMillis,
                 requestedDurationMillis = viewportDurationMillis.coerceAtLeast(1L),
-                minimumDuration = if (availableDuration < Duration.ofHours(1)) availableDuration.coerceAtLeast(Duration.ofMinutes(5)) else Duration.ofHours(1)
+                minimumDuration = Duration.ofHours(1)
             )
         }
     }
@@ -790,11 +805,11 @@ private fun GlucoseChartCard(
     }
     val transformState = rememberTransformableState { zoomChange, _, _ ->
         val visibleViewport = viewport ?: return@rememberTransformableState
-        if (availableStart == null || availableEnd == null || availableDuration <= Duration.ofHours(1)) return@rememberTransformableState
+        if (navigationDomainStart == null || availableEnd == null || navigationDuration <= Duration.ofHours(1)) return@rememberTransformableState
         val updated = applyViewportTransform(
             currentStartMillis = visibleViewport.start.toEpochMilli(),
             currentDurationMillis = visibleViewport.duration.toMillis(),
-            selectedRangeStart = availableStart,
+            selectedRangeStart = navigationDomainStart,
             selectedRangeEnd = availableEnd,
             zoomChange = zoomChange,
             panXPx = 0f,
@@ -808,38 +823,19 @@ private fun GlucoseChartCard(
         }
     }
 
-    // Coverage: separate selected range from actually available data.
-    // 'now' included in remember key so the countdown ticks locally every 30 s.
-    val coverage = remember(chartPoints, state.timeRange, now) {
-        computeDataCoverage(
-            history = chartPoints,
-            selectedRange = java.time.Duration.ofSeconds(state.timeRange.durationSeconds),
-            selectedRangeLabel = when (state.timeRange.presetRange) {
-                PresetTimeRange.LAST_12_HOURS -> "12 godz."
-                PresetTimeRange.LAST_24_HOURS -> "24 godz."
-                PresetTimeRange.LAST_7_DAYS -> "7 dni"
-                PresetTimeRange.LAST_14_DAYS -> "14 dni"
-                PresetTimeRange.LAST_30_DAYS -> "30 dni"
-                PresetTimeRange.LAST_90_DAYS -> "90 dni"
-                PresetTimeRange.LAST_12_MONTHS -> "12 mies."
-            },
-            now = now
-        )
-    }
-
     // Flat section – no Card wrapper, separated by spacing from surrounding content
      Column(
          modifier = Modifier.fillMaxWidth(),
-          verticalArrangement = Arrangement.spacedBy(4.dp)
+          verticalArrangement = Arrangement.spacedBy(2.dp)
      ) {
         // Header row
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text(text = coverage.sectionHeaderLabel, color = DashboardSecondaryText, fontSize = 15.sp)
+            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
+                Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 20.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+                Text(text = "Okno ${homeChartRange.shortLabel} · baza $databaseSpanLabel", color = DashboardSecondaryText, fontSize = 13.sp, lineHeight = 14.sp)
             }
               IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
                   Icon(
@@ -864,13 +860,13 @@ private fun GlucoseChartCard(
             Box(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .transformable(state = transformState, enabled = availableDuration > Duration.ofHours(1))
+                    .transformable(state = transformState, enabled = navigationDuration > Duration.ofHours(1))
                     .pointerInput(homeChartRange, activeViewport) {
                         detectTapGestures(
                             onDoubleTap = {
-                                if (availableStart != null && availableEnd != null) {
-                                    viewportDurationMillis = minOf(homeChartRange.duration.toMillis(), availableDuration.toMillis().coerceAtLeast(1L))
-                                    viewportStartMillis = (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(availableStart.toEpochMilli())
+                                if (navigationDomainStart != null && availableEnd != null) {
+                                    viewportDurationMillis = homeChartRange.duration.toMillis()
+                                    viewportStartMillis = (availableEnd.toEpochMilli() - viewportDurationMillis).coerceAtLeast(navigationDomainStart.toEpochMilli())
                                 }
                             }
                         )
@@ -881,16 +877,18 @@ private fun GlucoseChartCard(
                     targetLow = state.settings.targetLow,
                     targetHigh = state.settings.targetHigh,
                     zoneId = zoneId,
+                    domainStart = activeViewport?.start,
+                    domainEnd = activeViewport?.end,
                     selectedPoint = selectedPoint,
                     onPointSelected = { point -> selectedPoint = point },
                     onPointSelectionCleared = { selectedPoint = null },
                     onChartTapped = onOpenHistory,
                     chartHeight = chartHeight,
                     maxYAxisLabels = 4,
-                    maxXAxisLabels = 4,
+                    maxXAxisLabels = 3,
                     axisLeftPaddingPx = 48f,
                     axisRightPaddingPx = 16f,
-                    axisBottomPaddingPx = 34f,
+                    axisBottomPaddingPx = 52f,
                     modifier = Modifier
                         .fillMaxWidth()
                         .onSizeChanged { chartWidthPx = it.width.toFloat() }
@@ -899,39 +897,24 @@ private fun GlucoseChartCard(
             activeViewport?.let { visibleViewport ->
                 HomeChartNavigator(
                     viewport = visibleViewport,
-                    availableStart = availableStart,
+                    availableStart = navigationDomainStart,
                     availableEnd = availableEnd,
+                    axisLeftPaddingPx = 48f,
+                    axisRightPaddingPx = 16f,
                     onFractionChanged = { fraction ->
-                        if (availableStart != null && availableEnd != null) {
-                            viewportStartMillis = viewportStartForFraction(fraction, visibleViewport, availableStart, availableEnd)
+                        if (navigationDomainStart != null && availableEnd != null) {
+                            viewportStartMillis = viewportStartForFraction(fraction, visibleViewport, navigationDomainStart, availableEnd)
                         }
                     },
                     onViewportChanged = { fraction ->
-                        if (availableStart != null && availableEnd != null) {
-                            val totalMillis = Duration.between(availableStart, availableEnd).toMillis().coerceAtLeast(1L)
+                        if (navigationDomainStart != null && availableEnd != null) {
+                            val totalMillis = Duration.between(navigationDomainStart, availableEnd).toMillis().coerceAtLeast(1L)
                             val windowMillis = visibleViewport.duration.toMillis().coerceAtLeast(1L)
                             val maxOffset = (totalMillis - windowMillis).coerceAtLeast(0L)
                             val startOffset = (maxOffset * fraction.coerceIn(0f, 1f)).roundToLong()
-                            viewportStartMillis = availableStart.toEpochMilli() + startOffset
+                            viewportStartMillis = navigationDomainStart.toEpochMilli() + startOffset
                         }
                     }
-                )
-                Slider(
-                    value = if (availableStart != null && availableEnd != null) {
-                        viewportScrollFraction(visibleViewport, availableStart, availableEnd)
-                    } else 1f,
-                    onValueChange = { fraction ->
-                        if (availableStart != null && availableEnd != null) {
-                            viewportStartMillis = viewportStartForFraction(
-                                fraction = fraction,
-                                viewport = visibleViewport,
-                                selectedRangeStart = availableStart,
-                                selectedRangeEnd = availableEnd
-                            )
-                        }
-                    },
-                    enabled = visibleViewport.canPan,
-                    modifier = Modifier.fillMaxWidth()
                 )
             }
             selectedPoint?.let { point ->
@@ -951,22 +934,6 @@ private fun GlucoseChartCard(
             }
         }
 
-        // Coverage note and estimate
-        coverage.selectedRangeNote?.let { note ->
-            Text(
-                text = note,
-                color = DashboardMutedText,
-                fontSize = 11.sp
-            )
-        }
-        coverage.fullCoverageEstimate?.let { estimate ->
-            Text(
-                text = estimate,
-                color = DashboardMutedText,
-                fontSize = 11.sp,
-                lineHeight = 15.sp
-            )
-        }
     }
 }
 
@@ -975,14 +942,14 @@ private fun HomeDataAvailabilityRow(summary: HomeCoverageSummary) {
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Text(summary.title, color = DashboardSecondaryText, fontSize = 15.sp, fontWeight = FontWeight.Medium)
+        Text(summary.title, color = DashboardSecondaryText, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = FontWeight.Medium)
         Text(
             summary.items.joinToString(" · ") { item -> "${item.label}: ${item.statusLabel}" },
             color = DashboardPrimaryText,
-            fontSize = 14.sp,
-            lineHeight = 18.sp,
+            fontSize = 12.sp,
+            lineHeight = 14.sp,
             maxLines = 2,
             overflow = TextOverflow.Clip,
             modifier = Modifier.weight(1f)
@@ -997,7 +964,7 @@ private fun HomeChartRangeSelector(
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
         homeChartRanges().forEach { range ->
             val selected = range == selectedRange
@@ -1005,7 +972,7 @@ private fun HomeChartRangeSelector(
                 onClick = { onRangeSelected(range) },
                 modifier = Modifier
                     .weight(1f)
-                    .heightIn(min = 48.dp)
+                    .heightIn(min = 40.dp)
                     .semantics {
                         contentDescription = range.accessibilityLabel
                         this.selected = selected
@@ -1018,7 +985,7 @@ private fun HomeChartRangeSelector(
                 ),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 0.dp, vertical = 0.dp)
             ) {
-                Text(range.shortLabel, fontSize = 15.sp, fontWeight = FontWeight.SemiBold)
+                Text(range.shortLabel, fontSize = 13.sp, lineHeight = 14.sp, fontWeight = FontWeight.SemiBold)
             }
         }
     }
@@ -1029,6 +996,8 @@ private fun HomeChartNavigator(
     viewport: HistoryViewport,
     availableStart: Instant?,
     availableEnd: Instant?,
+    axisLeftPaddingPx: Float,
+    axisRightPaddingPx: Float,
     onFractionChanged: (Float) -> Unit,
     onViewportChanged: (Float) -> Unit
 ) {
@@ -1040,15 +1009,38 @@ private fun HomeChartNavigator(
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(28.dp)
+            .height(32.dp)
             .pointerInput(viewport) {
                 detectTapGestures { offset ->
-                    onFractionChanged((offset.x / size.width.toFloat()).coerceIn(0f, 1f))
+                    val geometry = computeHomeNavigatorGeometry(
+                        totalWidthPx = size.width.toFloat(),
+                        leftInsetPx = axisLeftPaddingPx,
+                        rightInsetPx = axisRightPaddingPx,
+                        viewportFraction = fraction,
+                        windowFraction = windowFraction
+                    )
+                    val trackRelativeX = (offset.x - geometry.trackLeft).coerceIn(0f, geometry.trackWidth)
+                    val viewportLeftFraction = if (geometry.trackWidth <= geometry.viewportWidth) {
+                        0f
+                    } else {
+                        (trackRelativeX - geometry.viewportWidth / 2f)
+                            .coerceIn(0f, geometry.trackWidth - geometry.viewportWidth) /
+                            (geometry.trackWidth - geometry.viewportWidth)
+                    }
+                    onFractionChanged(viewportLeftFraction)
                 }
             }
             .pointerInput(viewport) {
                 detectDragGestures { change, dragAmount ->
-                    val deltaFraction = dragAmount.x / size.width.toFloat().coerceAtLeast(1f)
+                    val geometry = computeHomeNavigatorGeometry(
+                        totalWidthPx = size.width.toFloat(),
+                        leftInsetPx = axisLeftPaddingPx,
+                        rightInsetPx = axisRightPaddingPx,
+                        viewportFraction = fraction,
+                        windowFraction = windowFraction
+                    )
+                    val movableWidth = (geometry.trackWidth - geometry.viewportWidth).coerceAtLeast(1f)
+                    val deltaFraction = dragAmount.x / movableWidth
                     onViewportChanged((fraction + deltaFraction).coerceIn(0f, 1f))
                     change.consume()
                 }
@@ -1057,27 +1049,48 @@ private fun HomeChartNavigator(
                 contentDescription = "Widoczny przedział czasu: ${buildViewportLabel(viewport.start, viewport.end, DateTimeFormatterProvider.deviceZoneId())}"
             }
     ) {
-        val trackTop = size.height / 2f - 3f
-        val trackHeight = 6f
+        val geometry = computeHomeNavigatorGeometry(
+            totalWidthPx = size.width,
+            leftInsetPx = axisLeftPaddingPx,
+            rightInsetPx = axisRightPaddingPx,
+            viewportFraction = fraction,
+            windowFraction = windowFraction
+        )
+        val trackTop = size.height / 2f - 4f
+        val trackHeight = 8f
+        val viewportLeft = geometry.viewportLeft
+        val viewportWidth = geometry.viewportWidth
         drawRoundRect(
             color = LibreCareColors.SurfaceMuted,
-            topLeft = androidx.compose.ui.geometry.Offset(0f, trackTop),
-            size = androidx.compose.ui.geometry.Size(size.width, trackHeight),
+            topLeft = androidx.compose.ui.geometry.Offset(geometry.trackLeft, trackTop),
+            size = androidx.compose.ui.geometry.Size(geometry.trackWidth, trackHeight),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
         )
         drawRoundRect(
-            color = LibreCareColors.AccentTeal.copy(alpha = 0.5f),
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * fraction, 4f),
-            size = androidx.compose.ui.geometry.Size(size.width * windowFraction, size.height - 8f),
+            color = LibreCareColors.AccentTeal.copy(alpha = 0.85f),
+            topLeft = androidx.compose.ui.geometry.Offset(viewportLeft, 4f),
+            size = androidx.compose.ui.geometry.Size(viewportWidth, size.height - 8f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
             style = Stroke(width = 2f)
         )
         drawRoundRect(
-            color = LibreCareColors.AccentTeal.copy(alpha = 0.18f),
-            topLeft = androidx.compose.ui.geometry.Offset(size.width * fraction, 4f),
-            size = androidx.compose.ui.geometry.Size(size.width * windowFraction, size.height - 8f),
+            color = LibreCareColors.AccentTeal.copy(alpha = 0.22f),
+            topLeft = androidx.compose.ui.geometry.Offset(viewportLeft, 4f),
+            size = androidx.compose.ui.geometry.Size(viewportWidth, size.height - 8f),
             cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f)
         )
+        if (viewport.canPan) {
+            val gripCenterX = viewportLeft + viewportWidth / 2f
+            repeat(3) { index ->
+                val gripX = gripCenterX + (index - 1) * 6f
+                drawLine(
+                    color = Color.White.copy(alpha = 0.65f),
+                    start = androidx.compose.ui.geometry.Offset(gripX, 9f),
+                    end = androidx.compose.ui.geometry.Offset(gripX, size.height - 9f),
+                    strokeWidth = 1.5f
+                )
+            }
+        }
     }
 }
 
@@ -1178,3 +1191,19 @@ private fun EmptyConfigurationState(onNavigateToSettings: () -> Unit) {
         }
     }
 }
+
+private fun compactDbRangeLabel(reading: GlucoseReading?): String {
+    val history = reading?.history ?: return "brak"
+    if (history.size < 2) return "<1h"
+    val start = history.minOfOrNull { it.timestamp } ?: return "brak"
+    val end = history.maxOfOrNull { it.timestamp } ?: return "brak"
+    val duration = Duration.between(start, end).coerceAtLeast(Duration.ZERO)
+    val hours = duration.toHours()
+    val days = hours / 24
+    return when {
+        days > 0 -> "${days}d"
+        hours > 0 -> "${hours}g"
+        else -> "${duration.toMinutes().coerceAtLeast(1)}m"
+    }
+}
+

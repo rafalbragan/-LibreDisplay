@@ -7,6 +7,7 @@ import com.libredisplay.LibreDisplayApp
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.repository.DatabaseStats
 import com.libredisplay.data.repository.NetworkUsageStats
+import com.libredisplay.data.repository.PersonCoverageStats
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -16,6 +17,7 @@ data class StatisticsUiState(
     val isLoading: Boolean = true,
     val databaseStats: DatabaseStats? = null,
     val networkStats: NetworkUsageStats? = null,
+    val personCoverageStats: List<PersonCoverageStats> = emptyList(),
     val pollingLabel: String = "-",
     val pollingUsageCurrentLabel: String = "-",
     val pollingUsageEstimatedLabel: String = "-",
@@ -39,6 +41,7 @@ class StatisticsViewModel(application: Application) : AndroidViewModel(applicati
                 val settings = app.settingsRepository.loadSettings()
                 val dbStats = app.diagnosticsStatsRepository.loadDatabaseStats()
                 val networkStats = app.diagnosticsStatsRepository.loadNetworkUsageStats(settings.appMode)
+                val personCoverageStats = app.diagnosticsStatsRepository.loadPerPersonCoverageStats()
                 val pollingEstimate = app.diagnosticsStatsRepository.estimatePolling(settings.backgroundPollingMinutes)
 
                 val currentUsage = pollingEstimate.currentDailyBytes?.let { app.diagnosticsStatsRepository.formatBytes(it) + " / dzien" }
@@ -50,6 +53,7 @@ class StatisticsViewModel(application: Application) : AndroidViewModel(applicati
                     isLoading = false,
                     databaseStats = dbStats,
                     networkStats = networkStats,
+                    personCoverageStats = personCoverageStats,
                     pollingLabel = "${settings.backgroundPollingMinutes} min",
                     pollingUsageCurrentLabel = currentUsage,
                     pollingUsageEstimatedLabel = estimatedUsage,

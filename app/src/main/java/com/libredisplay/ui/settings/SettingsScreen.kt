@@ -77,6 +77,7 @@ fun SettingsScreen(
     val hba1cSettings by viewModel.hba1cSettings.collectAsState()
     val quickMetricsOrder by viewModel.quickMetricsOrder.collectAsState()
     val message by viewModel.message.collectAsState()
+    val isSaving by viewModel.isSaving.collectAsState()
     val scrollState = rememberScrollState()
     var passwordVisible by remember { mutableStateOf(false) }
 
@@ -349,8 +350,12 @@ fun SettingsScreen(
                 OutlinedButton(onClick = viewModel::resetSession, modifier = Modifier.weight(1f)) {
                     Text("Wyczyść zapisany token i zaloguj ponownie")
                 }
-                Button(onClick = { viewModel.saveSettings() }, modifier = Modifier.weight(1f)) {
-                    Text("Zapisz")
+                Button(
+                    onClick = { viewModel.saveSettings() },
+                    modifier = Modifier.weight(1f),
+                    enabled = !isSaving
+                ) {
+                    Text(if (isSaving) "Zapisywanie..." else "Zapisz")
                 }
             }
         }
@@ -418,6 +423,8 @@ private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
     QuickMetricId.ABOVE -> "Powyżej"
     QuickMetricId.GMI -> "GMI"
     QuickMetricId.HBA1C -> "HbA1c"
+    QuickMetricId.AVERAGE -> "Średnia"
+    QuickMetricId.SENSOR_ACTIVITY -> "Aktywność sensora"
 }
 
 private fun copyLog(context: Context) {

@@ -1,6 +1,7 @@
 package com.libredisplay.ui.privacy
 
 import android.app.Application
+import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.libredisplay.LibreDisplayApp
@@ -19,6 +20,7 @@ class PrivacyDataViewModel(application: Application) : AndroidViewModel(applicat
 
     private val app = application as LibreDisplayApp
     private val privacyRepository = app.privacyRepository
+    private val backupRepository = app.appDataBackupRepository
 
     private val _event = MutableStateFlow<PrivacyActionEvent?>(null)
     val event: StateFlow<PrivacyActionEvent?> = _event.asStateFlow()
@@ -76,6 +78,35 @@ class PrivacyDataViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             privacyRepository.deleteDemoData()
             _event.value = PrivacyActionEvent("Dane trybu demo zostały usunięte.", navigateToStart = true)
+        }
+    }
+
+    fun exportBackup(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { backupRepository.exportToUri(uri) }
+                .onSuccess { summary ->
+                    _event.value = PrivacyActionEvent(
+                        "Kopia zapisana. Osoby LIVE: ${summary.livePersons}, odczyty LIVE: ${summary.liveReadings}, ustawienia pacjentow: ${summary.patientSettings}."
+                    )
+                }
+                .onFailure { throwable ->
+                    _event.value = PrivacyActionEvent("Nie udalo sie zapisac kopii: ${throwable.message.orEmpty()}")
+                }
+        }
+    }
+
+    fun restoreBackup(uri: Uri) {
+        viewModelScope.launch {
+            runCatching { backupRepository.restoreFromUri(uri) }
+                .onSuccess { summary ->
+                    _event.value = PrivacyActionEvent(
+                        "Przywrocono kopie. Osoby LIVE: ${summary.livePersons}, odczyty LIVE: ${summary.liveReadings}, ustawienia pacjentow: ${summary.patientSettings}.",
+                        navigateToStart = true
+                    )
+                }
+                .onFailure { throwable ->
+                    _event.value = PrivacyActionEvent("Nie udalo sie przywrocic kopii: ${throwable.message.orEmpty()}")
+                }
         }
     }
 

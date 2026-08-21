@@ -42,6 +42,13 @@ internal data class HomeCoverageSummary(
     val usesCompleteness: Boolean
 )
 
+internal data class HomeNavigatorGeometry(
+    val trackLeft: Float,
+    val trackWidth: Float,
+    val viewportLeft: Float,
+    val viewportWidth: Float
+)
+
 internal fun homeChartRanges(): List<HomeChartRange> = HomeChartRange.entries
 
 internal fun homeChartAvailablePoints(
@@ -141,18 +148,59 @@ internal fun viewportFromFraction(viewport: HomeChartViewport, fraction: Float):
     return buildHomeChartViewportFromEnd(viewport, targetEnd)
 }
 
+internal fun computeHomeNavigatorGeometry(
+    totalWidthPx: Float,
+    leftInsetPx: Float,
+    rightInsetPx: Float,
+    viewportFraction: Float,
+    windowFraction: Float
+): HomeNavigatorGeometry {
+    val safeWidth = totalWidthPx.coerceAtLeast(1f)
+    val trackLeft = leftInsetPx.coerceAtLeast(0f).coerceAtMost(safeWidth)
+    val trackRight = (safeWidth - rightInsetPx.coerceAtLeast(0f)).coerceAtLeast(trackLeft + 1f)
+    val trackWidth = (trackRight - trackLeft).coerceAtLeast(1f)
+    val clampedWindowFraction = windowFraction.coerceIn(0f, 1f)
+    val viewportWidth = (trackWidth * clampedWindowFraction).coerceIn(1f, trackWidth)
+    val maxViewportLeft = trackRight - viewportWidth
+    val viewportLeft = trackLeft + (maxViewportLeft - trackLeft) * viewportFraction.coerceIn(0f, 1f)
+    return HomeNavigatorGeometry(
+        trackLeft = trackLeft,
+        trackWidth = trackWidth,
+        viewportLeft = viewportLeft,
+        viewportWidth = viewportWidth
+    )
+}
+
 internal fun buildHomeCoverageSummary(
     points: List<GlucoseHistoryPoint>,
     now: Instant = points.maxOfOrNull { it.timestamp } ?: Instant.now()
 ): HomeCoverageSummary {
-    val items = listOf(Duration.ofHours(12) to "12 h", Duration.ofHours(24) to "24 h").map { (window, label) ->
+    val items = listOf(
+        Duration.ofHours(12) to "12h",
+        Duration.ofDays(3) to "3d",
+        Duration.ofDays(7) to "7d",
+        Duration.ofDays(30) to "30d"
+    ).map { (window, label) ->
         buildHomeCoverageItem(points, now, window, label)
     }
     return HomeCoverageSummary(
-        title = if (items.any { it.statusLabel.contains("Zakres danych", ignoreCase = true) }) "Zakres danych" else "Dostępność danych",
+        title = "Baza",
         items = items,
-        usesCompleteness = items.none { it.statusLabel.contains("Zakres danych", ignoreCase = true) }
+        usesCompleteness = true
     )
+}
+
+internal fun homeDatabaseSpanLabel(
+    points: List<GlucoseHistoryPoint>,
+    now: Instant = points.maxOfOrNull { it.timestamp } ?: Instant.now()
+): String {
+    if (points.size < 2) return "brak"
+    val oldest = points.minOf { it.timestamp }
+    val newest = points.maxOf { it.timestamp }
+    val span = Duration.between(oldest, newest).coerceAtLeast(Duration.ZERO)
+    val anchor = if (now.isBefore(oldest)) newest else now
+    val anchoredSpan = Duration.between(oldest, anchor).coerceAtLeast(span)
+    return PolishDateTimeFormatter.formatCompactDuration(anchoredSpan)
 }
 
 private fun buildHomeCoverageItem(
@@ -167,14 +215,14 @@ private fun buildHomeCoverageItem(
         .filter { !it.timestamp.isBefore(now.minus(window)) && !it.timestamp.isAfter(now) }
 
     if (filtered.size < 2) {
-        return HomeCoverageItem(label = label, statusLabel = "Zakres danych", isFull = false)
+        return HomeCoverageItem(label = label, statusLabel = "brak", isFull = false)
     }
 
     val span = Duration.between(filtered.first().timestamp, filtered.last().timestamp).coerceAtLeast(Duration.ZERO)
     val activity = sensorActivityFromHistory(filtered, now.minus(window), now)?.activityPercent
 
     if (activity == null) {
-        return HomeCoverageItem(label = label, statusLabel = "Zakres danych", isFull = false)
+        return HomeCoverageItem(label = label, statusLabel = PolishDateTimeFormatter.formatCompactDuration(span), isFull = false)
     }
 
     val covered = Duration.ofMillis((window.toMillis() * (activity / 100.0)).roundToLong()).coerceAtMost(window)

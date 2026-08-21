@@ -4,10 +4,12 @@ import com.libredisplay.data.api.LibreLinkUpClient
 import com.libredisplay.data.api.MockLibreLinkUpClient
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.diagnostics.DiagnosticLogger
+import java.time.Duration
 
 data class GlucoseSnapshot(
     val current: GlucoseReading,
@@ -21,6 +23,10 @@ class GlucoseRepository(
     private val mockClient: LibreLinkUpClient = MockLibreLinkUpClient(),
     private val localHistoryRepository: LocalGlucoseHistoryRepository? = null
 ) {
+
+    companion object {
+        private val HOME_HISTORY_WINDOW: Duration = LocalGlucoseHistoryRepository.HOME_HISTORY_WINDOW
+    }
 
     suspend fun fetchLatestReading(): GlucoseReading? {
         return runCatching { fetchMonitoringSnapshot().reading }
@@ -137,20 +143,43 @@ class GlucoseRepository(
             "GlucoseRepository",
             "Reading value=${reading.value} trend=${reading.trend.arrow} history=${reading.history.size}"
         )
-        val snapshot = MonitoringSnapshot(persons = persons, selectedPerson = selectedPerson, reading = reading)
+        val mergedPoints = (reading.history + listOf(
+            GlucoseHistoryPoint(
+                value = reading.value,
+                timestamp = reading.timestamp,
+                trend = reading.trend
+            )
+        )).distinctBy { it.timestamp }
         localHistoryRepository?.upsertObservedPersons(persons, java.time.Instant.now())
         localHistoryRepository?.insertReadings(
             patientId = selectedPerson.patientId,
             source = if (client === mockClient) "DemoMode" else "LibreLinkUp",
             sourceAccountId = authRepository.currentAccountIdHash(),
-            points = (reading.history + listOf(
-                com.libredisplay.data.model.GlucoseHistoryPoint(
-                    value = reading.value,
-                    timestamp = reading.timestamp,
-                    trend = reading.trend
-                )
-            )).distinctBy { it.timestamp }
+            points = mergedPoints
         )
+        val localDenseHistory = localHistoryRepository?.loadHistory(
+            patientId = selectedPerson.patientId,
+            fromInclusive = reading.timestamp.minus(HOME_HISTORY_WINDOW),
+            toInclusive = reading.timestamp
+        ).orEmpty()
+        val denseHistory = (localDenseHistory + mergedPoints)
+            .distinctBy { it.timestamp to it.value }
+            .sortedBy { it.timestamp }
+        val dashboardReading = if (denseHistory.isEmpty()) {
+            reading
+        } else {
+            GlucoseReading.of(
+                value = reading.value,
+                timestamp = reading.timestamp,
+                trend = reading.trend,
+                history = denseHistory,
+                trendApiCode = reading.trendApiCode,
+                trendValidationWarning = reading.trendValidationWarning,
+                historyHoursAvailable = reading.historyHoursAvailable,
+                sourceHistoryPointCount = denseHistory.size
+            )
+        }
+        val snapshot = MonitoringSnapshot(persons = persons, selectedPerson = selectedPerson, reading = dashboardReading)
         return snapshot
     }
 

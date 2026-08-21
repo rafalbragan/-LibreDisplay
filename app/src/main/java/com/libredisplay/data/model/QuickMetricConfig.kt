@@ -5,10 +5,30 @@ enum class QuickMetricId(val storageId: String) {
     IN_RANGE("in_range"),
     ABOVE("above"),
     GMI("gmi"),
-    HBA1C("hba1c");
+    HBA1C("hba1c"),
+    AVERAGE("average"),
+    SENSOR_ACTIVITY("sensor_activity");
 
     companion object {
-        val DEFAULT_ORDER: List<QuickMetricId> = listOf(BELOW, IN_RANGE, ABOVE, GMI, HBA1C)
+        val DEFAULT_ORDER: List<QuickMetricId> = listOf(
+            BELOW,
+            IN_RANGE,
+            ABOVE,
+            GMI,
+            HBA1C,
+            AVERAGE,
+            SENSOR_ACTIVITY
+        )
+
+        val DEFAULT_VISIBLE: Set<QuickMetricId> = setOf(
+            BELOW,
+            IN_RANGE,
+            ABOVE,
+            GMI,
+            HBA1C,
+            AVERAGE,
+            SENSOR_ACTIVITY
+        )
 
         fun fromStorageId(value: String): QuickMetricId? = entries.firstOrNull { it.storageId == value }
 

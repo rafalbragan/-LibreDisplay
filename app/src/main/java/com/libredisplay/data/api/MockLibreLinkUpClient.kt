@@ -33,6 +33,18 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
             displayName = "Maria Nowak",
             firstName = "Maria",
             lastName = "Nowak"
+        ),
+        LibreConnectionPerson(
+            patientId = "demo-person-piotr",
+            displayName = "Piotr Zielinski",
+            firstName = "Piotr",
+            lastName = "Zielinski"
+        ),
+        LibreConnectionPerson(
+            patientId = "demo-person-zofia",
+            displayName = "Zofia Wisniewska",
+            firstName = "Zofia",
+            lastName = "Wisniewska"
         )
     )
 
@@ -61,7 +73,9 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
         val personOffset = when (resolvedPatientId) {
             "demo-person-anna" -> 0.0
             "demo-person-jan" -> 0.7
-            else -> 1.4
+            "demo-person-maria" -> 1.4
+            "demo-person-piotr" -> 2.1
+            else -> 2.8
         }
 
         val history = (0 until totalPoints).map { index ->
@@ -82,7 +96,9 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
             val baseline = 112.0 + when (resolvedPatientId) {
                 "demo-person-anna" -> 4.0
                 "demo-person-jan" -> 10.0
-                else -> 1.0
+                "demo-person-maria" -> 1.0
+                "demo-person-piotr" -> 7.0
+                else -> -2.0
             }
 
             val value = (baseline + circadian + breakfast + lunch + dinner + slowWave + deterministicNoise + occasionalShift)

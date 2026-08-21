@@ -142,5 +142,47 @@ class DiagnosticsStatsRepositoryTest {
         assertEquals(0L, stats.totalUploadedBytes)
         assertNull(stats.averageDownloadedPerDayBytes)
     }
+
+    @Test
+    fun loadPerPersonCoverageStats_skipsPersonsWithoutReadings() = runBlocking {
+        val now = Instant.parse("2026-08-20T12:00:00Z")
+        val withData = ObservedPersonEntity(
+            patientId = "p-with-data",
+            firstName = "Anna",
+            lastName = "Nowak",
+            displayName = "Anna Nowak",
+            isActive = true,
+            lastSeenAt = now,
+            createdAt = now,
+            updatedAt = now
+        )
+        val noData = withData.copy(patientId = "p-no-data", displayName = "Brak Danych")
+        db.observedPersonDao().upsertAll(listOf(withData, noData))
+
+        db.glucoseReadingDao().insertReplace(
+            listOf(
+                GlucoseReadingEntity(
+                    id = "p-with-data:${now.minusSeconds(60).toEpochMilli()}",
+                    patientId = "p-with-data",
+                    timestamp = now.minusSeconds(60),
+                    valueMgDl = 110,
+                    trendArrow = "→",
+                    trendLabel = "Stabilnie",
+                    source = "LibreLinkUp",
+                    sourceAccountId = "acc",
+                    receivedAt = now,
+                    isValid = true,
+                    rawTrendCode = null,
+                    createdAt = now
+                )
+            )
+        )
+
+        val coverage = repository.loadPerPersonCoverageStats(now)
+
+        assertEquals(1, coverage.size)
+        assertEquals("p-with-data", coverage.first().patientId)
+        assertTrue(coverage.first().windows.any { it.days == 14 && it.readings > 0L })
+    }
 }
 

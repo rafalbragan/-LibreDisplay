@@ -24,10 +24,12 @@ class MockLibreLinkUpClientDemoModeTest {
     fun demoMode_loadsStableDemoPeople() = runTest {
         val persons = client.getConnections()
 
-        assertEquals(3, persons.size)
+        assertEquals(5, persons.size)
         assertTrue(persons.any { it.patientId == "demo-person-anna" && it.displayName == "Anna Kowalska" })
         assertTrue(persons.any { it.patientId == "demo-person-jan" && it.displayName == "Jan Kowalski" })
         assertTrue(persons.any { it.patientId == "demo-person-maria" && it.displayName == "Maria Nowak" })
+        assertTrue(persons.any { it.patientId == "demo-person-piotr" && it.displayName == "Piotr Zielinski" })
+        assertTrue(persons.any { it.patientId == "demo-person-zofia" && it.displayName == "Zofia Wisniewska" })
     }
 
     @Test

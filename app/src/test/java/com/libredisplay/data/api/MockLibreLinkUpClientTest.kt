@@ -28,7 +28,7 @@ class MockLibreLinkUpClientTest {
         val annaReading = client.getLatestReading(persons[0].patientId)
         val janReading = client.getLatestReading(persons[1].patientId)
 
-        assertEquals(3, persons.size)
+        assertEquals(5, persons.size)
         assertEquals("Anna Kowalska", persons[0].displayName)
         assertEquals("Jan Kowalski", persons[1].displayName)
         assertTrue(annaReading != null)

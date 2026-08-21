@@ -194,8 +194,8 @@
     <string name="retention_confirm_delete">Potwierdzam usuniecie starszych odczytow</string>
     <string name="retention_change_requires_confirmation">Wymagane potwierdzenie przed usunieciem</string>
     <!-- Polling frequency -->
-    <string name="polling_frequency_title">Czestotliwosc odpytywania</string>
-    <string name="polling_frequency_description">Minimalna czestotliwosc odpytywania danych z LibreLinkUp</string>
+    <string name="polling_frequency_title">Synchronizacja danych</string>
+    <string name="polling_frequency_description">Jak czesto LibreCare sprawdza nowe dane w LibreLinkUp</string>
     <string name="polling_current_usage">Obecne zuzycie danych</string>
     <string name="polling_estimated_usage">Szacowane zuzycie po zmianie</string>
     <string name="polling_current_frequency">Obecna czestotliwosc</string>
@@ -215,5 +215,23 @@
      <string name="apply">Zastosuj</string>
       <string name="insufficient_estimation_data">Za malo danych do dokladnej estymacji</string>
       <string name="demo_transfer_exclusion">Tryb demo uzywa przykladowych danych. Statystyki transferu nie obejmuja danych demo.</string>
+      <!-- Metric tooltips and explanations -->
+      <string name="metric_cv_label">CV</string>
+      <string name="metric_cv_help">Współczynnik zmienności - mierzy stabilność poziomu cukru. Niższy CV oznacza bardziej stabilne wartości.</string>
+      <string name="metric_cv_formula">CV = (odchylenie standardowe / średnia) × 100%</string>
+      <string name="metric_cv_insufficient">Brak danych. Wymagane co najmniej 10 pomiarów.</string>
+      <string name="metric_gmi_label">GMI</string>
+      <string name="metric_gmi_help">Glucose Management Indicator - szacunkowe HbA1c na podstawie średniej glukozy z sensora. Nie zastępuje badania laboratoryjnego.</string>
+      <string name="metric_gmi_formula">GMI = 3,31 + 0,02392 × średnia glukoza (mg/dL)</string>
+      <string name="metric_gmi_insufficient">Brak danych. Wymagane co najmniej 14 dni danych (wymaga ~96 pomiarów).</string>
+      <string name="metric_average_label">Średnia</string>
+      <string name="metric_average_help">Średnia wartość glukozy w wybranym zakresie czasu.</string>
+      <string name="metric_average_insufficient">Brak danych. Wymagany co najmniej 1 pomiar.</string>
+      <string name="metric_tir_label">Czas w zakresie</string>
+      <string name="metric_tir_help">Procent czasu, gdy poziom glukozy był w docelowym zakresie.</string>
+      <string name="metric_tir_insufficient">Brak danych. Wymagane pomiary z wybranego zakresu czasu.</string>
+      <string name="metric_sensor_activity_insufficient">Brak danych. Wymagane co najmniej 2 pomiary.</string>
+      <string name="metric_help_title">Wyjaśnienie metryki</string>
+      <string name="metric_help_close">Zamknij</string>
 </resources>
 

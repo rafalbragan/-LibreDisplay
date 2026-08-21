@@ -57,7 +57,10 @@ class SettingsRepository(context: Context) {
         storage.putBoolean(SecureStorage.KEY_USE_MOCK, settings.useMock)
         storage.putBoolean(SecureStorage.KEY_USE_AUTH_V3, true)
         storage.putString(SecureStorage.KEY_SELECTED_PATIENT_ID, selectedPatientIdToStore.orEmpty())
-        storage.putInt(SecureStorage.KEY_RETENTION_HOURS, settings.retentionHours.coerceIn(12, 24 * 30 * 24))
+        storage.putInt(
+            SecureStorage.KEY_RETENTION_HOURS,
+            settings.retentionHours.coerceIn(AppSettings.MIN_RETENTION_HOURS, AppSettings.MAX_RETENTION_HOURS)
+        )
         storage.putInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, settings.backgroundPollingMinutes.coerceIn(5, 60))
     }
 
@@ -85,7 +88,10 @@ class SettingsRepository(context: Context) {
             appMode = appMode,
             selectedPatientId = storage.getString(SecureStorage.KEY_SELECTED_PATIENT_ID).trim().takeIf { it.isNotBlank() },
             useAuthV3 = true,
-            retentionHours = storage.getInt(SecureStorage.KEY_RETENTION_HOURS, 24 * 30).coerceIn(12, 24 * 30 * 24),
+            retentionHours = storage.getInt(
+                SecureStorage.KEY_RETENTION_HOURS,
+                AppSettings.DEFAULT_RETENTION_HOURS
+            ).coerceIn(AppSettings.MIN_RETENTION_HOURS, AppSettings.MAX_RETENTION_HOURS),
             backgroundPollingMinutes = storage.getInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, 60).coerceIn(5, 60)
         ).normalized()
     }
@@ -223,6 +229,30 @@ class SettingsRepository(context: Context) {
         storage.putString(SecureStorage.KEY_QUICK_METRICS_ORDER, serialized)
     }
 
+    fun loadQuickMetricsVisibility(): Map<QuickMetricId, Boolean> {
+        val defaults = QuickMetricId.entries.associateWith { it in QuickMetricId.DEFAULT_VISIBLE }.toMutableMap()
+        val raw = storage.getString(SecureStorage.KEY_QUICK_METRICS_VISIBILITY)
+        if (raw.isBlank()) return defaults
+
+        raw.split(',')
+            .map { it.trim() }
+            .filter { it.contains(':') }
+            .forEach { token ->
+                val parts = token.split(':', limit = 2)
+                val metricId = QuickMetricId.fromStorageId(parts[0].trim()) ?: return@forEach
+                defaults[metricId] = parts[1].trim() == "1"
+            }
+        return defaults
+    }
+
+    fun saveQuickMetricsVisibility(visibility: Map<QuickMetricId, Boolean>) {
+        val serialized = QuickMetricId.entries.joinToString(",") { metricId ->
+            val visible = visibility[metricId] ?: (metricId in QuickMetricId.DEFAULT_VISIBLE)
+            "${metricId.storageId}:${if (visible) "1" else "0"}"
+        }
+        storage.putString(SecureStorage.KEY_QUICK_METRICS_VISIBILITY, serialized)
+    }
+
     fun loadHbA1cSettings(patientId: String?): HbA1cSettings {
         val suffix = patientStorageSuffix(patientId)
         val labValue = storage.getString(SecureStorage.KEY_HBA1C_LAB_PERCENT_PREFIX + suffix)
@@ -318,7 +348,7 @@ class SettingsRepository(context: Context) {
             region = region.ifBlank { "EU" }.uppercase(),
             customBaseUrl = customBaseUrl.trim(),
             selectedPatientId = normalizedSelectedPatientId?.trim().takeIf { !it.isNullOrBlank() },
-            retentionHours = retentionHours.coerceIn(12, 24 * 30 * 24),
+            retentionHours = retentionHours.coerceIn(AppSettings.MIN_RETENTION_HOURS, AppSettings.MAX_RETENTION_HOURS),
             backgroundPollingMinutes = backgroundPollingMinutes.coerceIn(5, 60)
         )
     }

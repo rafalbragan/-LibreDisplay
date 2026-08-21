@@ -4,6 +4,8 @@ import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.local.SyncRunEntity
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.GlucoseHistoryPoint
+import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -40,6 +42,10 @@ class GlucoseSyncRepository(
     private val productionClient: RetrofitLibreLinkUpClient,
     private val localRepository: LocalGlucoseHistoryRepository
 ) {
+
+    private companion object {
+        val BACKFILL_WINDOW: java.time.Duration = java.time.Duration.ofHours(12)
+    }
 
     private val syncMutex = Mutex()
 
@@ -86,18 +92,14 @@ class GlucoseSyncRepository(
                 for (person in persons) {
                     try {
                         val reading = productionClient.getLatestReading(person.patientId) ?: continue
-                        val allPoints = (reading.history + listOf(
-                            com.libredisplay.data.model.GlucoseHistoryPoint(
-                                value = reading.value,
-                                timestamp = reading.timestamp,
-                                trend = reading.trend
-                            )
-                        )).distinctBy { it.timestamp }
+                        val now = Instant.now()
+                        val backfillFrom = now.minus(BACKFILL_WINDOW)
+                        val allPoints = mergeBackfillWindowPoints(reading, backfillFrom)
                         val summary = localRepository.insertReadings(
                             patientId = person.patientId,
                             points = allPoints,
                             sourceAccountId = authRepository.currentAccountIdHash(),
-                            now = Instant.now()
+                            now = now
                         )
                         inserted += summary.inserted
                         duplicates += summary.duplicates
@@ -119,7 +121,10 @@ class GlucoseSyncRepository(
                 retryAfterSeconds = (throwable as? LibreLinkUpHttpException)?.retryAfterSeconds ?: retryAfterSeconds
                 DiagnosticLogger.logException("GlucoseSyncRepository", throwable, "syncAllPersons failed")
             } finally {
-                val retentionHours = settingsProvider().retentionHours.coerceIn(12, 24 * 30 * 24)
+                val retentionHours = settingsProvider().retentionHours.coerceIn(
+                    AppSettings.MIN_RETENTION_HOURS,
+                    AppSettings.MAX_RETENTION_HOURS
+                )
                 localRepository.deleteReadingsOlderThanHours(hours = retentionHours.toLong(), now = Instant.now())
                 localRepository.saveSyncRun(
                     SyncRunEntity(
@@ -162,5 +167,19 @@ class GlucoseSyncRepository(
         fromInclusive: Instant,
         toInclusive: Instant
     ) = localRepository.loadHistory(patientId, fromInclusive, toInclusive)
+}
+
+internal fun mergeBackfillWindowPoints(
+    reading: GlucoseReading,
+    backfillFrom: Instant
+): List<GlucoseHistoryPoint> {
+    return (reading.history + GlucoseHistoryPoint(
+        value = reading.value,
+        timestamp = reading.timestamp,
+        trend = reading.trend
+    ))
+        .filter { !it.timestamp.isBefore(backfillFrom) }
+        .distinctBy { it.timestamp }
+        .sortedBy { it.timestamp }
 }
 

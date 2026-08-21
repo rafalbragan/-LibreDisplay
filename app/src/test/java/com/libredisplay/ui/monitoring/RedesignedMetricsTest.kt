@@ -27,10 +27,12 @@ class RedesignedMetricsTest {
             aboveDuration = Duration.ofMinutes(75),
             abovePercent = 50,
             gmiValue = 7.2,
-            hba1cValue = null
+            hba1cValue = null,
+            averageValueMgDl = 124,
+            sensorActivityPercent = 86
         )
 
-        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "GMI", "HbA1c"), tiles.map { it.label })
+        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "GMI", "HbA1c", "Średnia", "Aktywność"), tiles.map { it.label })
         assertEquals("0m", tiles[0].primaryValue)
         assertEquals("50%", tiles[1].secondaryValue)
         assertEquals("1g 15m", tiles[1].primaryValue)
@@ -50,7 +52,7 @@ class RedesignedMetricsTest {
         val rows = quickMetricsRows(maxWidthDp = 600f, orderedTiles = sampleTiles())
 
         assertEquals(1, rows.size)
-        assertEquals(5, rows.single().size)
+        assertEquals(7, rows.single().size)
     }
 
     @Test
@@ -63,7 +65,9 @@ class RedesignedMetricsTest {
             aboveDuration = Duration.ofHours(9).plusMinutes(45),
             abovePercent = 43,
             gmiValue = null,
-            hba1cValue = null
+            hba1cValue = null,
+            averageValueMgDl = null,
+            sensorActivityPercent = null
         )
 
         assertEquals("Za mało danych", tiles.first { it.label == "GMI" }.secondaryValue)
@@ -79,7 +83,9 @@ class RedesignedMetricsTest {
         aboveDuration = Duration.ofHours(9).plusMinutes(45),
         abovePercent = 43,
         gmiValue = null,
-        hba1cValue = null
+        hba1cValue = null,
+        averageValueMgDl = null,
+        sensorActivityPercent = null
     )
 }
 

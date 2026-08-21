@@ -2,6 +2,106 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.2.2 - 2026-08-21
+
+### PL
+
+#### Changed
+- Wydanie stabilizacyjne – brak zmian funkcjonalnych.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Testy podłączone: brak urządzenia/emulatora.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.2-debug.apk` (22,39 MB)
+- `release-artifacts/LibreCare-2.2.2-release.apk` (3,03 MB)
+- `release-artifacts/LibreCare-2.2.2-release.aab` (5,55 MB)
+
+### EN
+
+#### Changed
+- Stability release – no functional changes.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Connected tests: no device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.2-debug.apk` (22.39 MB)
+- `release-artifacts/LibreCare-2.2.2-release.apk` (3.03 MB)
+- `release-artifacts/LibreCare-2.2.2-release.aab` (5.55 MB)
+
+---
+
+## 2.2.1 - 2026-08-21
+
+### PL
+
+#### Added
+- Dodano tekstowy score UX do raportu `ui-audit-report.md`, wraz ze zbiorczą oceną i flagami ryzyka dla wąskich viewportów oraz większego `fontScale`.
+- Rozszerzono Demo Mode do 5 osób, aby testować przełącznik monitorowanych osób i scenariusze overflow `+N`.
+
+#### Changed
+- Przebudowano nagłówek Home: po lewej `LibreCare` z wersją i skrótem bazy danych, po prawej `Ostatni odczyt`, `Koniec działania sensora za` oraz `Zakres danych`.
+- Sekcja `Historia glikemii` pokazuje teraz skrót typu `Okno 3h · baza 7d` zamiast mylącego opisu sugerującego, że baza kończy się na ~12h.
+- Wiersz dostępności danych pod wykresem Home rozszerzono do zakresów `12h / 3d / 7d / 30d`.
+- Metryki Home przeniesiono niżej pod wykres i zmieniono na jedną przewijaną linię, z konfiguracją widoczności `show/hide` w ustawieniach.
+- Przełącznik osób na Home pokazuje teraz do 2 szerokich boksów, a kolejne osoby grupuje w `+N` z rozwijaną przewijaną listą ostatnio używanych osób.
+
+#### Fixed
+- Usunięto dodatkowy dolny `Slider` pod wykresem Home; pozostawiono tylko właściwy navigator viewportu.
+- Naprawiono geometrię navigatora Home: szerokość uchwytu odpowiada wybranemu oknu `1h / 3h / 6h / 9h / 12h`, startuje przy prawej krawędzi i przesuwa się płynnie w obrębie 12 godzin.
+- Poprawiono etykiety osi X na Home, aby dla zakresów godzinowych pokazywały dzień i godzinę, a nie samą godzinę bez kontekstu dnia.
+- Zmniejszono ryzyko clippingu etykiet czasu pod wykresem przez większy dolny padding osi i mniejszą liczbę etykiet na Home.
+
+#### Tests
+- Zweryfikowano: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Dodatkowo uruchomiono regresje dla: `UiAuditExporterTest`, `HomeChartModelsTest`, `PolishFormattersTest`, `DataCoverageModelTest`, `RedesignedMetricsTest`.
+- Testy podłączone: brak urządzenia/emulatora (`adb` niedostępne w PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.1-debug.apk` (23 464 012 B)
+- `release-artifacts/LibreCare-2.2.1-release.apk` (3 178 011 B)
+- `release-artifacts/LibreCare-2.2.1-release.aab` (5 808 931 B)
+
+### EN
+
+#### Added
+- Added a textual UX score to `ui-audit-report.md`, including a global summary and risk flags for narrow viewports and larger `fontScale` values.
+- Expanded Demo Mode to 5 people so the monitored-person switcher and `+N` overflow can be exercised properly.
+
+#### Changed
+- Reworked the Home header: left side shows `LibreCare` with version and database span, right side shows `Last reading`, `Sensor ends in`, and `Data range`.
+- `Glucose history` on Home now shows a compact summary such as `Window 3h · DB 7d` instead of implying that local history only goes back ~12h.
+- Expanded the Home data-availability row to `12h / 3d / 7d / 30d`.
+- Moved Home metrics below the chart and rebuilt them into one horizontally scrollable row with `show/hide` configuration in settings.
+- The Home person switcher now shows up to 2 wide boxes and groups additional people under a `+N` expandable, horizontally scrollable list ordered by recent use.
+
+#### Fixed
+- Removed the extra bottom `Slider` under the Home chart and kept only the actual viewport navigator.
+- Fixed Home navigator geometry so its width matches the selected `1h / 3h / 6h / 9h / 12h` window, starts at the right edge, and pans smoothly within the 12-hour domain.
+- Improved Home X-axis labels so hourly windows show both day and time rather than time alone.
+- Reduced the risk of time-label clipping below the Home chart with larger bottom axis padding and fewer labels.
+
+#### Tests
+- Verified: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Additionally ran regressions for: `UiAuditExporterTest`, `HomeChartModelsTest`, `PolishFormattersTest`, `DataCoverageModelTest`, `RedesignedMetricsTest`.
+- Connected tests: no device/emulator available (`adb` not present in PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.1-debug.apk` (23,464,012 B)
+- `release-artifacts/LibreCare-2.2.1-release.apk` (3,178,011 B)
+- `release-artifacts/LibreCare-2.2.1-release.aab` (5,808,931 B)
+
 ## 2.2.0 - 2026-08-21
 
 ### PL

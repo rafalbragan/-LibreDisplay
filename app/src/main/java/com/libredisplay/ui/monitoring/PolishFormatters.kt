@@ -55,12 +55,14 @@ internal object PolishDateTimeFormatter {
         zoneId: ZoneId = DateTimeFormatterProvider.deviceZoneId()
     ): String {
         val safeDuration = if (visibleDuration.isNegative || visibleDuration.isZero) Duration.ofHours(24) else visibleDuration
-        val formatter = when {
-            safeDuration <= Duration.ofHours(36) -> DateTimeFormatterProvider.timeFormatter()
-            safeDuration <= Duration.ofDays(7) -> DateTimeFormatterProvider.compactDateTimeFormatter()
-            else -> DateTimeFormatterProvider.compactDateFormatter()
+        return when {
+            safeDuration <= Duration.ofDays(7) -> {
+                val date = DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(instant)
+                val time = DateTimeFormatterProvider.timeFormatter().withZone(zoneId).format(instant)
+                "$date\n$time"
+            }
+            else -> DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(instant)
         }
-        return formatter.withZone(zoneId).format(instant)
     }
 
     fun formatCompactDuration(duration: Duration?): String {

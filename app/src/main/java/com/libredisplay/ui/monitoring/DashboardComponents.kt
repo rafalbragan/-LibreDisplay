@@ -6,7 +6,6 @@ import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -14,12 +13,15 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -50,6 +52,7 @@ private val AccentRed = Color(0xFFE05A6A)
 fun CompactPersonSwitcherBar(
     persons: List<LibreConnectionPerson>,
     selectedPatientId: String?,
+    recentPatientIds: List<String>,
     onPersonSelected: (String) -> Unit,
     isDemoMode: Boolean,
     modifier: Modifier = Modifier
@@ -57,13 +60,14 @@ fun CompactPersonSwitcherBar(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 1.dp),
+            .padding(horizontal = 8.dp, vertical = 0.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         VisiblePersonSwitcher(
             persons = persons,
             selectedPatientId = selectedPatientId,
+            recentPatientIds = recentPatientIds,
             onPersonSelected = onPersonSelected,
             modifier = Modifier.weight(1f)
         )
@@ -87,6 +91,7 @@ fun CompactPersonSwitcherBar(
 fun VisiblePersonSwitcher(
     persons: List<LibreConnectionPerson>,
     selectedPatientId: String?,
+    recentPatientIds: List<String>,
     onPersonSelected: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -100,24 +105,29 @@ fun VisiblePersonSwitcher(
         return
     }
 
-    val isScrollable = persons.size > 3
+    var expanded by remember(persons) { mutableStateOf(false) }
+    val orderedPersons = remember(persons, selectedPatientId, recentPatientIds) {
+        val recentScore = recentPatientIds.withIndex().associate { it.value to it.index }
+        persons.sortedWith(
+            compareBy<LibreConnectionPerson> { it.patientId != selectedPatientId }
+                .thenBy { recentScore[it.patientId] ?: Int.MAX_VALUE }
+        )
+    }
+    val primaryPersons = orderedPersons.take(2)
+    val overflowCount = (orderedPersons.size - primaryPersons.size).coerceAtLeast(0)
 
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-    ) {
-        if (isScrollable) {
+    Column(modifier = modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        if (overflowCount == 0) {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                persons.forEach { person ->
+                primaryPersons.forEach { person ->
                     PersonChip(
                         name = person.firstName + (if (person.lastName != null) " ${person.lastName}" else ""),
                         isSelected = person.patientId == selectedPatientId,
-                        onClick = { onPersonSelected(person.patientId) }
+                        onClick = { onPersonSelected(person.patientId) },
+                        modifier = Modifier.weight(1f)
                     )
                 }
             }
@@ -126,12 +136,38 @@ fun VisiblePersonSwitcher(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                persons.forEach { person ->
+                primaryPersons.forEach { person ->
                     PersonChip(
                         name = person.firstName + (if (person.lastName != null) " ${person.lastName}" else ""),
                         isSelected = person.patientId == selectedPatientId,
                         onClick = { onPersonSelected(person.patientId) },
                         modifier = Modifier.weight(1f)
+                    )
+                }
+                PersonOverflowChip(
+                    count = overflowCount,
+                    expanded = expanded,
+                    onClick = { expanded = !expanded }
+                )
+            }
+        }
+
+        if (expanded && overflowCount > 0) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                orderedPersons.drop(2).forEach { person ->
+                    PersonChip(
+                        name = person.firstName + (if (person.lastName != null) " ${person.lastName}" else ""),
+                        isSelected = person.patientId == selectedPatientId,
+                        onClick = {
+                            onPersonSelected(person.patientId)
+                            expanded = false
+                        },
+                        modifier = Modifier.widthIn(min = 150.dp)
                     )
                 }
             }
@@ -150,15 +186,15 @@ private fun PersonChip(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clickable(enabled = !isSelected) { onClick() }
-            .heightIn(min = 36.dp)
-            .padding(horizontal = 6.dp, vertical = 4.dp)
+            .heightIn(min = 32.dp)
+            .padding(horizontal = 4.dp, vertical = 2.dp)
     ) {
         Text(
             text = name,
             color = if (isSelected) AccentGreen else DashboardSecondaryText,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
+            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -166,13 +202,38 @@ private fun PersonChip(
         if (isSelected) {
             Box(
                 modifier = Modifier
-                    .padding(top = 2.dp)
+                    .padding(top = 1.dp)
                     .size(width = 28.dp, height = 2.dp)
                     .background(AccentGreen)
             )
         } else {
-            Spacer(modifier = Modifier.height(4.dp))
+            Spacer(modifier = Modifier.height(3.dp))
         }
+    }
+}
+
+@Composable
+private fun PersonOverflowChip(
+    count: Int,
+    expanded: Boolean,
+    onClick: () -> Unit
+) {
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        modifier = Modifier
+            .widthIn(min = 58.dp)
+            .clickable(onClick = onClick)
+            .heightIn(min = 32.dp)
+            .padding(horizontal = 6.dp, vertical = 2.dp)
+    ) {
+        Text(
+            text = if (expanded) "Zwiń" else "+$count",
+            color = AccentWarning,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 1
+        )
+        Spacer(modifier = Modifier.height(3.dp))
     }
 }
 
@@ -266,33 +327,29 @@ fun TimeRangeDisplay(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 16.dp, vertical = 1.dp),
-        verticalAlignment = Alignment.Top,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
+            .padding(horizontal = 8.dp, vertical = 0.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            Text(
-                text = "Zakres",
-                color = DashboardMutedText,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Normal
-            )
-            Text(
-                text = compactDashboardRangeLabel(timeRange, latestReadingAt),
-                color = DashboardSecondaryText,
-                fontSize = 12.sp,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
-            )
-        }
-        TextButton(onClick = onChangeClick, modifier = Modifier.padding(top = 2.dp)) {
-            Text(text = "Historia", fontSize = 12.sp, fontWeight = FontWeight.SemiBold)
-        }
+        val latestTime = latestReadingAt?.let { PolishDateTimeFormatter.formatTime(it) } ?: "--:--"
+        Text(
+            text = "${compactDashboardRangeLabel(timeRange, latestReadingAt)} · dane do $latestTime",
+            color = DashboardSecondaryText,
+            fontSize = 12.sp,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = "Historia >",
+            color = AccentGreen,
+            fontSize = 12.sp,
+            fontWeight = FontWeight.SemiBold,
+            modifier = Modifier
+                .clickable(onClick = onChangeClick)
+                .padding(vertical = 4.dp)
+        )
     }
-    HorizontalDivider(modifier = Modifier.padding(horizontal = 16.dp), color = DashboardSurface)
 }
 
 

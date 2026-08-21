@@ -55,8 +55,33 @@ class HomeChartModelsTest {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         val summary = buildHomeCoverageSummary(samplePoints(now, 24), now)
 
-        assertEquals(listOf("12 h", "24 h"), summary.items.map { it.label })
+        assertEquals(listOf("12h", "3d", "7d", "30d"), summary.items.map { it.label })
         assertFalse(summary.items.any { it.statusLabel.isBlank() })
+    }
+
+    @Test
+    fun homeDatabaseSpanLabel_returnsCompactRangeForStoredHistory() {
+        val now = Instant.parse("2026-08-21T12:00:00Z")
+        val label = homeDatabaseSpanLabel(samplePoints(now, 24 * 7), now)
+
+        assertTrue(label.contains("7d") || label.contains("6d"))
+    }
+
+    @Test
+    fun computeHomeNavigatorGeometry_forSixHours_usesHalfTrackAndEndsAtRightEdge() {
+        val geometry = computeHomeNavigatorGeometry(
+            totalWidthPx = 300f,
+            leftInsetPx = 48f,
+            rightInsetPx = 16f,
+            viewportFraction = 1f,
+            windowFraction = 0.5f
+        )
+
+        assertEquals(48f, geometry.trackLeft)
+        assertEquals(236f, geometry.trackWidth)
+        assertEquals(118f, geometry.viewportWidth)
+        assertEquals(166f, geometry.viewportLeft)
+        assertEquals(284f, geometry.viewportLeft + geometry.viewportWidth)
     }
 
     @Test

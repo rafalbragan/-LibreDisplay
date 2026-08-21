@@ -36,6 +36,7 @@ import kotlin.math.abs
 import kotlin.math.ceil
 import kotlin.math.max
 import kotlin.math.roundToInt
+import kotlin.math.roundToLong
 
 internal data class ChartPointSample(
     val epochMillis: Long,
@@ -132,6 +133,13 @@ internal fun selectXAxisLabelIndices(pointCount: Int, maxLabels: Int = 5): List<
         .map { (it * lastIndex).roundToInt().coerceIn(0, lastIndex) }
         .distinct()
         .take(maxLabels)
+}
+
+internal fun selectXAxisFractions(maxLabels: Int = 5): List<Float> {
+    if (maxLabels <= 1) return listOf(0f)
+    return (0 until maxLabels).map { index ->
+        index.toFloat() / (maxLabels - 1).toFloat()
+    }
 }
 
 internal fun selectYAxisLabels(
@@ -261,6 +269,8 @@ internal fun findNearestHistoryPoint(
     canvasWidth: Float,
     canvasHeight: Float,
     touchX: Float,
+    domainStartMillis: Long? = null,
+    domainEndMillis: Long? = null,
     axisLeftPaddingPx: Float = 54f,
     axisTopPaddingPx: Float = 16f,
     axisRightPaddingPx: Float = 20f,
@@ -270,6 +280,8 @@ internal fun findNearestHistoryPoint(
     canvasWidth = canvasWidth,
     canvasHeight = canvasHeight,
     touchX = touchX,
+    domainStartMillis = domainStartMillis,
+    domainEndMillis = domainEndMillis,
     axisLeftPaddingPx = axisLeftPaddingPx,
     axisTopPaddingPx = axisTopPaddingPx,
     axisRightPaddingPx = axisRightPaddingPx,
@@ -281,6 +293,8 @@ internal fun findNearestHistoryPointMatch(
     canvasWidth: Float,
     canvasHeight: Float,
     touchX: Float,
+    domainStartMillis: Long? = null,
+    domainEndMillis: Long? = null,
     axisLeftPaddingPx: Float = 54f,
     axisTopPaddingPx: Float = 16f,
     axisRightPaddingPx: Float = 20f,
@@ -297,8 +311,12 @@ internal fun findNearestHistoryPointMatch(
     val prepared = prepareChartData(points)
     if (prepared.points.isEmpty()) return null
     val sortedPoints = points.sortedBy { it.timestamp }
-    val minTime = prepared.points.first().epochMillis.toFloat()
-    val maxTime = prepared.points.last().epochMillis.toFloat().coerceAtLeast(minTime + 1f)
+    val resolvedDomainStart = domainStartMillis?.takeIf { domainEndMillis != null && domainEndMillis > it }
+        ?: prepared.points.first().epochMillis
+    val resolvedDomainEnd = domainEndMillis?.takeIf { it > resolvedDomainStart }
+        ?: prepared.points.last().epochMillis.coerceAtLeast(resolvedDomainStart + 1L)
+    val minTime = resolvedDomainStart.toFloat()
+    val maxTime = resolvedDomainEnd.toFloat().coerceAtLeast(minTime + 1f)
     val offsets = prepared.points.map { sample ->
         val fraction = (sample.epochMillis.toFloat() - minTime) / (maxTime - minTime)
         Offset(area.left + fraction * area.width, 0f)
@@ -357,6 +375,8 @@ fun GlucoseChart(
     targetLow: Int,
     targetHigh: Int,
     zoneId: ZoneId = DateTimeFormatterProvider.deviceZoneId(),
+    domainStart: java.time.Instant? = null,
+    domainEnd: java.time.Instant? = null,
     selectedPoint: GlucoseHistoryPoint? = null,
     onPointSelected: ((GlucoseHistoryPoint) -> Unit)? = null,
     onPointSelectionCleared: (() -> Unit)? = null,
@@ -406,6 +426,8 @@ fun GlucoseChart(
                         canvasWidth = canvasWidth,
                         canvasHeight = canvasHeight,
                         touchX = tapOffset.x,
+                        domainStartMillis = domainStart?.toEpochMilli(),
+                        domainEndMillis = domainEnd?.toEpochMilli(),
                         axisLeftPaddingPx = axisLeftPaddingPx,
                         axisTopPaddingPx = axisTopPaddingPx,
                         axisRightPaddingPx = axisRightPaddingPx,
@@ -438,6 +460,8 @@ fun GlucoseChart(
                             canvasWidth = canvasWidth,
                             canvasHeight = canvasHeight,
                             touchX = offset.x,
+                            domainStartMillis = domainStart?.toEpochMilli(),
+                            domainEndMillis = domainEnd?.toEpochMilli(),
                             axisLeftPaddingPx = axisLeftPaddingPx,
                             axisTopPaddingPx = axisTopPaddingPx,
                             axisRightPaddingPx = axisRightPaddingPx,
@@ -463,6 +487,8 @@ fun GlucoseChart(
                         canvasWidth = canvasWidth,
                         canvasHeight = canvasHeight,
                         touchX = change.position.x,
+                        domainStartMillis = domainStart?.toEpochMilli(),
+                        domainEndMillis = domainEnd?.toEpochMilli(),
                         axisLeftPaddingPx = axisLeftPaddingPx,
                         axisTopPaddingPx = axisTopPaddingPx,
                         axisRightPaddingPx = axisRightPaddingPx,
@@ -481,7 +507,9 @@ fun GlucoseChart(
             boundsTop: Float,
             boundsRight: Float,
             boundsBottom: Float,
-            textMeasurer: TextMeasurer
+            textMeasurer: TextMeasurer,
+            maxLines: Int = 1,
+            softWrap: Boolean = maxLines > 1
         ): Boolean {
             val clampedLeft = boundsLeft.coerceIn(0f, size.width)
             val clampedTop = boundsTop.coerceIn(0f, size.height)
@@ -505,8 +533,8 @@ fun GlucoseChart(
                 text = AnnotatedString(text),
                 style = style,
                 constraints = constraints,
-                softWrap = false,
-                maxLines = 1
+                softWrap = softWrap,
+                maxLines = maxLines
             )
 
             drawText(
@@ -546,9 +574,13 @@ fun GlucoseChart(
         val maxValue = prepared.maxValue
         val yScaleMin = if (minValue == maxValue) minValue - 20 else minValue
         val yScaleMax = if (minValue == maxValue) maxValue + 20 else maxValue
-        val visibleDuration = java.time.Duration.ofMillis((sorted.last().epochMillis - sorted.first().epochMillis).coerceAtLeast(1L))
-        val minTime = sorted.first().epochMillis.toFloat()
-        val maxTime = sorted.last().epochMillis.toFloat().coerceAtLeast(minTime + 1f)
+        val resolvedDomainStartMillis = domainStart?.toEpochMilli()?.takeIf { domainEnd != null && domainEnd.toEpochMilli() > it }
+            ?: sorted.first().epochMillis
+        val resolvedDomainEndMillis = domainEnd?.toEpochMilli()?.takeIf { it > resolvedDomainStartMillis }
+            ?: sorted.last().epochMillis.coerceAtLeast(resolvedDomainStartMillis + 1L)
+        val visibleDuration = java.time.Duration.ofMillis((resolvedDomainEndMillis - resolvedDomainStartMillis).coerceAtLeast(1L))
+        val minTime = resolvedDomainStartMillis.toFloat()
+        val maxTime = resolvedDomainEndMillis.toFloat().coerceAtLeast(minTime + 1f)
 
         val yLabels = selectYAxisLabels(yScaleMin, targetLow, targetHigh, yScaleMax, maxLabels = maxYAxisLabels)
         val adaptiveLeftPadding = adaptiveYAxisPadding(axisLeftPaddingPx, yLabels, textMeasurer, labelStyle)
@@ -655,34 +687,36 @@ fun GlucoseChart(
         }
         DiagnosticLogger.logInfo("GlucoseChart", "CHART Y LABELS count=$renderedYLabels")
 
-        val xLabelIndices = selectXAxisLabelIndices(plottedPoints.size, maxLabels = maxXAxisLabels)
-        DiagnosticLogger.logInfo("GlucoseChart", "CHART X AXIS labels=$xLabelIndices")
+        val xLabelFractions = selectXAxisFractions(maxLabels = maxXAxisLabels)
+        DiagnosticLogger.logInfo("GlucoseChart", "CHART X AXIS labels=$xLabelFractions")
         var renderedXLabels = 0
-        xLabelIndices.forEach { index ->
-            val (point, position) = plottedPoints[index]
+        xLabelFractions.forEach { fraction ->
+            val labelEpochMillis = resolvedDomainStartMillis + ((resolvedDomainEndMillis - resolvedDomainStartMillis) * fraction).roundToLong()
+            val labelX = chartLeft + fraction * chartWidth
             val labelText = PolishDateTimeFormatter.formatChartAxisLabel(
-                instant = java.time.Instant.ofEpochMilli(point.epochMillis),
+                instant = java.time.Instant.ofEpochMilli(labelEpochMillis),
                 visibleDuration = visibleDuration,
                 zoneId = zoneId
             )
             val xLayout = textMeasurer.measure(
                 text = AnnotatedString(labelText),
                 style = labelStyle,
-                softWrap = false,
-                maxLines = 1
+                softWrap = true,
+                maxLines = 2
             )
             val rendered = drawSafeTextLabel(
                 text = labelText,
                 style = labelStyle,
                 preferredTopLeft = Offset(
-                    clampXLabelLeft(position.x - xLayout.size.width / 2f, xLayout.size.width.toFloat(), chartLeft, chartRight),
+                    clampXLabelLeft(labelX - xLayout.size.width / 2f, xLayout.size.width.toFloat(), chartLeft, chartRight),
                     chartBottom + 10f
                 ),
                 boundsLeft = chartLeft,
                 boundsTop = chartBottom + 4f,
                 boundsRight = chartRight,
                 boundsBottom = size.height,
-                textMeasurer = textMeasurer
+                textMeasurer = textMeasurer,
+                maxLines = 2
             )
             if (rendered) renderedXLabels++
         }

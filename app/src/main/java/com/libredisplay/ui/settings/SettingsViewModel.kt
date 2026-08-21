@@ -32,13 +32,20 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     private val _message = MutableStateFlow<String?>(null)
     val message: StateFlow<String?> = _message.asStateFlow()
 
+    private val _isSaving = MutableStateFlow(false)
+    val isSaving: StateFlow<Boolean> = _isSaving.asStateFlow()
+
     private val _quickMetricsOrder = MutableStateFlow(settingsRepository.loadQuickMetricsOrder())
     val quickMetricsOrder: StateFlow<List<QuickMetricId>> = _quickMetricsOrder.asStateFlow()
+
+    private val _quickMetricsVisibility = MutableStateFlow(settingsRepository.loadQuickMetricsVisibility())
+    val quickMetricsVisibility: StateFlow<Map<QuickMetricId, Boolean>> = _quickMetricsVisibility.asStateFlow()
 
     fun reloadFromRepository() {
         _settings.value = settingsRepository.loadSettings()
         _hba1cSettings.value = settingsRepository.loadHbA1cSettings(_settings.value.selectedPatientId)
         _quickMetricsOrder.value = settingsRepository.loadQuickMetricsOrder()
+        _quickMetricsVisibility.value = settingsRepository.loadQuickMetricsVisibility()
     }
 
     fun moveQuickMetricUp(metricId: QuickMetricId) {
@@ -64,8 +71,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     private fun persistQuickMetricOrder(order: List<QuickMetricId>) {
-        settingsRepository.saveQuickMetricsOrder(order)
-        _quickMetricsOrder.value = settingsRepository.loadQuickMetricsOrder()
+        _quickMetricsOrder.value = QuickMetricId.normalizeOrder(order)
+    }
+
+    fun setQuickMetricVisible(metricId: QuickMetricId, visible: Boolean) {
+        val updated = _quickMetricsVisibility.value.toMutableMap()
+        updated[metricId] = visible
+        _quickMetricsVisibility.value = updated
     }
 
     fun onEmailChange(value: String) {
@@ -122,6 +134,7 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun saveSettings() {
+        if (_isSaving.value) return
         val settingsToSave = _settings.value.let { current ->
             if (current.appMode == AppMode.NONE && (current.hasCredentials() || current.useMock)) {
                 current.copy(appMode = if (current.useMock) AppMode.DEMO else AppMode.LIVE)
@@ -129,24 +142,37 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 current
             }
         }
-        settingsRepository.saveSettings(settingsToSave)
-        settingsRepository.saveHbA1cSettings(
-            _hba1cSettings.value.copy(patientId = settingsToSave.selectedPatientId)
-        )
-        authRepository.clearSession()
-        reloadFromRepository()
-        DiagnosticLogger.logInfo("SettingsViewModel", "Settings saved appMode=${settingsToSave.appMode}")
-        _message.value = "Ustawienia zapisane"
+        viewModelScope.launch {
+            _isSaving.value = true
+            try {
+                settingsRepository.saveSettings(settingsToSave)
+                settingsRepository.saveHbA1cSettings(
+                    _hba1cSettings.value.copy(patientId = settingsToSave.selectedPatientId)
+                )
+                settingsRepository.saveQuickMetricsOrder(_quickMetricsOrder.value)
+                settingsRepository.saveQuickMetricsVisibility(_quickMetricsVisibility.value)
+                authRepository.clearSession()
+                reloadFromRepository()
+                DiagnosticLogger.logInfo("SettingsViewModel", "Settings saved appMode=${settingsToSave.appMode}")
+                _message.value = "Ustawienia zapisane"
+            } finally {
+                _isSaving.value = false
+            }
+        }
     }
 
     fun saveAndLogin() {
+        if (_isSaving.value) return
         val draft = _settings.value.copy(appMode = AppMode.LIVE)
-        settingsRepository.saveSettings(draft)
-        settingsRepository.saveHbA1cSettings(
-            _hba1cSettings.value.copy(patientId = draft.selectedPatientId)
-        )
         viewModelScope.launch {
+            _isSaving.value = true
             runCatching {
+                settingsRepository.saveSettings(draft)
+                settingsRepository.saveHbA1cSettings(
+                    _hba1cSettings.value.copy(patientId = draft.selectedPatientId)
+                )
+                settingsRepository.saveQuickMetricsOrder(_quickMetricsOrder.value)
+                settingsRepository.saveQuickMetricsVisibility(_quickMetricsVisibility.value)
                 authRepository.ensureAuthenticated(force = true)
             }.onSuccess {
                 reloadFromRepository()
@@ -158,6 +184,8 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 } else {
                     "Nie udało się zalogować. Sprawdź email i hasło albo spróbuj ponownie później."
                 }
+            }.also {
+                _isSaving.value = false
             }
         }
     }

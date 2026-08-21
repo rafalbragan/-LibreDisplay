@@ -12,6 +12,7 @@ import com.libredisplay.data.local.LibreDisplayDatabase
 import com.libredisplay.data.api.OkHttpLibreLinkUpHttp
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.repository.AuthRepository
+import com.libredisplay.data.repository.AppDataBackupRepository
 import com.libredisplay.data.repository.DiagnosticsStatsRepository
 import com.libredisplay.data.repository.GlucoseSyncRepository
 import com.libredisplay.data.repository.GlucoseRepository
@@ -45,6 +46,8 @@ class LibreDisplayApp : Application() {
     lateinit var diagnosticsStatsRepository: DiagnosticsStatsRepository
         private set
     lateinit var networkUsageTracker: NetworkUsageTracker
+        private set
+    lateinit var appDataBackupRepository: AppDataBackupRepository
         private set
 
     override fun onCreate() {
@@ -123,6 +126,15 @@ class LibreDisplayApp : Application() {
             syncRunDao = database.syncRunDao(),
             settingsRepository = settingsRepository,
             secureStorage = secureStorage
+        )
+
+        appDataBackupRepository = AppDataBackupRepository(
+            context = applicationContext,
+            database = database,
+            settingsRepository = settingsRepository,
+            observedPersonDao = database.observedPersonDao(),
+            glucoseReadingDao = database.glucoseReadingDao(),
+            patientSettingsDao = database.patientSettingsDao()
         )
 
         LibreDisplaySyncScheduler.schedule(this)

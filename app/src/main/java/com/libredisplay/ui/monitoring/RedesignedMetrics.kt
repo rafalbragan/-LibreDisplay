@@ -2,9 +2,9 @@ package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -13,8 +13,9 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
@@ -48,6 +49,8 @@ internal fun quickMetricLabel(metricId: QuickMetricId): String = when (metricId)
     QuickMetricId.ABOVE -> "Powyżej"
     QuickMetricId.GMI -> "GMI"
     QuickMetricId.HBA1C -> "HbA1c"
+    QuickMetricId.AVERAGE -> "Średnia"
+    QuickMetricId.SENSOR_ACTIVITY -> "Aktywność"
 }
 
 internal fun buildQuickMetricTiles(
@@ -58,7 +61,9 @@ internal fun buildQuickMetricTiles(
     aboveDuration: Duration?,
     abovePercent: Int?,
     gmiValue: Double?,
-    hba1cValue: Double?
+    hba1cValue: Double?,
+    averageValueMgDl: Int?,
+    sensorActivityPercent: Int?
 ): List<QuickMetricTileUi> {
     return listOf(
         QuickMetricTileUi(
@@ -96,6 +101,20 @@ internal fun buildQuickMetricTiles(
             primaryValue = hba1cValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
             secondaryValue = if (hba1cValue == null) "Brak wyniku laboratoryjnego" else "Wynik laboratoryjny",
             accent = LibreCareColors.TextPrimary
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.AVERAGE,
+            label = "Średnia",
+            primaryValue = averageValueMgDl?.let { "$it mg/dL" } ?: "—",
+            secondaryValue = if (averageValueMgDl == null) "Za mało danych" else "Średnia z lokalnej historii",
+            accent = LibreCareColors.AccentBlue
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.SENSOR_ACTIVITY,
+            label = "Aktywność",
+            primaryValue = sensorActivityPercent?.let { "$it%" } ?: "—",
+            secondaryValue = if (sensorActivityPercent == null) "Za mało danych" else "Pokrycie odczytami",
+            accent = LibreCareColors.AccentGreen
         )
     )
 }
@@ -113,68 +132,68 @@ internal fun quickMetricsRows(maxWidthDp: Float, orderedTiles: List<QuickMetricT
 internal fun ImprovedQuickMetricsPanel(
     tiles: List<QuickMetricTileUi>,
     orderedIds: List<QuickMetricId>,
+    visibility: Map<QuickMetricId, Boolean>,
     onOrderChanged: (List<QuickMetricId>) -> Unit,
     onEditClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     val tileById = remember(tiles) { tiles.associateBy { it.id } }
-    val homeMetricIds = listOf(QuickMetricId.BELOW, QuickMetricId.IN_RANGE, QuickMetricId.ABOVE, QuickMetricId.GMI, QuickMetricId.HBA1C)
+    val homeMetricIds = QuickMetricId.DEFAULT_ORDER
     val visibleOrder = orderedIds.filter { it in homeMetricIds && tileById.containsKey(it) }
     val orderedTiles = (visibleOrder + homeMetricIds)
         .distinct()
         .mapNotNull { tileById[it] }
+        .filter { visibility[it.id] ?: true }
 
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(4.dp)
+        verticalArrangement = Arrangement.spacedBy(2.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Metryki", color = LibreCareColors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Text("Metryki", color = LibreCareColors.TextPrimary, fontSize = 17.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
             Spacer(modifier = Modifier.weight(1f))
             onEditClick?.let {
                 Text(
                     text = "Edytuj >",
                     color = LibreCareColors.AccentGreen,
-                    fontSize = 15.sp,
+                    fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
                     modifier = Modifier
                         .clickable(onClick = it)
-                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                        .padding(horizontal = 4.dp, vertical = 4.dp)
                 )
             }
         }
 
-        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
-            quickMetricsRows(maxWidth.value, orderedTiles).forEachIndexed { index, rowTiles ->
-                MetricRow(rowTiles)
-                if (index < quickMetricsRows(maxWidth.value, orderedTiles).lastIndex) {
-                    Spacer(modifier = Modifier.height(8.dp))
+        if (orderedTiles.isEmpty()) {
+            Text(
+                text = "Brak aktywnych metryk. Wybierz je w Edytuj.",
+                color = LibreCareColors.TextSecondary,
+                fontSize = 13.sp
+            )
+        } else {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                orderedTiles.forEach { tile ->
+                    QuickMetricTile(
+                        tile = tile,
+                        reorderMode = false,
+                        isDragging = false,
+                        modifier = Modifier
+                            .widthIn(min = 126.dp)
+                            .width(140.dp)
+                    )
                 }
             }
         }
-        HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(top = 4.dp))
-    }
-}
-
-@Composable
-private fun MetricRow(rowTiles: List<QuickMetricTileUi>) {
-    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        rowTiles.forEachIndexed { index, tile ->
-            QuickMetricTile(
-                tile = tile,
-                reorderMode = false,
-                isDragging = false,
-                modifier = Modifier
-                    .weight(1f)
-                    .widthIn(min = 96.dp)
-            )
-        }
-        repeat((3 - rowTiles.size).coerceAtLeast(0)) {
-            Spacer(modifier = Modifier.weight(1f))
-        }
+        HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(top = 2.dp))
     }
 }
 
@@ -191,23 +210,23 @@ private fun QuickMetricTile(
     val isRangeTile = tile.id == QuickMetricId.BELOW || tile.id == QuickMetricId.IN_RANGE || tile.id == QuickMetricId.ABOVE
     Box(
         modifier = modifier
-            .requiredHeightIn(min = 88.dp)
+            .requiredHeightIn(min = 80.dp)
             .background(
                 if (isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
                 RoundedCornerShape(8.dp)
             )
-            .padding(horizontal = 6.dp, vertical = 6.dp)
+            .padding(horizontal = 5.dp, vertical = 4.dp)
     ) {
         Column(
-            verticalArrangement = Arrangement.spacedBy(2.dp),
+            verticalArrangement = Arrangement.spacedBy(1.dp),
             horizontalAlignment = Alignment.Start,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = tile.label,
                 color = LibreCareColors.TextSecondary,
-                fontSize = 14.sp,
-                lineHeight = 18.sp,
+                fontSize = 12.sp,
+                lineHeight = 14.sp,
                 fontWeight = FontWeight.Medium,
                 maxLines = 2,
                 overflow = TextOverflow.Clip
@@ -216,8 +235,8 @@ private fun QuickMetricTile(
                 Text(
                     text = tile.secondaryValue,
                     color = tile.accent,
-                    fontSize = 25.sp,
-                    lineHeight = 28.sp,
+                    fontSize = 23.sp,
+                    lineHeight = 24.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
@@ -225,8 +244,8 @@ private fun QuickMetricTile(
                 Text(
                     text = tile.primaryValue,
                     color = LibreCareColors.TextSecondary,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 14.sp,
                     fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
@@ -235,8 +254,8 @@ private fun QuickMetricTile(
                 Text(
                     text = tile.primaryValue,
                     color = tile.accent,
-                    fontSize = 24.sp,
-                    lineHeight = 28.sp,
+                    fontSize = 22.sp,
+                    lineHeight = 24.sp,
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 2,
                     overflow = TextOverflow.Clip
@@ -244,15 +263,15 @@ private fun QuickMetricTile(
                 Text(
                     text = tile.secondaryValue,
                     color = LibreCareColors.TextSecondary,
-                    fontSize = 14.sp,
-                    lineHeight = 18.sp,
+                    fontSize = 12.sp,
+                    lineHeight = 14.sp,
                     fontWeight = FontWeight.Normal,
                     maxLines = 2,
                     overflow = TextOverflow.Clip
                 )
             }
             if (tile.emphasized && !reorderMode && !isDragging) {
-                Spacer(modifier = Modifier.height(2.dp))
+                Spacer(modifier = Modifier.height(1.dp))
                 Box(
                     modifier = Modifier
                         .width(22.dp)

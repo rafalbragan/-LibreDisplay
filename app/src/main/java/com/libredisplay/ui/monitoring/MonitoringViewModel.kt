@@ -6,6 +6,7 @@ import androidx.lifecycle.viewModelScope
 import com.libredisplay.LibreDisplayApp
 import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.LibreResponseDecodingException
+import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
@@ -51,10 +52,14 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             settings = settingsRepository.loadSettings(),
             isConfigured = settingsRepository.isConfigured(),
             isDemoMode = settingsRepository.loadSettings().useMock,
-            quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()
+            quickMetricsOrder = settingsRepository.loadQuickMetricsOrder(),
+            quickMetricsVisibility = settingsRepository.loadQuickMetricsVisibility()
         )
     )
     val uiState: StateFlow<MonitoringUiState> = _uiState.asStateFlow()
+
+    private val _detailedHistory = MutableStateFlow<List<GlucoseHistoryPoint>>(emptyList())
+    val detailedHistory: StateFlow<List<GlucoseHistoryPoint>> = _detailedHistory.asStateFlow()
 
     private var refreshController = RefreshController(intervalMs = settingsRepository.loadSettings().refreshInterval * 1000L)
     private var pollingJob: Job? = null
@@ -93,6 +98,28 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         bootstrapUsingPersistedTokenOnly()
     }
 
+    internal fun loadDetailedHistory(range: TimeRange) {
+        val patientId = _uiState.value.selectedPatientId ?: run {
+            _detailedHistory.value = emptyList()
+            return
+        }
+        val end = _uiState.value.lastMeasurementTimestamp
+            ?: _uiState.value.reading?.timestamp
+            ?: Instant.now()
+        val start = end.minus(range.duration)
+        viewModelScope.launch(viewModelExceptionHandler) {
+            val local = glucoseSyncRepository.loadHistory(patientId, start, end)
+            val currentPoint = _uiState.value.reading?.takeIf {
+                !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end)
+            }?.let {
+                GlucoseHistoryPoint(value = it.value, timestamp = it.timestamp, trend = it.trend)
+            }
+            _detailedHistory.value = (local + listOfNotNull(currentPoint))
+                .distinctBy { it.timestamp to it.value }
+                .sortedBy { it.timestamp }
+        }
+    }
+
     private fun reloadSettings() {
         val settings = settingsRepository.loadSettings()
         val hba1cSettings = settingsRepository.loadHbA1cSettings(settings.selectedPatientId)
@@ -111,7 +138,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 labHbA1cPercent = hba1cSettings.labHbA1cPercent,
                 labHbA1cDate = hba1cSettings.labHbA1cDate,
                 targetHbA1cPercent = hba1cSettings.targetHbA1cPercent,
-                quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()
+                quickMetricsOrder = settingsRepository.loadQuickMetricsOrder(),
+                quickMetricsVisibility = settingsRepository.loadQuickMetricsVisibility()
             )
         }
         stopPollingInternal("settings reload")
@@ -120,7 +148,22 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     fun saveQuickMetricsOrder(order: List<QuickMetricId>) {
         settingsRepository.saveQuickMetricsOrder(order)
-        _uiState.update { it.copy(quickMetricsOrder = settingsRepository.loadQuickMetricsOrder()) }
+        _uiState.update {
+            it.copy(
+                quickMetricsOrder = settingsRepository.loadQuickMetricsOrder(),
+                quickMetricsVisibility = settingsRepository.loadQuickMetricsVisibility()
+            )
+        }
+    }
+
+    fun saveQuickMetricsVisibility(visibility: Map<QuickMetricId, Boolean>) {
+        settingsRepository.saveQuickMetricsVisibility(visibility)
+        _uiState.update {
+            it.copy(
+                quickMetricsOrder = settingsRepository.loadQuickMetricsOrder(),
+                quickMetricsVisibility = settingsRepository.loadQuickMetricsVisibility()
+            )
+        }
     }
 
     private fun bootstrapUsingPersistedTokenOnly() {
@@ -771,7 +814,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun MonitoringUiState.applyDashboardSnapshot(snapshot: MonitoringSnapshot): MonitoringUiState {
-        val persons = snapshot.persons.take(3)
+        val persons = snapshot.persons
         DiagnosticLogger.logInfo("PERSON", "Available people loaded")
         DiagnosticLogger.logInfo("MonitoringViewModel", "PERSONS LOADED count=${persons.size}")
         val selected = persons.firstOrNull { it.patientId == snapshot.selectedPerson.patientId }

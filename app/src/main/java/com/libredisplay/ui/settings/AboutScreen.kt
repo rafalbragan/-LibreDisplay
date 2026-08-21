@@ -13,7 +13,6 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
-import androidx.compose.material3.Card
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -58,25 +57,15 @@ fun AboutScreen(
                 .padding(padding)
                 .padding(16.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(12.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Card(modifier = Modifier.fillMaxWidth()) {
-                Column(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Text("LibreCare", fontSize = 26.sp)
-                    Text("Wersja: ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})")
-                    Text("Monitorowanie glikemii z konta LibreLinkUp.")
-                    Text("Ta aplikacja nie jest wyrobem medycznym.")
-                    Text(
-                        "LibreCare nie jest wyrobem medycznym i nie zastępuje porady lekarza.",
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            Text("LibreCare", fontSize = 28.sp)
+            Text("Wersja ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", fontSize = 14.sp)
+            Text("Zrodlo danych: LibreLinkUp", fontSize = 13.sp)
+            Text(
+                "LibreCare nie jest wyrobem medycznym i nie zastepuje porady lekarza.",
+                fontSize = 12.sp
+            )
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),

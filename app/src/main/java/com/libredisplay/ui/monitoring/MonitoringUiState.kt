@@ -87,6 +87,7 @@ data class MonitoringUiState(
     val labHbA1cDate: LocalDate? = null,
     val targetHbA1cPercent: Double = 7.5,
     val quickMetricsOrder: List<QuickMetricId> = QuickMetricId.DEFAULT_ORDER,
+    val quickMetricsVisibility: Map<QuickMetricId, Boolean> = QuickMetricId.entries.associateWith { it in QuickMetricId.DEFAULT_VISIBLE },
     val timeRange: TimeRangeState = TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS)
 )
 

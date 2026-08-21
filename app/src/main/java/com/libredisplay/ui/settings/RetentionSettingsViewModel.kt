@@ -93,7 +93,10 @@ private fun defaultRetentionOptions(): List<RetentionOptionItem> = listOf(
     RetentionOptionItem("7 dni", 24 * 7),
     RetentionOptionItem("30 dni", 24 * 30),
     RetentionOptionItem("90 dni", 24 * 90),
-    RetentionOptionItem("12 miesiecy", 24 * 30 * 12),
-    RetentionOptionItem("24 miesiace", 24 * 30 * 24)
+    RetentionOptionItem("12 miesięcy", 24 * 30 * 12),
+    RetentionOptionItem("24 miesiące", 24 * 30 * 24),
+    RetentionOptionItem("36 miesięcy", 24 * 30 * 36),
+    RetentionOptionItem("5 lat", 24 * 365 * 5),
+    RetentionOptionItem("10 lat", 24 * 365 * 10)
 )
 

@@ -14,6 +14,9 @@ interface ObservedPersonDao {
     @Query("SELECT * FROM observed_persons WHERE isActive = 1 ORDER BY displayName ASC")
     suspend fun getActivePersons(): List<ObservedPersonEntity>
 
+    @Query("SELECT * FROM observed_persons WHERE patientId NOT LIKE 'demo-person-%' ORDER BY displayName ASC")
+    suspend fun getAllLivePersons(): List<ObservedPersonEntity>
+
     @Query("SELECT * FROM observed_persons WHERE patientId = :patientId LIMIT 1")
     suspend fun getByPatientId(patientId: String): ObservedPersonEntity?
 
@@ -25,6 +28,9 @@ interface ObservedPersonDao {
 
     @Query("DELETE FROM observed_persons WHERE patientId LIKE 'demo-person-%'")
     suspend fun deleteDemoPeople(): Int
+
+    @Query("DELETE FROM observed_persons WHERE patientId NOT LIKE 'demo-person-%'")
+    suspend fun deleteLivePeople(): Int
 
     @Query("SELECT COUNT(*) FROM observed_persons WHERE isActive = 1 AND patientId NOT LIKE 'demo-person-%'")
     suspend fun countActiveLivePersons(): Int

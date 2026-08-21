@@ -17,7 +17,7 @@ data class AppSettings(
     val kioskMode: Boolean = false,
     val appMode: AppMode = AppMode.NONE,
     val useAuthV3: Boolean = true,
-    val retentionHours: Int = 24 * 30,
+    val retentionHours: Int = DEFAULT_RETENTION_HOURS,
     val backgroundPollingMinutes: Int = 60
 ) {
     val useMock: Boolean
@@ -36,5 +36,11 @@ data class AppSettings(
             "CUSTOM" -> customBaseUrl
             else -> regionMode.uppercase()
         }
+    }
+
+    companion object {
+        const val MIN_RETENTION_HOURS = 12
+        const val DEFAULT_RETENTION_HOURS = 24 * 30 * 24
+        const val MAX_RETENTION_HOURS = 24 * 365 * 10
     }
 }
