@@ -5,9 +5,11 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -89,14 +91,13 @@ fun RedesignedCurrentGlucoseCard(
 
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                horizontalArrangement = Arrangement.Center,
                 verticalAlignment = Alignment.CenterVertically
             ) {
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                     modifier = Modifier
-                        .weight(1f)
                         .heightIn(min = 72.dp)
                 ) {
                     Text(
@@ -116,12 +117,14 @@ fun RedesignedCurrentGlucoseCard(
                     )
                 }
 
+                Spacer(modifier = Modifier.width(16.dp))
+
                 TrendSummary(
                     arrow = trend.arrow,
                     label = trendText ?: trend.label,
                     status = statusText,
                     color = trendColor,
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier
                 )
             }
         }

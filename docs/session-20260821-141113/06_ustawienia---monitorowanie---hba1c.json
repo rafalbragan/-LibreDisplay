@@ -1,0 +1,45 @@
+{
+  "a": "2026-08-21T14:11:19.432616",
+  "b": "Ustawienia -\u003e Monitorowanie -\u003e HbA1c",
+  "c": "Główny -\u003e Ustawienia -\u003e Monitorowanie -\u003e HbA1c",
+  "d": "SettingsHbA1c",
+  "e": [
+    "czytelność pól HbA1c",
+    "obsługa pustych danych",
+    "gęstość informacji"
+  ],
+  "f": {
+    "a": "06_ustawienia---monitorowanie---hba1c.png",
+    "b": "/storage/emulated/0/Android/data/com.libredisplay/files/ui-audit/session-20260821-141113/06_ustawienia---monitorowanie---hba1c.png",
+    "c": 1080,
+    "d": 2340,
+    "e": 56672,
+    "f": 2.8125,
+    "g": 450,
+    "h": 384,
+    "i": 832,
+    "j": 1.0,
+    "k": "portrait",
+    "l": true
+  },
+  "g": {
+    "a": "samsung",
+    "b": "samsung",
+    "c": "SM-S948B",
+    "d": "m3q",
+    "e": "m3qxeea",
+    "f": "qcom",
+    "g": 36,
+    "h": "16",
+    "i": "pl-PL"
+  },
+  "h": {
+    "a": "LIVE",
+    "b": "ae84c293-91e8-11ea-b235-0242ac11000c",
+    "c": 60,
+    "d": 15,
+    "e": 17280,
+    "f": 80,
+    "g": 180
+  }
+}

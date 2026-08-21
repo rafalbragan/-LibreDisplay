@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
@@ -23,6 +24,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libredisplay.R
@@ -101,23 +103,30 @@ fun LibreTopBar(
                                 maxLines = 1
                             )
                         }
-                        if (onRunUiAudit != null) {
-                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp)) {
-                                Icon(
-                                    Icons.Default.PhotoCamera,
-                                    contentDescription = "Raport UI",
-                                    tint = LibreCareColors.TextPrimary,
-                                    modifier = Modifier.width(16.dp)
-                                )
+                        Column(
+                            horizontalAlignment = Alignment.End,
+                            verticalArrangement = Arrangement.spacedBy(2.dp)
+                        ) {
+                            Text(
+                                text = "Libre $freshnessText",
+                                color = LibreCareColors.TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 12.sp,
+                                maxLines = 1,
+                                textAlign = TextAlign.End
+                            )
+                            if (onRunUiAudit != null) {
+                                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(24.dp).height(24.dp)) {
+                                    Icon(
+                                        Icons.Default.PhotoCamera,
+                                        contentDescription = "Raport UI",
+                                        tint = LibreCareColors.TextPrimary,
+                                        modifier = Modifier.width(12.dp)
+                                    )
+                                }
                             }
                         }
                     }
-                    CompactTopBarMetaLine(
-                        primary = readingText,
-                        secondary = sensorText,
-                        secondaryColor = if (sensorStatus.isError) LibreCareColors.AccentRed else LibreCareColors.TextSecondary,
-                        trailing = rangeText
-                    )
                 }
             } else {
                 Row(
@@ -147,23 +156,32 @@ fun LibreTopBar(
                     }
                     Column(
                         horizontalAlignment = Alignment.End,
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                        verticalArrangement = Arrangement.spacedBy(2.dp),
+                        modifier = Modifier.heightIn(min = 60.dp)
                     ) {
-                        CompactTopBarText(readingText)
-                        CompactTopBarText(
-                            sensorText,
-                            color = if (sensorStatus.isError) LibreCareColors.AccentRed else LibreCareColors.TextSecondary
-                        )
-                        CompactTopBarText(rangeText)
-                    }
-                    if (onRunUiAudit != null) {
-                        IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp)) {
-                            Icon(
-                                Icons.Default.PhotoCamera,
-                                contentDescription = "Raport UI",
-                                tint = LibreCareColors.TextPrimary,
-                                modifier = Modifier.width(16.dp)
+                        Row(
+                            horizontalArrangement = Arrangement.spacedBy(4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            modifier = Modifier.height(20.dp)
+                        ) {
+                            Text(
+                                text = "Libre $freshnessText",
+                                color = LibreCareColors.TextSecondary,
+                                fontSize = 12.sp,
+                                lineHeight = 13.sp,
+                                maxLines = 1,
+                                textAlign = TextAlign.End
                             )
+                        }
+                        if (onRunUiAudit != null) {
+                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp).height(32.dp)) {
+                                Icon(
+                                    Icons.Default.PhotoCamera,
+                                    contentDescription = "Raport UI",
+                                    tint = LibreCareColors.TextPrimary,
+                                    modifier = Modifier.width(16.dp)
+                                )
+                            }
                         }
                     }
                 }

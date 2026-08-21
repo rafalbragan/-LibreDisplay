@@ -13,6 +13,8 @@ class HistorySelectorModelTest {
                 TimeRange.LAST_6_HOURS,
                 TimeRange.LAST_12_HOURS,
                 TimeRange.LAST_24_HOURS,
+                TimeRange.LAST_1_DAY,
+                TimeRange.LAST_3_DAYS,
                 TimeRange.LAST_7_DAYS,
                 TimeRange.LAST_30_DAYS,
                 TimeRange.LAST_90_DAYS,

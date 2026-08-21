@@ -12,6 +12,7 @@ internal enum class TimeRange(val duration: Duration, val label: String, val sho
     LAST_6_HOURS(Duration.ofHours(6), "Ostatnie 6 godz.", "6h"),
     LAST_12_HOURS(Duration.ofHours(12), "Ostatnie 12 godz.", "12h"),
     LAST_24_HOURS(Duration.ofHours(24), "Ostatnie 24 godz.", "24h"),
+    LAST_1_DAY(Duration.ofDays(1), "Ostatni dzień", "1 dzień"),
     LAST_3_DAYS(Duration.ofDays(3), "Ostatnie 3 dni", "3 dni"),
     LAST_7_DAYS(Duration.ofDays(7), "Ostatnie 7 dni", "7 dni"),
     LAST_30_DAYS(Duration.ofDays(30), "Ostatnie 30 dni", "30 dni"),
@@ -188,6 +189,7 @@ internal fun chartModeForRange(range: TimeRange): String = when (range) {
     TimeRange.LAST_6_HOURS,
     TimeRange.LAST_12_HOURS,
     TimeRange.LAST_24_HOURS,
+    TimeRange.LAST_1_DAY,
     TimeRange.LAST_7_DAYS -> "line"
     TimeRange.LAST_3_DAYS -> "aggregated"
     TimeRange.LAST_30_DAYS,
@@ -212,6 +214,7 @@ internal fun bucketSizeForRange(range: TimeRange): Duration = when (range) {
     TimeRange.LAST_6_HOURS -> Duration.ofMinutes(5)
     TimeRange.LAST_12_HOURS -> Duration.ofMinutes(5)
     TimeRange.LAST_24_HOURS -> Duration.ofMinutes(10)
+    TimeRange.LAST_1_DAY -> Duration.ofMinutes(10)
     TimeRange.LAST_3_DAYS -> Duration.ofHours(1)
     TimeRange.LAST_7_DAYS -> Duration.ofHours(3)
     TimeRange.LAST_30_DAYS -> Duration.ofDays(1)

@@ -186,15 +186,15 @@ private fun PersonChip(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = modifier
             .clickable(enabled = !isSelected) { onClick() }
-            .heightIn(min = 32.dp)
-            .padding(horizontal = 4.dp, vertical = 2.dp)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 6.dp, vertical = 4.dp)
     ) {
         Text(
             text = name,
             color = if (isSelected) AccentGreen else DashboardSecondaryText,
-            fontSize = 11.sp,
-            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
+            fontSize = 14.sp,
+            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Medium,
+            modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp),
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
             textAlign = TextAlign.Center
@@ -202,8 +202,8 @@ private fun PersonChip(
         if (isSelected) {
             Box(
                 modifier = Modifier
-                    .padding(top = 1.dp)
-                    .size(width = 28.dp, height = 2.dp)
+                    .padding(top = 2.dp)
+                    .size(width = 32.dp, height = 3.dp)
                     .background(AccentGreen)
             )
         } else {

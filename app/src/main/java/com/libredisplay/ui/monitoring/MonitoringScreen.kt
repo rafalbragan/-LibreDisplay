@@ -833,21 +833,18 @@ private fun GlucoseChartCard(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Column(modifier = Modifier.weight(1f), verticalArrangement = Arrangement.spacedBy(0.dp)) {
-                Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 20.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
-                Text(text = "Okno ${homeChartRange.shortLabel} · baza $databaseSpanLabel", color = DashboardSecondaryText, fontSize = 13.sp, lineHeight = 14.sp)
-            }
-              IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
-                  Icon(
-                      Icons.AutoMirrored.Outlined.ShowChart,
-                      contentDescription = "Powiększyć wykres",
-                      tint = DashboardSecondaryText,
-                      modifier = Modifier.size(18.dp)
-                  )
+            Text("Historia glikemii", color = DashboardPrimaryText, fontSize = 20.sp, lineHeight = 22.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.weight(1f))
+            IconButton(onClick = onOpenHistory, modifier = Modifier.size(48.dp)) {
+                Icon(
+                    Icons.AutoMirrored.Outlined.ShowChart,
+                    contentDescription = "Powiększyć wykres",
+                    tint = DashboardSecondaryText,
+                    modifier = Modifier.size(18.dp)
+                )
             }
         }
 
-        HomeDataAvailabilityRow(summary = dataAvailability)
         HomeChartRangeSelector(
             selectedRange = homeChartRange,
             onRangeSelected = { homeChartRange = it }
@@ -1010,26 +1007,6 @@ private fun HomeChartNavigator(
         modifier = Modifier
             .fillMaxWidth()
             .height(32.dp)
-            .pointerInput(viewport) {
-                detectTapGestures { offset ->
-                    val geometry = computeHomeNavigatorGeometry(
-                        totalWidthPx = size.width.toFloat(),
-                        leftInsetPx = axisLeftPaddingPx,
-                        rightInsetPx = axisRightPaddingPx,
-                        viewportFraction = fraction,
-                        windowFraction = windowFraction
-                    )
-                    val trackRelativeX = (offset.x - geometry.trackLeft).coerceIn(0f, geometry.trackWidth)
-                    val viewportLeftFraction = if (geometry.trackWidth <= geometry.viewportWidth) {
-                        0f
-                    } else {
-                        (trackRelativeX - geometry.viewportWidth / 2f)
-                            .coerceIn(0f, geometry.trackWidth - geometry.viewportWidth) /
-                            (geometry.trackWidth - geometry.viewportWidth)
-                    }
-                    onFractionChanged(viewportLeftFraction)
-                }
-            }
             .pointerInput(viewport) {
                 detectDragGestures { change, dragAmount ->
                     val geometry = computeHomeNavigatorGeometry(

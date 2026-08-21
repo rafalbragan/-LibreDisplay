@@ -179,7 +179,7 @@ internal fun ImprovedQuickMetricsPanel(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 orderedTiles.forEach { tile ->
                     QuickMetricTile(
@@ -187,8 +187,8 @@ internal fun ImprovedQuickMetricsPanel(
                         reorderMode = false,
                         isDragging = false,
                         modifier = Modifier
-                            .widthIn(min = 126.dp)
-                            .width(140.dp)
+                            .widthIn(min = 90.dp)
+                            .width(105.dp)
                     )
                 }
             }

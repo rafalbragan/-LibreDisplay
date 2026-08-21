@@ -11,10 +11,11 @@ internal enum class HomeChartRange(val duration: Duration, val shortLabel: Strin
     LAST_3_HOURS(Duration.ofHours(3), "3h", "3 godziny"),
     LAST_6_HOURS(Duration.ofHours(6), "6h", "6 godzin"),
     LAST_9_HOURS(Duration.ofHours(9), "9h", "9 godzin"),
-    LAST_12_HOURS(Duration.ofHours(12), "12h", "12 godzin");
+    LAST_12_HOURS(Duration.ofHours(12), "12h", "12 godzin"),
+    LAST_24_HOURS(Duration.ofHours(24), "24h", "24 godziny");
 
     companion object {
-        val default = LAST_6_HOURS
+        val default = LAST_12_HOURS
     }
 }
 
