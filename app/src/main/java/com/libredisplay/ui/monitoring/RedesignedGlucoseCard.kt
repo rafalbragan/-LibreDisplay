@@ -1,12 +1,18 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -19,9 +25,13 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import com.libredisplay.data.model.GlucoseReading
+import com.libredisplay.ui.monitoring.GlucoseWarningLevel
 import com.libredisplay.ui.theme.LibreCareColors
 import java.time.Instant
 
@@ -36,6 +46,7 @@ import java.time.Instant
  * - More prominent glucose value hierarchy
  * - Medical alert integrated naturally (not separate card)
  */
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 fun RedesignedCurrentGlucoseCard(
     reading: GlucoseReading,
@@ -50,94 +61,97 @@ fun RedesignedCurrentGlucoseCard(
         config = GlucoseWarningConfig(targetLowMgDl = targetLow, targetHighMgDl = targetHigh)
     )
     val primaryWarning = presentation.primary
-    val trend = trendPresentation(reading.trend)
+    val trend = trendPresentation(
+        trend = reading.trend,
+        glucoseValue = reading.value,
+        targetLow = targetLow,
+        targetHigh = targetHigh
+    )
     val glucoseColor = warningToneColor(primaryWarning.tone)
+    val trendColor = if (primaryWarning.level == GlucoseWarningLevel.IN_RANGE) trend.color else glucoseColor
+    val statusText = primaryWarning.title
+    val trendText = trend.label.takeIf {
+        val normalizedTrend = trend.label.trim().lowercase()
+        val normalizedStatus = statusText.trim().lowercase()
+        normalizedTrend.isNotBlank() && normalizedTrend != normalizedStatus
+    }
 
     Column(
         modifier = modifier
             .fillMaxWidth()
+            .semantics(mergeDescendants = true) {
+                contentDescription = "Aktualna glikemia: ${reading.value} miligramów na decylitr. ${primaryWarning.title}. Trend: ${trend.label}."
+            }
             .padding(horizontal = 4.dp, vertical = 6.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
+        verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
             Text(
                 text = "Aktualna glikemia",
                 color = LibreCareColors.TextSecondary,
-                fontSize = 13.sp,
+                fontSize = 18.sp,
                 fontWeight = FontWeight.Normal
             )
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.Bottom,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Row(
-                    verticalAlignment = Alignment.Bottom,
-                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                    modifier = Modifier.weight(1f)
-                ) {
-                    Text(
-                        text = reading.value.toString(),
-                        color = glucoseColor,
-                        fontSize = 56.sp,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1
-                    )
-                    Text(
-                        text = "mg/dL",
-                        color = glucoseColor,
-                        fontSize = 18.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(bottom = 8.dp)
-                    )
-                }
+            BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+                val stackTrend = maxWidth < 392.dp
+                Column(verticalArrangement = Arrangement.spacedBy(if (stackTrend) 4.dp else 2.dp)) {
+                    FlowRow(
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalArrangement = Arrangement.spacedBy(4.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Row(
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp),
+                            modifier = Modifier.heightIn(min = 72.dp)
+                        ) {
+                            Text(
+                                text = reading.value.toString(),
+                                color = glucoseColor,
+                                fontSize = 68.sp,
+                                lineHeight = 72.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1
+                            )
+                            Text(
+                                text = "mg/dL",
+                                color = glucoseColor,
+                                fontSize = 26.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                modifier = Modifier.padding(bottom = 10.dp)
+                            )
+                        }
 
-                Column(
-                    horizontalAlignment = Alignment.End,
-                    verticalArrangement = Arrangement.spacedBy(2.dp)
-                ) {
-                    Text(
-                        text = trend.arrow,
-                        color = trend.color,
-                        fontSize = 32.sp,
-                        fontWeight = FontWeight.Bold,
-                        textAlign = TextAlign.End
-                    )
-                    Text(
-                        text = trend.label,
-                        color = trend.color,
-                        fontSize = 12.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
+                        if (!stackTrend) {
+                            TrendSummary(
+                                arrow = trend.arrow,
+                                label = trendText ?: trend.label,
+                                color = trendColor
+                            )
+                        }
+                    }
+
+                    if (stackTrend) {
+                        TrendSummary(
+                            arrow = trend.arrow,
+                            label = trendText ?: trend.label,
+                            color = trendColor
+                        )
+                    }
                 }
             }
         }
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
-        ) {
-            Text(
-                text = primaryWarning.title,
-                color = glucoseColor,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-
-            Text(
-                text = "·",
-                color = glucoseColor,
-                fontSize = 14.sp
-            )
-
-            Text(
-                text = trend.label,
-                color = LibreCareColors.TextSecondary,
-                fontSize = 14.sp
-            )
-        }
+        Text(
+            text = statusText,
+            color = glucoseColor,
+            fontSize = 19.sp,
+            lineHeight = 24.sp,
+            fontWeight = FontWeight.SemiBold,
+            maxLines = 2,
+            overflow = TextOverflow.Clip
+        )
 
         if (primaryWarning.level != GlucoseWarningLevel.IN_RANGE) {
             MedicalAlertInline(
@@ -145,6 +159,35 @@ fun RedesignedCurrentGlucoseCard(
                 glucoseColor = glucoseColor
             )
         }
+    }
+}
+
+@Composable
+private fun TrendSummary(
+    arrow: String,
+    label: String,
+    color: Color
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        modifier = Modifier.semantics { contentDescription = "Trend: $label" }
+    ) {
+        Text(
+            text = arrow,
+            color = color,
+            fontSize = 28.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End
+        )
+        Text(
+            text = label,
+            color = color,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 2,
+            overflow = TextOverflow.Clip
+        )
     }
 }
 
@@ -160,7 +203,7 @@ private fun MedicalAlertInline(
         modifier = Modifier
             .fillMaxWidth()
             .background(glucoseColor.copy(alpha = 0.12f), RoundedCornerShape(8.dp))
-            .padding(12.dp)
+            .padding(horizontal = 16.dp, vertical = 13.dp)
     ) {
         Row(
             verticalAlignment = Alignment.Top,
@@ -180,16 +223,16 @@ private fun MedicalAlertInline(
 
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
                 Text(
-                    text = "⚠ ${warning.title}",
+                    text = "⚠ Zalecenie",
                     color = glucoseColor,
-                    fontSize = 13.sp,
+                    fontSize = 15.sp,
                     fontWeight = FontWeight.SemiBold
                 )
                 Text(
                     text = warning.message,
                     color = LibreCareColors.TextPrimary,
-                    fontSize = 12.sp,
-                    lineHeight = 16.sp
+                    fontSize = 16.sp,
+                    lineHeight = 21.sp
                 )
             }
         }

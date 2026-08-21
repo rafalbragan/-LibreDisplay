@@ -14,6 +14,12 @@ internal data class TrendPresentation(
     val color: Color
 )
 
+private enum class GlucoseContext {
+    LOW,
+    IN_RANGE,
+    HIGH
+}
+
 internal data class HistoryLegendRowUi(
     val label: String,
     val threshold: String,
@@ -30,7 +36,10 @@ internal data class HistoryStatCardUi(
     val value: String,
     val supportingText: String,
     val accent: Color,
-    val hasData: Boolean
+    val hasData: Boolean,
+    val tooltipTitle: String? = null,
+    val tooltipExplanation: String? = null,
+    val tooltipFormula: String? = null
 )
 
 internal data class HistoryStatsSectionUi(
@@ -47,10 +56,44 @@ internal data class HistoryEventUi(
 internal fun trendPresentation(trend: GlucoseTrend): TrendPresentation = when (trend) {
     GlucoseTrend.RISING_FAST -> TrendPresentation("Szybko rośnie", trend.arrow, LibreCareColors.AccentRed)
     GlucoseTrend.RISING -> TrendPresentation("Rośnie", trend.arrow, LibreCareColors.AccentAmber)
-    GlucoseTrend.FLAT -> TrendPresentation("Stabilnie", trend.arrow, LibreCareColors.AccentTeal)
+    GlucoseTrend.FLAT -> TrendPresentation("Bez zmian", trend.arrow, LibreCareColors.AccentTeal)
     GlucoseTrend.FALLING -> TrendPresentation("Spada", trend.arrow, LibreCareColors.AccentBlue)
     GlucoseTrend.FALLING_FAST -> TrendPresentation("Szybko spada", trend.arrow, LibreCareColors.AccentPurple)
     GlucoseTrend.UNKNOWN -> TrendPresentation("Nieznany", trend.arrow, LibreCareColors.TextSecondary)
+}
+
+internal fun trendPresentation(
+    trend: GlucoseTrend,
+    glucoseValue: Int,
+    targetLow: Int,
+    targetHigh: Int
+): TrendPresentation {
+    val base = trendPresentation(trend)
+    val context = when {
+        glucoseValue < targetLow -> GlucoseContext.LOW
+        glucoseValue > targetHigh -> GlucoseContext.HIGH
+        else -> GlucoseContext.IN_RANGE
+    }
+
+    val contextualColor = when (context) {
+        GlucoseContext.HIGH -> when (trend) {
+            GlucoseTrend.FALLING, GlucoseTrend.FALLING_FAST -> LibreCareColors.AccentGreen
+            GlucoseTrend.RISING -> LibreCareColors.AccentAmber
+            GlucoseTrend.RISING_FAST -> LibreCareColors.AccentRed
+            GlucoseTrend.FLAT -> LibreCareColors.AccentAmber
+            GlucoseTrend.UNKNOWN -> LibreCareColors.TextSecondary
+        }
+        GlucoseContext.LOW -> when (trend) {
+            GlucoseTrend.RISING, GlucoseTrend.RISING_FAST -> LibreCareColors.AccentGreen
+            GlucoseTrend.FALLING -> LibreCareColors.AccentRed
+            GlucoseTrend.FALLING_FAST -> LibreCareColors.AccentPurple
+            GlucoseTrend.FLAT -> LibreCareColors.AccentAmber
+            GlucoseTrend.UNKNOWN -> LibreCareColors.TextSecondary
+        }
+        GlucoseContext.IN_RANGE -> base.color
+    }
+
+    return base.copy(color = contextualColor)
 }
 
 internal fun historyLegendRows(
@@ -110,17 +153,31 @@ internal fun historyStatsSection(
     } else {
         "Statystyki · $rangeLabel"
     }
-    if (history.size < 2) {
-        return HistoryStatsSectionUi(
-            title = title,
-            cards = listOf(
-                HistoryStatCardUi("Średnia", "mało danych", "mg/dL", LibreCareColors.TextSecondary, false),
-                HistoryStatCardUi("GMI", "mało danych", "szacunek", LibreCareColors.TextSecondary, false),
-                HistoryStatCardUi("CV", "mało danych", "zmienność", LibreCareColors.TextSecondary, false),
-                HistoryStatCardUi("Czas w zakresie", "brak danych", "TIR", LibreCareColors.TextSecondary, false)
-            )
-        )
-    }
+     if (history.size < 2) {
+         return HistoryStatsSectionUi(
+             title = title,
+             cards = listOf(
+                 HistoryStatCardUi(
+                     "GMI", "Brak", "pomiary", LibreCareColors.TextSecondary, false,
+                     "Glucose Management Indicator",
+                     "Szacunkowe HbA1c na podstawie średniej glukozy z sensora. Wymaga co najmniej 14 dni danych (ok. 96 pomiarów).",
+                     "GMI = 3,31 + 0,02392 × średnia glukoza"
+                 ),
+                 HistoryStatCardUi(
+                     "CV", "Brak", "pomiary", LibreCareColors.TextSecondary, false,
+                     "Współczynnik zmienności",
+                     "Mierzy stabilność poziomu cukru. Niższy CV oznacza bardziej stabilne wartości. Wymaga co najmniej 10 pomiarów.",
+                     "CV = (odchylenie std. / średnia) × 100%"
+                 ),
+                 HistoryStatCardUi(
+                     "Czas w zakresie", "Brak", "pomiary", LibreCareColors.TextSecondary, false,
+                     "Time In Range",
+                     "Procent czasu, gdy poziom glukozy był w docelowym zakresie.",
+                     null
+                 )
+             )
+         )
+     }
 
     val average = history.map { it.value }.average()
     val gmi = average.takeIf { it.isFinite() }?.let(GlucoseMetricsCalculator::calculateGmi)
@@ -136,15 +193,41 @@ internal fun historyStatsSection(
     val sd = kotlin.math.sqrt(variance)
     val cv = if (mean > 0.0 && mean.isFinite()) (sd / mean) * 100.0 else Double.NaN
 
-    return HistoryStatsSectionUi(
-        title = title,
-        cards = listOf(
-            HistoryStatCardUi("Średnia", if (average.isFinite()) "${average.toInt()} mg/dL" else "mało danych", "glukoza", LibreCareColors.AccentBlue, average.isFinite()),
-            HistoryStatCardUi("GMI", gmi?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "mało danych", "szacunek", LibreCareColors.AccentTeal, gmi != null),
-            HistoryStatCardUi("CV", if (cv.isFinite()) "${"%.0f".format(cv)}%" else "mało danych", "zmienność", LibreCareColors.AccentPurple, cv.isFinite()),
-            HistoryStatCardUi("Czas w zakresie", PolishDateTimeFormatter.formatRangeTileDuration(tir.inRangeDuration, true), "${tir.inRangePercent}%", LibreCareColors.AccentGreen, true)
-        )
-    )
+     return HistoryStatsSectionUi(
+         title = title,
+         cards = listOf(
+             HistoryStatCardUi(
+                 "GMI",
+                 gmi?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "Brak",
+                 if (gmi != null) "szacunek" else "wymagane 14 dni",
+                 LibreCareColors.AccentTeal,
+                 gmi != null,
+                 "Glucose Management Indicator",
+                 "Szacunkowe HbA1c na podstawie średniej glukozy z sensora. Nie zastępuje badania laboratoryjnego.",
+                 "GMI = 3,31 + 0,02392 × średnia glukoza"
+             ),
+             HistoryStatCardUi(
+                 "CV",
+                 if (cv.isFinite()) "${"%.0f".format(cv)}%" else "Brak",
+                 if (cv.isFinite()) "zmienność" else "wymagane 10+ pomiarów",
+                 LibreCareColors.AccentPurple,
+                 cv.isFinite(),
+                 "Współczynnik zmienności",
+                 "Mierzy stabilność poziomu cukru. Niższy CV oznacza bardziej stabilne wartości.",
+                 "CV = (odchylenie std. / średnia) × 100%"
+             ),
+             HistoryStatCardUi(
+                 "Czas w zakresie",
+                 PolishDateTimeFormatter.formatRangeTileDuration(tir.inRangeDuration, true),
+                 "${tir.inRangePercent}%",
+                 LibreCareColors.AccentGreen,
+                 true,
+                 "Time In Range",
+                 "Procent czasu, gdy poziom glukozy był w docelowym zakresie (${targetLow}-${targetHigh} mg/dL).",
+                 null
+             )
+         )
+     )
 }
 
 internal fun placeholderHistoryEvents(): List<HistoryEventUi> = listOf(

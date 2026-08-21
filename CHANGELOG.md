@@ -2,6 +2,226 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.2.0 - 2026-08-21
+
+### PL
+
+#### Added
+- Dodano niezależny dla Home selektor wykresu `1h / 3h / 6h / 9h / 12h`.
+- Dodano Home navigator czasu pod wykresem, umożliwiający przesuwanie widocznego okna w obrębie dostępnych 12 godzin.
+- Dodano testy `AppNavigationStateTest` i `HomeChartModelsTest` dla back stacku oraz logiki viewportu Home.
+
+#### Changed
+- Przebudowano Home pod kątem czytelności zamiast dalszej kompresji: większa typografia, bezpieczne zawijanie wierszy i większe sekcje tam, gdzie content tego wymaga.
+- Zmieniono blok aktualnej glikemii na responsywny układ, który przenosi trend do kolejnej linii zamiast zmniejszać font lub ściskać elementy.
+- Przebudowano metryki do układu adaptacyjnego: na węższych szerokościach `Poniżej / W zakresie / Powyżej` w pierwszym rzędzie oraz `GMI / HbA1c` w drugim.
+- Sekcja wykresu Home pokazuje teraz oddzielnie dostępność danych `12 h / 24 h`, niezależnie od zakresu `Historia`.
+- Rooty `Główna / Historia / Ustawienia` działają jak top-level destinations, z ujednoliconą dolną nawigacją i bez back arrow na ekranach root.
+
+#### Fixed
+- Usunięto overlapy i clipping w Home spowodowane przez zbyt sztywne `Row`, zbyt małe fonty i zbyt gęste upychanie metryk w jednym wierszu.
+- Naprawiono clipping osi Y/X wykresu dzięki adaptacyjnemu gutterowi, większym etykietom osi i bezpiecznemu pozycjonowaniu labeli czasu.
+- Zmieniono neutralną etykietę trendu `FLAT` z `Stabilnie` na `Bez zmian`.
+- Naprawiono back stack tak, aby `navigateBack()` wracał do rzeczywistego parent screen zamiast do hardcoded route.
+
+#### Tests
+- Zweryfikowano: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Dodatkowo uruchomiono wybrane testy regresji dla: nawigacji, viewportu Home, metryk, osi wykresu, severity i trendów.
+- Testy podłączone: brak urządzenia/emulatora (`adb` niedostępne w PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.0-debug.apk` (23 447 625 B)
+- `release-artifacts/LibreCare-2.2.0-release.apk` (3 161 630 B)
+- `release-artifacts/LibreCare-2.2.0-release.aab` (5 797 368 B)
+
+### EN
+
+#### Added
+- Added a Home-only `1h / 3h / 6h / 9h / 12h` chart range selector.
+- Added a small Home time navigator below the chart so the visible window can be panned within the available 12-hour timeline.
+- Added `AppNavigationStateTest` and `HomeChartModelsTest` for back-stack and Home viewport logic.
+
+#### Changed
+- Reworked Home for readability rather than further compression: larger typography, wrapping rows, and taller sections where the content needs it.
+- Rebuilt the current-glucose block into a responsive layout that moves trend information to the next line instead of shrinking fonts or squeezing content.
+- Rebuilt quick metrics into an adaptive layout: on narrow widths `Below / In range / Above` on row one and `GMI / HbA1c` on row two.
+- Home chart now shows separate `12 h / 24 h` data availability, independent from the `History` range.
+- `Home / History / Settings` behave as top-level destinations with unified bottom navigation and no root-level back arrow.
+
+#### Fixed
+- Removed Home overlaps and clipping caused by rigid `Row` layouts, undersized fonts, and too many metrics forced into a single line.
+- Fixed chart Y/X-axis clipping via adaptive gutter sizing, larger axis labels, and safer time-label placement.
+- Replaced the positive-sounding flat-trend label `Stable` with neutral `No change` semantics in Polish (`Bez zmian`).
+- Fixed back stack behavior so back navigation returns to the actual parent screen instead of a hardcoded route.
+
+#### Tests
+- Verified: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Additionally ran focused regression tests for navigation, Home viewport logic, metrics, chart axes, severity, and trends.
+- Connected tests: no device/emulator available (`adb` not present in PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.2.0-debug.apk` (23,447,625 B)
+- `release-artifacts/LibreCare-2.2.0-release.apk` (3,161,630 B)
+- `release-artifacts/LibreCare-2.2.0-release.aab` (5,797,368 B)
+
+## 2.1.1 - 2026-08-20
+
+### PL
+
+#### Added
+- Dodano kompaktowy wiersz zakresu na Home: `24h · dane do HH:mm` + akcja `Historia >`.
+
+#### Changed
+- Przebudowano WYŁĄCZNIE layout Home: bardziej zwarty nagłówek, gęstsza hierarchia glikemii, szybszy start sekcji historii.
+- Powiązano strzałkę trendu bezpośrednio z wartością glikemii i usunięto duplikację znaczenia status/trend.
+- Spłaszczono metryki (4 kolumny, fallback 2x2 dla wąskich ekranów), a `Edytuj` przeniesiono inline.
+- Zmniejszono narzut osi wykresu na Home (mniej etykiet, ciaśniejsze paddingi osi) bez zmiany danych/progów.
+
+#### Fixed
+- Ograniczono clipping kluczowych wartości metryk przy szerokości ~384dp.
+- Podniesiono pozycję startu sekcji `Historia glikemii`, aby większa część wykresu była widoczna na pierwszym ekranie.
+
+#### Tests
+- Zweryfikowano: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Testy podłączone: brak urządzenia/emulatora (`adb` niedostępne w PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.1.1-debug.apk` (23 414 859 B)
+- `release-artifacts/LibreCare-2.1.1-release.apk` (3 161 633 B)
+- `release-artifacts/LibreCare-2.1.1-release.aab` (5 765 417 B)
+
+### EN
+
+#### Added
+- Added a compact Home range row: `24h · data until HH:mm` + `History >` action.
+
+#### Changed
+- Reworked ONLY the Home layout: denser header, tighter glucose hierarchy, earlier history section start.
+- Bound trend arrow directly to current glucose value and removed duplicated status/trend meaning.
+- Flattened quick metrics (4 columns, 2x2 fallback on narrow widths) and moved `Edit` inline.
+- Reduced Home chart axis overhead (fewer labels, tighter axis paddings) without changing data/threshold logic.
+
+#### Fixed
+- Reduced clipping risk for key metric values around ~384dp width.
+- Moved `Glucose history` section higher so a larger chart portion is visible on first viewport.
+
+#### Tests
+- Verified: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Connected tests: no device/emulator available (`adb` not present in PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.1.1-debug.apk` (23,414,859 B)
+- `release-artifacts/LibreCare-2.1.1-release.apk` (3,161,633 B)
+- `release-artifacts/LibreCare-2.1.1-release.aab` (5,765,417 B)
+
+## 2.1.0 - 2026-08-20
+
+### PL
+
+#### Added
+- Dodano rozdzielone ekrany ustawien: `SettingsMainScreen`, `MonitoringSettingsScreen`, `AccountSettingsScreen`.
+- Dodano testy regresji dla backupu i historii: `LocalGlucoseHistoryRepositoryTest`, `FullScreenHistoryViewportTest`.
+- Dodano sekcje pokrycia danych per osoba na ekranie `Informacje i statystyki` (14/30/60/90/360 dni).
+
+#### Changed
+- Zwiekszono dojrzalosc przeplywu backup/przywracanie danych LIVE + ustawienia w `Prywatnosc i dane`.
+- Wykres renderuje sie plynniej przy rzadszych punktach dzieki interpolacji minutowej na warstwie prezentacji.
+- Uporzadkowano nawigacje i separacje sekcji ustawien dla monitoringu i konta.
+- Przebudowano UX ustawien monitoringu: `Zakres docelowy`, `Metryki ekranu glownego` i `HbA1c` to osobne destination bez wspolnych tabow.
+- Zageszczono Home i Analize/Historia: mniej duplikacji, mniejsze pionowe bloki, bardziej kompaktowy uklad metryk.
+
+#### Fixed
+- Utrzymano filtracje rekordow demo podczas eksportu/importu backupu.
+- Poprawiono spojnosc danych historii lokalnej po zmianach zakresu i viewportu.
+- Dodano jawne dociaganie/scala nieopoznionych punktow z okna 12h podczas synchronizacji.
+- Poprawiono kolor trendu na ekranie glownym: przy wysokiej glikemii trend spadkowy jest zielony, wzrostowy ostrzegawczy/krytyczny.
+
+#### Tests
+- Zweryfikowano: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Testy podlaczone: brak urzadzenia/emulatora (`adb` niedostepne w PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.1.0-debug.apk` (23 414 839 B)
+- `release-artifacts/LibreCare-2.1.0-release.apk` (3 145 248 B)
+- `release-artifacts/LibreCare-2.1.0-release.aab` (5 759 431 B)
+
+### EN
+
+#### Added
+- Added split settings surfaces: `SettingsMainScreen`, `MonitoringSettingsScreen`, `AccountSettingsScreen`.
+- Added backup/history regression tests: `LocalGlucoseHistoryRepositoryTest`, `FullScreenHistoryViewportTest`.
+- Added per-person data coverage section in `Statistics` (14/30/60/90/360 day windows).
+
+#### Changed
+- Increased maturity of the LIVE + settings backup/restore flow in `Privacy & Data`.
+- Improved chart smoothness for sparse streams by adding minute-level interpolation in the presentation layer.
+- Refined navigation and separation of monitoring/account settings sections.
+- Reworked monitoring settings UX: `Target range`, `Home metrics`, and `HbA1c` are now separate destinations without shared tabs.
+- Increased Home and History density by reducing duplicated blocks and moving to compact metric layouts.
+
+#### Fixed
+- Kept demo-record filtering enforced during backup export/import.
+- Improved local history consistency after time-range and viewport updates.
+- Added explicit delayed-point backfill merge for the rolling 12-hour sync window.
+- Fixed Home trend color semantics: high glucose + falling trend now uses favorable (green) color.
+
+#### Tests
+- Verified: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Connected tests: no device/emulator available (`adb` unavailable in PATH).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.1.0-debug.apk` (23 414 839 B)
+- `release-artifacts/LibreCare-2.1.0-release.apk` (3 145 248 B)
+- `release-artifacts/LibreCare-2.1.0-release.aab` (5 759 431 B)
+
+## 2.0.1 - 2026-08-20
+
+### PL
+
+#### Added
+- Dodano kopie zapasowe LIVE + ustawienia (bez danych demo) oraz przywracanie z pliku w `Prywatnosc i dane`.
+
+#### Changed
+- Zwiekszono granulacje wykresu na ekranie glownym: limit punktow jest teraz dynamiczny i dopasowany do szerokosci wykresu.
+- Wprowadzono hybrydowa ciaglosc danych debug/release: debug i release korzystaja z jednego `applicationId`, a debug podpisuje sie kluczem release, gdy jest skonfigurowany.
+
+#### Fixed
+- Przywracanie kopii ignoruje rekordy demo i nie pozwala odtworzyc trybu `DEMO` z backupu.
+
+#### Tests
+- Dodano `AppDataBackupRepositoryTest`.
+- Rozszerzono `GlucoseChartLayoutLogicTest` o przypadek braku downsamplingu przy duzym budzecie punktow.
+- Zweryfikowano: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Testy podlaczone: brak urzadzenia/emulatora (`adb` niedostepne, `Phone connected (status=device): false`).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.0.1-debug.apk` (23 365 701 B)
+- `release-artifacts/LibreCare-2.0.1-release.apk` (3 128 979 B)
+- `release-artifacts/LibreCare-2.0.1-release.aab` (5 692 920 B)
+
+### EN
+
+#### Added
+- Added LIVE + settings backup (excluding demo data) and restore from file in `Privacy & Data`.
+
+#### Changed
+- Increased Home chart granularity: point budget is now dynamic and follows chart width.
+- Implemented hybrid debug/release continuity: debug and release now share one `applicationId`, and debug uses release signing when configured.
+
+#### Fixed
+- Restore flow now filters out demo records and prevents restoring `DEMO` mode from backup.
+
+#### Tests
+- Added `AppDataBackupRepositoryTest`.
+- Extended `GlucoseChartLayoutLogicTest` with a high-budget no-downsampling scenario.
+- Verified: `./gradlew clean`, `./gradlew testDebugUnitTest`, `./gradlew lint`, `./gradlew assembleDebug`, `./gradlew assembleRelease`, `./gradlew bundleRelease`.
+- Connected tests: no device/emulator available (`adb` unavailable, `Phone connected (status=device): false`).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.0.1-debug.apk` (23 365 701 B)
+- `release-artifacts/LibreCare-2.0.1-release.apk` (3 128 979 B)
+- `release-artifacts/LibreCare-2.0.1-release.aab` (5 692 920 B)
+
 ## 1.9.1 - 2026-08-19
 
 ### PL

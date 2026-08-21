@@ -2,6 +2,7 @@ package com.libredisplay.ui.monitoring
 
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseTrend
+import com.libredisplay.ui.theme.LibreCareColors
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
@@ -13,12 +14,50 @@ class HistoryUiModelsTest {
     @Test
     fun trendPresentation_returnsPolishLabelAndArrow() {
         val rising = trendPresentation(GlucoseTrend.RISING)
+        val flat = trendPresentation(GlucoseTrend.FLAT)
         val fallingFast = trendPresentation(GlucoseTrend.FALLING_FAST)
 
         assertEquals("Rośnie", rising.label)
         assertEquals("↗", rising.arrow)
+        assertEquals("Bez zmian", flat.label)
         assertEquals("Szybko spada", fallingFast.label)
         assertEquals("↓", fallingFast.arrow)
+    }
+
+    @Test
+    fun trendPresentation_allSupportedStates_haveVisiblePolishLabels() {
+        val labels = GlucoseTrend.entries.associateWith { trendPresentation(it).label }
+
+        assertEquals("Szybko rośnie", labels[GlucoseTrend.RISING_FAST])
+        assertEquals("Rośnie", labels[GlucoseTrend.RISING])
+        assertEquals("Bez zmian", labels[GlucoseTrend.FLAT])
+        assertEquals("Spada", labels[GlucoseTrend.FALLING])
+        assertEquals("Szybko spada", labels[GlucoseTrend.FALLING_FAST])
+        assertEquals("Nieznany", labels[GlucoseTrend.UNKNOWN])
+    }
+
+    @Test
+    fun trendPresentation_highGlucose_fallingTrendIsGreen() {
+        val trend = trendPresentation(
+            trend = GlucoseTrend.FALLING,
+            glucoseValue = 240,
+            targetLow = 70,
+            targetHigh = 180
+        )
+
+        assertEquals(LibreCareColors.AccentGreen, trend.color)
+    }
+
+    @Test
+    fun trendPresentation_highGlucose_risingFastIsRed() {
+        val trend = trendPresentation(
+            trend = GlucoseTrend.RISING_FAST,
+            glucoseValue = 240,
+            targetLow = 70,
+            targetHigh = 180
+        )
+
+        assertEquals(LibreCareColors.AccentRed, trend.color)
     }
 
     @Test
@@ -51,7 +90,7 @@ class HistoryUiModelsTest {
 
         // When coverage is not provided (null), title uses rangeLabel
         assertTrue(section.title.contains("Statystyki · 24 godz."))
-        assertEquals(listOf("Średnia", "GMI", "CV", "Czas w zakresie"), section.cards.map { it.label })
+        assertEquals(listOf("GMI", "CV", "Czas w zakresie"), section.cards.map { it.label })
         assertTrue(section.cards.none { it.value.isBlank() })
     }
 

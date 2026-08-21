@@ -2,35 +2,29 @@ package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
-import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.requiredHeightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
-import androidx.compose.runtime.mutableStateListOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -93,17 +87,26 @@ internal fun buildQuickMetricTiles(
             id = QuickMetricId.GMI,
             label = "GMI",
             primaryValue = gmiValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
-            secondaryValue = if (gmiValue == null) "Za mało danych" else "Szacunkowa",
+            secondaryValue = if (gmiValue == null) "Za mało danych" else "Szacunek",
             accent = LibreCareColors.AccentBlue
         ),
         QuickMetricTileUi(
             id = QuickMetricId.HBA1C,
             label = "HbA1c",
             primaryValue = hba1cValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
-            secondaryValue = if (hba1cValue == null) "Brak danych lab" else "Szacunkowa",
+            secondaryValue = if (hba1cValue == null) "Brak wyniku laboratoryjnego" else "Wynik laboratoryjny",
             accent = LibreCareColors.TextPrimary
         )
     )
+}
+
+internal fun quickMetricsRows(maxWidthDp: Float, orderedTiles: List<QuickMetricTileUi>): List<List<QuickMetricTileUi>> {
+    if (orderedTiles.isEmpty()) return emptyList()
+    return when {
+        maxWidthDp <= 400f -> listOf(orderedTiles.take(3), orderedTiles.drop(3).take(2))
+        maxWidthDp < 560f -> listOf(orderedTiles.take(3), orderedTiles.drop(3))
+        else -> listOf(orderedTiles)
+    }.filter { it.isNotEmpty() }
 }
 
 @Composable
@@ -111,98 +114,67 @@ internal fun ImprovedQuickMetricsPanel(
     tiles: List<QuickMetricTileUi>,
     orderedIds: List<QuickMetricId>,
     onOrderChanged: (List<QuickMetricId>) -> Unit,
+    onEditClick: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    var reorderMode by remember { mutableStateOf(false) }
-    var draggingId by remember { mutableStateOf<QuickMetricId?>(null) }
-    var dragDistance by remember { mutableFloatStateOf(0f) }
-    val orderState = remember { mutableStateListOf<QuickMetricId>() }
-
-    LaunchedEffect(orderedIds) {
-        orderState.clear()
-        orderState.addAll(orderedIds)
-    }
-
     val tileById = remember(tiles) { tiles.associateBy { it.id } }
-    val visibleOrder = orderState.filter { tileById.containsKey(it) }
-    val tileWidth = 98.dp
-    val slotStepPx = 120f
+    val homeMetricIds = listOf(QuickMetricId.BELOW, QuickMetricId.IN_RANGE, QuickMetricId.ABOVE, QuickMetricId.GMI, QuickMetricId.HBA1C)
+    val visibleOrder = orderedIds.filter { it in homeMetricIds && tileById.containsKey(it) }
+    val orderedTiles = (visibleOrder + homeMetricIds)
+        .distinct()
+        .mapNotNull { tileById[it] }
 
-    // Flat section – no Card wrapper. Use spacing/dividers for visual separation.
     Column(
         modifier = modifier.fillMaxWidth(),
         verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        if (reorderMode) {
-            Text(
-                text = "Przytrzymaj kafelek i przeciągnij, aby zmienić kolejność.",
-                color = LibreCareColors.TextSecondary,
-                fontSize = 11.sp,
-                modifier = Modifier.padding(horizontal = 4.dp)
-            )
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Text("Metryki", color = LibreCareColors.TextPrimary, fontSize = 19.sp, fontWeight = FontWeight.SemiBold)
+            Spacer(modifier = Modifier.weight(1f))
+            onEditClick?.let {
+                Text(
+                    text = "Edytuj >",
+                    color = LibreCareColors.AccentGreen,
+                    fontSize = 15.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier
+                        .clickable(onClick = it)
+                        .padding(horizontal = 4.dp, vertical = 8.dp)
+                )
+            }
         }
 
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(0.dp)
-        ) {
-            visibleOrder.forEachIndexed { index, metricId ->
-                val tile = tileById[metricId] ?: return@forEachIndexed
-                QuickMetricTile(
-                    tile = tile,
-                    reorderMode = reorderMode,
-                    isDragging = draggingId == metricId,
-                    modifier = Modifier
-                        .width(tileWidth)
-                        .pointerInput(reorderMode, visibleOrder, metricId) {
-                            detectDragGesturesAfterLongPress(
-                                onDragStart = {
-                                    if (!reorderMode) reorderMode = true
-                                    draggingId = metricId
-                                    dragDistance = 0f
-                                },
-                                onDragCancel = {
-                                    draggingId = null
-                                    dragDistance = 0f
-                                },
-                                onDragEnd = {
-                                    draggingId = null
-                                    dragDistance = 0f
-                                    onOrderChanged(orderState.toList())
-                                }
-                            ) { change, dragAmount ->
-                                if (draggingId != metricId) return@detectDragGesturesAfterLongPress
-                                dragDistance += dragAmount.x
-                                val shift = (dragDistance / slotStepPx).toInt()
-                                if (shift != 0) {
-                                    val from = orderState.indexOf(metricId)
-                                    if (from != -1) {
-                                        val to = (from + shift).coerceIn(0, orderState.lastIndex)
-                                        if (to != from) {
-                                            orderState.removeAt(from)
-                                            orderState.add(to, metricId)
-                                            dragDistance -= shift * slotStepPx
-                                        }
-                                    }
-                                }
-                                change.consume()
-                            }
-                        }
-                )
-                if (index < visibleOrder.lastIndex) {
-                    Box(
-                        modifier = Modifier
-                            .padding(vertical = 8.dp)
-                            .width(1.dp)
-                            .height(46.dp)
-                            .background(LibreCareColors.SurfaceElevated)
-                    )
+        BoxWithConstraints(modifier = Modifier.fillMaxWidth()) {
+            quickMetricsRows(maxWidth.value, orderedTiles).forEachIndexed { index, rowTiles ->
+                MetricRow(rowTiles)
+                if (index < quickMetricsRows(maxWidth.value, orderedTiles).lastIndex) {
+                    Spacer(modifier = Modifier.height(8.dp))
                 }
             }
         }
         HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(top = 4.dp))
+    }
+}
+
+@Composable
+private fun MetricRow(rowTiles: List<QuickMetricTileUi>) {
+    Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+        rowTiles.forEachIndexed { index, tile ->
+            QuickMetricTile(
+                tile = tile,
+                reorderMode = false,
+                isDragging = false,
+                modifier = Modifier
+                    .weight(1f)
+                    .widthIn(min = 96.dp)
+            )
+        }
+        repeat((3 - rowTiles.size).coerceAtLeast(0)) {
+            Spacer(modifier = Modifier.weight(1f))
+        }
     }
 }
 
@@ -219,36 +191,42 @@ private fun QuickMetricTile(
     val isRangeTile = tile.id == QuickMetricId.BELOW || tile.id == QuickMetricId.IN_RANGE || tile.id == QuickMetricId.ABOVE
     Box(
         modifier = modifier
+            .requiredHeightIn(min = 88.dp)
             .background(
                 if (isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
                 RoundedCornerShape(8.dp)
             )
-            .padding(horizontal = 6.dp, vertical = 8.dp)
+            .padding(horizontal = 6.dp, vertical = 6.dp)
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(2.dp),
-            horizontalAlignment = Alignment.CenterHorizontally,
+            horizontalAlignment = Alignment.Start,
             modifier = Modifier.fillMaxWidth()
         ) {
             Text(
                 text = tile.label,
                 color = LibreCareColors.TextSecondary,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Normal
+                fontSize = 14.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 2,
+                overflow = TextOverflow.Clip
             )
             if (isRangeTile && !reorderMode) {
                 Text(
                     text = tile.secondaryValue,
                     color = tile.accent,
-                    fontSize = 16.sp,
-                    fontWeight = FontWeight.Bold,
+                    fontSize = 25.sp,
+                    lineHeight = 28.sp,
+                    fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Clip
                 )
                 Text(
                     text = tile.primaryValue,
                     color = LibreCareColors.TextSecondary,
-                    fontSize = 11.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
                     fontWeight = FontWeight.Normal,
                     maxLines = 1,
                     overflow = TextOverflow.Clip
@@ -257,18 +235,20 @@ private fun QuickMetricTile(
                 Text(
                     text = tile.primaryValue,
                     color = tile.accent,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
+                    fontSize = 24.sp,
+                    lineHeight = 28.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    maxLines = 2,
                     overflow = TextOverflow.Clip
                 )
                 Text(
                     text = tile.secondaryValue,
                     color = LibreCareColors.TextSecondary,
-                    fontSize = 10.sp,
+                    fontSize = 14.sp,
+                    lineHeight = 18.sp,
                     fontWeight = FontWeight.Normal,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
+                    maxLines = 2,
+                    overflow = TextOverflow.Clip
                 )
             }
             if (tile.emphasized && !reorderMode && !isDragging) {

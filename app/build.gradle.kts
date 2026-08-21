@@ -54,8 +54,8 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 15
-        versionName = "1.9.1"
+        versionCode = 20
+        versionName = "2.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
@@ -93,7 +93,9 @@ android {
             )
         }
         debug {
-            applicationIdSuffix = ".debug"
+            if (hasReleaseSigningConfig) {
+                signingConfig = signingConfigs.getByName("release")
+            }
             versionNameSuffix = "-debug"
         }
     }

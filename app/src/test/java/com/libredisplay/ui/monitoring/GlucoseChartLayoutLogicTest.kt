@@ -137,8 +137,61 @@ class GlucoseChartLayoutLogicTest {
         val reduced = downsampleHistoryPreservingExtremes(points, maxPoints = 20)
 
         assertTrue(reduced.size <= 20)
+        assertEquals(points.first().timestamp, reduced.first().timestamp)
+        assertEquals(points.last().timestamp, reduced.last().timestamp)
         assertTrue(reduced.any { it.value == 52 })
         assertTrue(reduced.any { it.value == 320 })
+    }
+
+    @Test
+    fun downsampleHistoryPreservingExtremes_whenBudgetIsLarge_keepsAllPoints() {
+        val points = (0 until 64).map { index ->
+            GlucoseHistoryPoint(
+                value = 90 + index,
+                timestamp = Instant.parse("2026-08-18T00:00:00Z").plusSeconds(index * 300L),
+                trend = GlucoseTrend.FLAT
+            )
+        }
+
+        val reduced = downsampleHistoryPreservingExtremes(points, maxPoints = 400)
+
+        assertEquals(points.size, reduced.size)
+        assertEquals(points.first().timestamp, reduced.first().timestamp)
+        assertEquals(points.last().timestamp, reduced.last().timestamp)
+    }
+
+    @Test
+    fun interpolateHistoryPointsForRendering_fillsMinuteStepsForSmallGaps() {
+        val start = Instant.parse("2026-08-20T10:00:00Z")
+        val points = listOf(
+            GlucoseHistoryPoint(100, start, GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(112, start.plusSeconds(15 * 60), GlucoseTrend.RISING)
+        )
+
+        val rendered = interpolateHistoryPointsForRendering(points, stepMinutes = 1, maxGapMinutes = 20)
+
+        assertEquals(16, rendered.size)
+        assertEquals(start, rendered.first().timestamp)
+        assertEquals(start.plusSeconds(15 * 60), rendered.last().timestamp)
+    }
+
+    @Test
+    fun interpolateHistoryPointsForRendering_skipsHugeGaps() {
+        val start = Instant.parse("2026-08-20T10:00:00Z")
+        val points = listOf(
+            GlucoseHistoryPoint(100, start, GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(130, start.plusSeconds(2 * 60 * 60), GlucoseTrend.RISING)
+        )
+
+        val rendered = interpolateHistoryPointsForRendering(points, stepMinutes = 1, maxGapMinutes = 20)
+
+        assertEquals(2, rendered.size)
+    }
+
+    @Test
+    fun clampXLabelLeft_keepsFirstAndLastLabelsFullyVisible() {
+        assertEquals(10f, clampXLabelLeft(preferredLeft = -18f, labelWidth = 40f, boundsLeft = 10f, boundsRight = 290f))
+        assertEquals(250f, clampXLabelLeft(preferredLeft = 275f, labelWidth = 40f, boundsLeft = 10f, boundsRight = 290f))
     }
 }
 

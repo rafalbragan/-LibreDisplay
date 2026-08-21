@@ -1,39 +1,52 @@
 package com.libredisplay.ui.analytics
 
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.Button
-import androidx.compose.material3.Card
-import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.ui.monitoring.CompactPersonSwitcherBar
+import com.libredisplay.ui.monitoring.DashboardNavItem
+import com.libredisplay.ui.monitoring.TopLevelNavigationBar
+import com.libredisplay.ui.theme.LibreCareColors
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AnalyticsScreen(
+    showBackButton: Boolean = true,
     onNavigateBack: () -> Unit,
+    onOpenHome: () -> Unit = {},
+    onOpenSettings: () -> Unit = {},
     viewModel: AnalyticsViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
@@ -41,12 +54,24 @@ fun AnalyticsScreen(
     Scaffold(
         topBar = {
             TopAppBar(
-                title = { Text("Analiza") },
-                navigationIcon = {
-                    IconButton(onClick = onNavigateBack) {
-                        Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
+                title = { Text("Historia glikemii") },
+                navigationIcon = if (showBackButton) {
+                    {
+                        IconButton(onClick = onNavigateBack) {
+                            Icon(Icons.AutoMirrored.Filled.ArrowBack, contentDescription = "Wstecz")
+                        }
                     }
+                } else {
+                    {}
                 }
+            )
+        },
+        bottomBar = {
+            TopLevelNavigationBar(
+                selected = DashboardNavItem.HISTORIA,
+                onOpenHome = onOpenHome,
+                onOpenHistory = {},
+                onOpenSettings = onOpenSettings
             )
         }
     ) { padding ->
@@ -54,94 +79,110 @@ fun AnalyticsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(padding)
-                .padding(16.dp)
+                .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(10.dp)
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            Text("Wybrana osoba: ${state.selectedPersonName ?: "-"}", fontWeight = FontWeight.SemiBold)
-            if (state.persons.isNotEmpty()) {
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
-                    state.persons.take(3).forEach { person ->
-                        val selected = person.patientId == state.selectedPatientId
-                        if (selected) {
-                            Button(onClick = { viewModel.onPersonSelected(person.patientId) }, modifier = Modifier.weight(1f)) {
-                                Text(person.displayName)
-                            }
-                        } else {
-                            OutlinedButton(onClick = { viewModel.onPersonSelected(person.patientId) }, modifier = Modifier.weight(1f)) {
-                                Text(person.displayName)
-                            }
-                        }
-                    }
-                }
-            }
+            CompactPersonSwitcherBar(
+                persons = state.persons,
+                selectedPatientId = state.selectedPatientId,
+                onPersonSelected = viewModel::onPersonSelected,
+                isDemoMode = false,
+                modifier = Modifier.fillMaxWidth()
+            )
 
-            Text("Zakres czasu", fontWeight = FontWeight.SemiBold)
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
                 AnalyticsRange.entries.forEach { range ->
                     val selected = range == state.selectedRange
-                    if (selected) {
-                        Button(onClick = { viewModel.onRangeSelected(range) }, modifier = Modifier.weight(1f)) {
-                            Text("${range.days}d")
-                        }
-                    } else {
-                        OutlinedButton(onClick = { viewModel.onRangeSelected(range) }, modifier = Modifier.weight(1f)) {
-                            Text("${range.days}d")
+                    Column(
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        modifier = Modifier
+                            .clickable { viewModel.onRangeSelected(range) }
+                            .padding(vertical = 2.dp)
+                    ) {
+                        Text(
+                            text = if (range == AnalyticsRange.DAYS_365) "1r" else "${range.days}d",
+                            color = if (selected) LibreCareColors.TextPrimary else LibreCareColors.TextSecondary,
+                            fontSize = 12.sp,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+                            maxLines = 1
+                        )
+                        Spacer(modifier = Modifier.height(4.dp))
+                        if (selected) {
+                            Spacer(
+                                modifier = Modifier
+                                    .width(22.dp)
+                                    .height(2.dp)
+                                    .background(LibreCareColors.AccentTeal)
+                            )
+                        } else {
+                            Spacer(modifier = Modifier.height(2.dp))
                         }
                     }
                 }
             }
 
-            val activity = state.sensorActivity
-            MetricCard("Aktywność czujnika", activity?.activityPercent?.let { "${"%.1f".format(it)}%" } ?: "-")
-            MetricCard("Czas w zakresie", state.rangeDistribution?.inRangePercent?.let { "$it%" } ?: "-")
-            MetricCard("Poniżej zakresu", state.rangeDistribution?.belowRangePercent?.let { "$it%" } ?: "-")
-            MetricCard("Powyżej zakresu", state.rangeDistribution?.aboveRangePercent?.let { "$it%" } ?: "-")
-            MetricCard("Średnia glukoza", state.averageGlucose?.let { "${"%.0f".format(it)} mg/dL" } ?: "-")
-            MetricCard("GMI", state.gmi?.let { "${"%.2f".format(it)}%" } ?: "-")
+            HorizontalDivider(color = LibreCareColors.Surface)
 
-            val nfzInfoColor = when {
-                activity == null -> Color(0xFF94A3B8)
-                activity.activityPercent >= 75.0 && (state.rangeDistribution?.inRangePercent ?: 0) > 70 -> Color(0xFF16A34A)
-                activity.activityPercent >= 65.0 -> Color(0xFFF59E0B)
-                else -> Color(0xFFDC2626)
-            }
-            Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
-                Column(modifier = Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    Text("Kryteria / refundacja (informacyjnie)", color = Color.White, fontWeight = FontWeight.Bold)
-                    Text(
-                        text = when {
-                            activity == null -> "Nie można ocenić"
-                            activity.activityPercent >= 75.0 && (state.rangeDistribution?.inRangePercent ?: 0) > 70 -> "Warunki widoczne w aplikacji wyglądają na spełnione"
-                            activity.activityPercent >= 65.0 -> "Blisko spełnienia albo za mało danych"
-                            else -> "Warunki widoczne w aplikacji nie są spełnione"
-                        },
-                        color = nfzInfoColor,
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold
-                    )
-                    Text(
-                        "Status ma charakter informacyjny. Ostatecznej oceny dokonuje lekarz zgodnie z aktualnymi zasadami refundacji.",
-                        color = Color(0xFF94A3B8),
-                        fontSize = 12.sp
-                    )
-                }
-            }
+            val activity = state.sensorActivity?.activityPercent?.let { "${"%.0f".format(it)}%" } ?: "—"
+            val tir = state.rangeDistribution?.inRangePercent?.let { "$it%" } ?: "—"
+            val below = state.rangeDistribution?.belowRangePercent?.let { "$it%" } ?: "—"
+            val above = state.rangeDistribution?.aboveRangePercent?.let { "$it%" } ?: "—"
+            val avg = state.averageGlucose?.let { "${"%.0f".format(it)} mg/dL" } ?: "—"
+            val gmi = state.gmi?.let { "${"%.1f".format(it)}%" } ?: "—"
+
+            MetricsGrid(
+                rows = listOf(
+                    "Pokrycie danych" to activity,
+                    "Czas w zakresie" to tir,
+                    "Poniżej" to below,
+                    "Powyżej" to above,
+                    "Średnia" to avg,
+                    "GMI" to gmi
+                )
+            )
 
             state.infoMessage?.let {
-                Text(it, color = Color(0xFF94A3B8), fontSize = 12.sp)
+                Text(it, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
             }
         }
     }
 }
 
 @Composable
-private fun MetricCard(title: String, value: String) {
-    Card(colors = CardDefaults.cardColors(containerColor = Color(0xFF111827)), modifier = Modifier.fillMaxWidth()) {
-        Column(modifier = Modifier.padding(12.dp)) {
-            Text(title, color = Color(0xFF9CA3AF), fontSize = 12.sp)
-            Text(value, color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
+private fun MetricsGrid(rows: List<Pair<String, String>>) {
+    val chunks = rows.chunked(2)
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
+        chunks.forEach { chunk ->
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp), modifier = Modifier.fillMaxWidth()) {
+                chunk.forEach { (label, value) ->
+                    Column(
+                        modifier = Modifier
+                            .weight(1f)
+                            .background(LibreCareColors.Surface.copy(alpha = 0.35f), RoundedCornerShape(10.dp))
+                            .padding(horizontal = 10.dp, vertical = 8.dp),
+                        verticalArrangement = Arrangement.spacedBy(2.dp)
+                    ) {
+                        Text(label, color = LibreCareColors.TextSecondary, fontSize = 11.sp, maxLines = 1)
+                        Text(
+                            value,
+                            color = LibreCareColors.TextPrimary,
+                            fontWeight = FontWeight.SemiBold,
+                            fontSize = 16.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
+                }
+                if (chunk.size == 1) {
+                    Spacer(modifier = Modifier.weight(1f))
+                }
+            }
         }
     }
 }
-

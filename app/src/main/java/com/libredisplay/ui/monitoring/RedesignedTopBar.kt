@@ -1,20 +1,24 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBars
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Settings
+import androidx.compose.material.icons.filled.PhotoCamera
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
@@ -46,7 +50,7 @@ import java.time.Instant
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun LibreTopBar(
-    onNavigateToSettings: () -> Unit,
+    onRunUiAudit: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
     TopAppBar(
@@ -55,22 +59,29 @@ fun LibreTopBar(
                 stringResource(R.string.app_name),
                 fontWeight = FontWeight.SemiBold,
                 color = LibreCareColors.TextPrimary,
-                fontSize = 18.sp
+                fontSize = 29.sp,
+                maxLines = 1
             )
         },
         actions = {
-            IconButton(onClick = onNavigateToSettings, modifier = Modifier.width(48.dp)) {
-                Icon(
-                    Icons.Default.Settings,
-                    contentDescription = "Ustawienia",
-                    tint = LibreCareColors.TextPrimary
-                )
+            if (onRunUiAudit != null) {
+                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(48.dp)) {
+                    Icon(
+                        Icons.Default.PhotoCamera,
+                        contentDescription = "Raport UI",
+                        tint = LibreCareColors.TextPrimary,
+                        modifier = Modifier.width(20.dp)
+                    )
+                }
             }
         },
         colors = TopAppBarDefaults.topAppBarColors(
             containerColor = LibreCareColors.Background
         ),
+        windowInsets = WindowInsets.statusBars,
         modifier = modifier
+            .statusBarsPadding()
+            .height(68.dp)
     )
 }
 
@@ -95,50 +106,71 @@ fun DataFreshnessAndSensorStatusBar(
     val isStale = freshnessDuration?.let { it > Duration.ofMinutes(staleDataThresholdMinutes) } ?: false
     val sensorStatus = SensorStatusCalculator.calculateSensorStatus(reading, now)
 
-    if (isStale) {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(2.dp)
-        ) {
-            Text(
-                text = "Brak aktualnych danych",
-                color = LibreCareColors.AccentRed,
-                fontSize = 12.sp,
-                fontWeight = FontWeight.SemiBold
-            )
-            lastReadingAt?.let {
-                Text(
-                    text = "Ostatni odczyt: ${PolishDateTimeFormatter.formatAbsolute(it)}",
-                    color = LibreCareColors.TextSecondary,
-                    fontSize = 11.sp
-                )
-            }
-        }
-    } else {
-        Column(
-            modifier = modifier
-                .fillMaxWidth()
-                .padding(horizontal = 12.dp, vertical = 2.dp),
-            verticalArrangement = Arrangement.spacedBy(1.dp)
-        ) {
-            val freshnessText = freshnessDuration?.let {
-                RelativeTimeFormatter.formatDurationAgo(it)
-            } ?: "brak danych"
+    val freshnessText = freshnessDuration?.let {
+        RelativeTimeFormatter.formatDurationAgo(it)
+    } ?: "brak danych"
 
-            Text(
-                text = "Odczyt: $freshnessText",
-                color = LibreCareColors.TextSecondary,
-                fontSize = 11.sp
-            )
-            Text(
-                text = sensorStatus.statusMessage,
-                color = if (sensorStatus.isError) LibreCareColors.AccentRed
-                       else if (sensorStatus.isWarning) LibreCareColors.AccentAmber
-                       else LibreCareColors.TextSecondary,
-                fontSize = 11.sp
-            )
+    val sensorColor = if (sensorStatus.isError) LibreCareColors.AccentRed
+    else if (sensorStatus.isWarning) LibreCareColors.AccentAmber
+    else LibreCareColors.TextSecondary
+
+    val readingText = if (isStale) {
+        "Odczyt: ${lastReadingAt?.let { PolishDateTimeFormatter.formatTime(it) } ?: "brak"}"
+    } else {
+        "Odczyt: $freshnessText"
+    }
+    val sensorText = sensorStatus.statusMessage
+
+    Surface(color = Color.Transparent) {
+        BoxWithConstraints(
+            modifier = modifier
+                .fillMaxWidth()
+                .padding(horizontal = 12.dp, vertical = 2.dp)
+        ) {
+            val stacked = maxWidth < 360.dp
+            if (stacked) {
+                Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
+                    Text(
+                        text = readingText,
+                        color = if (isStale) LibreCareColors.AccentRed else LibreCareColors.TextSecondary,
+                        fontSize = 14.sp,
+                        fontWeight = if (isStale) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 2
+                    )
+                    Text(
+                        text = sensorText,
+                        color = sensorColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 2
+                    )
+                }
+            } else {
+                Row(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Text(
+                        text = readingText,
+                        color = if (isStale) LibreCareColors.AccentRed else LibreCareColors.TextSecondary,
+                        fontSize = 14.sp,
+                        fontWeight = if (isStale) FontWeight.SemiBold else FontWeight.Normal,
+                        maxLines = 1
+                    )
+                    Text(
+                        text = "·",
+                        color = LibreCareColors.TextMuted,
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = sensorText,
+                        color = sensorColor,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Normal,
+                        maxLines = 1
+                    )
+                }
+            }
         }
     }
 }
@@ -176,4 +208,3 @@ fun ConnectionStatusIndicator(
         )
     }
 }
-

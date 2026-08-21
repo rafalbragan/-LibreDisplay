@@ -61,6 +61,18 @@ class GlucoseWarningUiTest {
     }
 
     @Test
+    fun thresholdBoundaries_preserveExistingMedicalBuckets() {
+        assertEquals(GlucoseWarningLevel.VERY_LOW, buildGlucoseStatusPresentation(readingAt(53)).primary.level)
+        assertEquals(GlucoseWarningLevel.LOW, buildGlucoseStatusPresentation(readingAt(54)).primary.level)
+        assertEquals(GlucoseWarningLevel.IN_RANGE, buildGlucoseStatusPresentation(readingAt(70)).primary.level)
+        assertEquals(GlucoseWarningLevel.IN_RANGE, buildGlucoseStatusPresentation(readingAt(180)).primary.level)
+        assertEquals(GlucoseWarningLevel.HIGH, buildGlucoseStatusPresentation(readingAt(181)).primary.level)
+        assertEquals(GlucoseWarningLevel.HIGH, buildGlucoseStatusPresentation(readingAt(200)).primary.level)
+        assertEquals(GlucoseWarningLevel.VERY_HIGH, buildGlucoseStatusPresentation(readingAt(301)).primary.level)
+        assertEquals(GlucoseWarningLevel.EXTREME_HIGH, buildGlucoseStatusPresentation(readingAt(401)).primary.level)
+    }
+
+    @Test
     fun staleData_outranksNormalHigh() {
         val presentation = buildGlucoseStatusPresentation(
             reading = readingAt(225, timestamp = Instant.parse("2026-08-10T10:00:00Z")),
