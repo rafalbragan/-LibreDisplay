@@ -61,5 +61,19 @@ class AppNavigationStateTest {
             }
         }
     }
+
+    @Test
+    fun topLevelSwitching_keepsExpectedBackTargets() {
+        var state = AppNavigationState(listOf(AppScreen.Monitoring))
+        state = state.navigateTo(AppScreen.Settings)
+        state = state.navigateTo(AppScreen.SettingsHomeMetrics)
+        assertEquals(listOf(AppScreen.Monitoring, AppScreen.Settings, AppScreen.SettingsHomeMetrics), state.stack)
+
+        state = state.navigateTo(AppScreen.Analytics)
+        assertEquals(listOf(AppScreen.Monitoring, AppScreen.Analytics), state.stack)
+
+        state = state.navigateBack()
+        assertEquals(AppScreen.Monitoring, state.current)
+    }
 }
 

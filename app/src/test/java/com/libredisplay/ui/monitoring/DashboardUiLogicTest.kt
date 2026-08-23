@@ -138,7 +138,7 @@ class DashboardUiLogicTest {
             zoneId = ZoneId.of("Europe/Warsaw")
         )
 
-        assertTrue(label.dateTime.matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4}, \\d{2}:\\d{2}")))
+        assertTrue(label.dateTime.matches(Regex("\\d{2}\\.\\d{2}\\.\\d{4}, \\d{2}:\\d{2}:\\d{2}")))
         assertEquals("145 mg/dL", label.valueText)
         assertTrue(label.valueLabel.startsWith("Wartość:"))
         assertTrue(label.timeLabel.startsWith("Czas:"))

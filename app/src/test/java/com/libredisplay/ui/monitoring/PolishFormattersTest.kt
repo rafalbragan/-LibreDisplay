@@ -59,11 +59,11 @@ class PolishFormattersTest {
         val instant = Instant.parse("2026-08-18T12:45:00Z")
 
         assertEquals(
-            "18.08\n14:45",
+            "14:45",
             PolishDateTimeFormatter.formatChartAxisLabel(instant, visibleDuration = Duration.ofHours(24), zoneId = zoneId)
         )
         assertEquals(
-            "18.08\n14:45",
+            "18.08 14:45",
             PolishDateTimeFormatter.formatChartAxisLabel(instant, visibleDuration = Duration.ofDays(3), zoneId = zoneId)
         )
         assertEquals(

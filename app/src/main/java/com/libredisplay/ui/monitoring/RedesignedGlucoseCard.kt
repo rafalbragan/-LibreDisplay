@@ -5,11 +5,10 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ErrorOutline
@@ -79,54 +78,79 @@ fun RedesignedCurrentGlucoseCard(
                 contentDescription = "Aktualna glikemia: ${reading.value} miligramów na decylitr. ${primaryWarning.title}. Trend: ${trend.label}."
             }
             .padding(horizontal = 4.dp, vertical = 4.dp),
-        verticalArrangement = Arrangement.spacedBy(6.dp)
+        verticalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+        // Both captions share one row so "Trend" is always on the same baseline as
+        // "Aktualna glikemia", independent of the value/arrow heights below.
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             Text(
                 text = "Aktualna glikemia",
                 color = LibreCareColors.TextSecondary,
                 fontSize = 16.sp,
-                fontWeight = FontWeight.Normal
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
             )
+            Text(
+                text = "Trend",
+                color = LibreCareColors.TextSecondary,
+                fontSize = 16.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.Normal,
+                textAlign = TextAlign.Center,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f)
+            )
+        }
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.Center,
-                verticalAlignment = Alignment.CenterVertically
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Column(
+                modifier = Modifier.weight(1f),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 Row(
                     verticalAlignment = Alignment.Bottom,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    modifier = Modifier
-                        .heightIn(min = 72.dp)
+                    modifier = Modifier.heightIn(min = 64.dp)
                 ) {
                     Text(
                         text = reading.value.toString(),
                         color = glucoseColor,
-                        fontSize = 58.sp,
-                        lineHeight = 60.sp,
+                        fontSize = 52.sp,
+                        lineHeight = 54.sp,
                         fontWeight = FontWeight.Bold,
                         maxLines = 1
                     )
                     Text(
                         text = "mg/dL",
                         color = glucoseColor,
-                        fontSize = 21.sp,
+                        fontSize = 20.sp,
                         fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.padding(bottom = 7.dp)
+                        modifier = Modifier.padding(bottom = 6.dp)
                     )
                 }
-
-                Spacer(modifier = Modifier.width(16.dp))
-
-                TrendSummary(
-                    arrow = trend.arrow,
-                    label = trendText ?: trend.label,
-                    status = statusText,
-                    color = trendColor,
-                    modifier = Modifier
-                )
             }
+
+            TrendSummary(
+                arrow = trend.arrow,
+                label = trendText ?: trend.label,
+                status = statusText,
+                color = trendColor,
+                modifier = Modifier.weight(1f)
+            )
         }
 
         if (primaryWarning.level != GlucoseWarningLevel.IN_RANGE) {
@@ -147,37 +171,42 @@ private fun TrendSummary(
     modifier: Modifier = Modifier
 ) {
     Row(
-        horizontalArrangement = Arrangement.spacedBy(6.dp),
+        horizontalArrangement = Arrangement.spacedBy(4.dp),
         verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier.semantics { contentDescription = "Trend: $label, status: $status" }
+        modifier = modifier
+            .heightIn(min = 64.dp)
+            .semantics { contentDescription = "Trend: $label, status: $status" }
     ) {
-        Text(text = "Trend", color = LibreCareColors.TextSecondary, fontSize = 16.sp, lineHeight = 18.sp, fontWeight = FontWeight.Normal)
-        Row(horizontalArrangement = Arrangement.spacedBy(3.dp), verticalAlignment = Alignment.CenterVertically) {
+        Text(
+            text = arrow,
+            color = color,
+            fontSize = 34.sp,
+            fontWeight = FontWeight.Bold,
+            textAlign = TextAlign.End
+        )
+        Column(
+            verticalArrangement = Arrangement.spacedBy(1.dp),
+            horizontalAlignment = Alignment.Start,
+            modifier = Modifier.weight(1f)
+        ) {
             Text(
-                text = arrow,
+                text = label,
                 color = color,
-                fontSize = 28.sp,
-                fontWeight = FontWeight.Bold,
-                textAlign = TextAlign.End
+                fontSize = 15.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
             )
-            Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
-                Text(
-                    text = label,
-                    color = color,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Clip
-                )
-                Text(
-                    text = status,
-                    color = color,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Text(
+                text = status,
+                color = color,
+                fontSize = 15.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis
+            )
         }
     }
 }

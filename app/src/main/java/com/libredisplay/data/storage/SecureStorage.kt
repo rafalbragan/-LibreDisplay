@@ -102,6 +102,7 @@ class SecureStorage(context: Context) {
         const val KEY_NETWORK_LAST_MEASURED_AT = "network_last_measured_at"
         const val KEY_NETWORK_LAST_SYNC_AT = "network_last_sync_at"
         const val KEY_NETWORK_LAST_SYNC_SUCCESS = "network_last_sync_success"
+        const val KEY_RESTORE_PROMPT_ACK = "restore_prompt_ack"
         // Legacy key kept temporarily to migrate existing installs.
         const val KEY_USE_AUTH_V2 = "use_auth_v2"
     }

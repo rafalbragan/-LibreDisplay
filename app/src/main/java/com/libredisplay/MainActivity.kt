@@ -21,6 +21,7 @@ import com.libredisplay.diagnostics.UiAuditCaptureResult
 import com.libredisplay.diagnostics.UiAuditCaptureContext
 import com.libredisplay.diagnostics.UiAuditExporter
 import com.libredisplay.diagnostics.UiAuditStep
+import com.libredisplay.data.model.AppMode
 import com.libredisplay.ui.monitoring.MonitoringScreen
 import com.libredisplay.ui.analytics.AnalyticsScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
@@ -58,7 +59,7 @@ enum class AppScreen {
     Polling
 }
 
-class MainActivity : ComponentActivity() {
+class MainActivity : androidx.fragment.app.FragmentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
@@ -67,8 +68,17 @@ class MainActivity : ComponentActivity() {
         enableEdgeToEdge()
 
         val app = application as LibreDisplayApp
+        val appLock = com.libredisplay.auth.AppLockRepository(applicationContext)
         setContent {
             LibreDisplayTheme {
+                var unlocked by remember { mutableStateOf(!appLock.isEnabled) }
+                if (!unlocked) {
+                    com.libredisplay.ui.security.AppLockScreen(
+                        onUnlocked = { unlocked = true },
+                        onExit = { finish() }
+                    )
+                    return@LibreDisplayTheme
+                }
                 var refreshNonce by remember { mutableIntStateOf(0) }
                 var showLoginOnly by remember { mutableStateOf(false) }
                 var uiAuditNonce by remember { mutableIntStateOf(0) }
@@ -92,6 +102,8 @@ class MainActivity : ComponentActivity() {
                 val currentScreen = navigationState.current
                 var settingsFocusSection by remember { mutableStateOf(SettingsFocusSection.GENERAL) }
                 var showExitConfirmation by remember { mutableStateOf(false) }
+                var showRestoreAfterInstallPrompt by remember { mutableStateOf(false) }
+                var autoOpenRestorePicker by remember { mutableStateOf(false) }
 
                 fun relaunchNavigation() {
                     navigationState = initialNavigationState(resolveLaunchScreen(), showLoginOnly)
@@ -121,6 +133,45 @@ class MainActivity : ComponentActivity() {
                         dismissButton = {
                             TextButton(onClick = { showExitConfirmation = false }) {
                                 Text("Anuluj")
+                            }
+                        }
+                    )
+                }
+
+                LaunchedEffect(currentScreen, refreshNonce) {
+                    if (currentScreen != AppScreen.Monitoring) return@LaunchedEffect
+                    val settings = app.settingsRepository.loadSettings()
+                    val isLive = settings.appMode == AppMode.LIVE
+                    val hasSession = app.settingsRepository.hasPersistedSessionData()
+                    val alreadyAcknowledged = app.settingsRepository.isRestorePromptAcknowledged()
+                    if (!isLive || !hasSession || alreadyAcknowledged) return@LaunchedEffect
+                    val emptyLocal = app.appDataBackupRepository.isLocalLiveDataEmpty()
+                    if (emptyLocal) {
+                        showRestoreAfterInstallPrompt = true
+                    }
+                }
+
+                if (showRestoreAfterInstallPrompt) {
+                    AlertDialog(
+                        onDismissRequest = {},
+                        title = { Text("Wykryto nową instalację") },
+                        text = { Text("Znaleziono nową instalację LibreCare. Czy chcesz przywrócić kopię danych i ustawień?") },
+                        confirmButton = {
+                            TextButton(onClick = {
+                                showRestoreAfterInstallPrompt = false
+                                app.settingsRepository.setRestorePromptAcknowledged(true)
+                                autoOpenRestorePicker = true
+                                navigateTo(AppScreen.PrivacyData)
+                            }) {
+                                Text("Przywróć kopię")
+                            }
+                        },
+                        dismissButton = {
+                            TextButton(onClick = {
+                                showRestoreAfterInstallPrompt = false
+                                app.settingsRepository.setRestorePromptAcknowledged(true)
+                            }) {
+                                Text("Pomiń")
                             }
                         }
                     )
@@ -430,7 +481,9 @@ class MainActivity : ComponentActivity() {
                                 refreshNonce += 1
                                 relaunchNavigation()
                             },
-                            onNavigateToStatistics = { navigateTo(AppScreen.Statistics) }
+                            onNavigateToStatistics = { navigateTo(AppScreen.Statistics) },
+                            openRestorePickerOnEnter = autoOpenRestorePicker,
+                            onRestorePickerConsumed = { autoOpenRestorePicker = false }
                         )
                     }
 

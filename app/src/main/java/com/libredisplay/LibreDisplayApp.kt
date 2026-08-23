@@ -138,6 +138,7 @@ class LibreDisplayApp : Application() {
         )
 
         LibreDisplaySyncScheduler.schedule(this)
+        com.libredisplay.backup.AutomaticBackupWorker.schedule(this)
         createNotificationChannel()
     }
 

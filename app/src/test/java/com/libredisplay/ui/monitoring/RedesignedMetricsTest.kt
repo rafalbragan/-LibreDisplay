@@ -26,13 +26,15 @@ class RedesignedMetricsTest {
             inRangePercent = 50,
             aboveDuration = Duration.ofMinutes(75),
             abovePercent = 50,
+            minValueMgDl = 70,
+            maxValueMgDl = 220,
             gmiValue = 7.2,
-            hba1cValue = null,
             averageValueMgDl = 124,
-            sensorActivityPercent = 86
+            veryLowEpisodes = 2,
+            veryHighEpisodes = 3
         )
 
-        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "GMI", "HbA1c", "Średnia", "Aktywność"), tiles.map { it.label })
+        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "Średnia", "Minimum", "Maksimum", "GMI", "Epizody bardzo niskie", "Epizody bardzo wysokie"), tiles.map { it.label })
         assertEquals("0m", tiles[0].primaryValue)
         assertEquals("50%", tiles[1].secondaryValue)
         assertEquals("1g 15m", tiles[1].primaryValue)
@@ -44,7 +46,7 @@ class RedesignedMetricsTest {
 
         assertEquals(2, rows.size)
         assertEquals(listOf("Poniżej", "W zakresie", "Powyżej"), rows.first().map { it.label })
-        assertEquals(listOf("GMI", "HbA1c"), rows.last().map { it.label })
+        assertEquals(listOf("Średnia", "Minimum"), rows.last().map { it.label })
     }
 
     @Test
@@ -52,7 +54,7 @@ class RedesignedMetricsTest {
         val rows = quickMetricsRows(maxWidthDp = 600f, orderedTiles = sampleTiles())
 
         assertEquals(1, rows.size)
-        assertEquals(7, rows.single().size)
+        assertEquals(9, rows.single().size)
     }
 
     @Test
@@ -64,14 +66,15 @@ class RedesignedMetricsTest {
             inRangePercent = 56,
             aboveDuration = Duration.ofHours(9).plusMinutes(45),
             abovePercent = 43,
+            minValueMgDl = null,
+            maxValueMgDl = null,
             gmiValue = null,
-            hba1cValue = null,
             averageValueMgDl = null,
-            sensorActivityPercent = null
+            veryLowEpisodes = null,
+            veryHighEpisodes = null
         )
 
         assertEquals("Za mało danych", tiles.first { it.label == "GMI" }.secondaryValue)
-        assertEquals("Brak wyniku laboratoryjnego", tiles.first { it.label == "HbA1c" }.secondaryValue)
         assertTrue(tiles.first { it.label == "W zakresie" }.primaryValue.contains("12g 45m"))
     }
 
@@ -82,10 +85,12 @@ class RedesignedMetricsTest {
         inRangePercent = 56,
         aboveDuration = Duration.ofHours(9).plusMinutes(45),
         abovePercent = 43,
+        minValueMgDl = null,
+        maxValueMgDl = null,
         gmiValue = null,
-        hba1cValue = null,
         averageValueMgDl = null,
-        sensorActivityPercent = null
+        veryLowEpisodes = null,
+        veryHighEpisodes = null
     )
 }
 

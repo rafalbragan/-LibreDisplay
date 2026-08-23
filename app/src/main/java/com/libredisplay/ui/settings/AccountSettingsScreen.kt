@@ -32,6 +32,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.autofill.AutofillType
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
@@ -40,8 +41,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.ui.common.autofillField
+import com.libredisplay.ui.common.rememberAutofillCommit
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, androidx.compose.ui.ExperimentalComposeUiApi::class)
 @Composable
 fun AccountSettingsScreen(
     onNavigateBack: () -> Unit,
@@ -55,6 +58,7 @@ fun AccountSettingsScreen(
     var passwordVisible by remember { mutableStateOf(false) }
     var showChangeAccountForm by remember { mutableStateOf(false) }
     var showLogoutConfirm by remember { mutableStateOf(false) }
+    val commitAutofill = rememberAutofillCommit()
 
     LaunchedEffect(message) {
         if (message == "Ustawienia zapisane") {
@@ -134,7 +138,15 @@ fun AccountSettingsScreen(
                     value = settings.email,
                     onValueChange = viewModel::onEmailChange,
                     label = { Text("Email") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .autofillField(
+                            autofillTypes = listOf(
+                                AutofillType.Username,
+                                AutofillType.EmailAddress
+                            ),
+                            onFill = viewModel::onEmailChange
+                        ),
                     singleLine = true,
                     keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Email)
                 )
@@ -143,8 +155,14 @@ fun AccountSettingsScreen(
                     value = settings.password,
                     onValueChange = viewModel::onPasswordChange,
                     label = { Text("Hasło") },
-                    modifier = Modifier.fillMaxWidth(),
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .autofillField(
+                            autofillTypes = listOf(AutofillType.Password),
+                            onFill = viewModel::onPasswordChange
+                        ),
                     singleLine = true,
+                    keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Password),
                     visualTransformation = if (passwordVisible) VisualTransformation.None else PasswordVisualTransformation(),
                     trailingIcon = {
                         IconButton(onClick = { passwordVisible = !passwordVisible }) {
@@ -199,7 +217,11 @@ fun AccountSettingsScreen(
                         Text("Anuluj")
                     }
                     Button(
-                        onClick = { viewModel.saveAndLogin() },
+                        onClick = {
+                            // Let the password manager offer to save the credentials.
+                            commitAutofill()
+                            viewModel.saveAndLogin()
+                        },
                         modifier = Modifier.weight(1f),
                         enabled = !isSaving
                     ) {

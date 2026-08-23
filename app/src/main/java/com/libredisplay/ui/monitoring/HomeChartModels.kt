@@ -7,16 +7,69 @@ import kotlin.math.abs
 import kotlin.math.roundToLong
 
 internal enum class HomeChartRange(val duration: Duration, val shortLabel: String, val accessibilityLabel: String) {
-    LAST_1_HOUR(Duration.ofHours(1), "1h", "1 godzina"),
-    LAST_3_HOURS(Duration.ofHours(3), "3h", "3 godziny"),
-    LAST_6_HOURS(Duration.ofHours(6), "6h", "6 godzin"),
-    LAST_9_HOURS(Duration.ofHours(9), "9h", "9 godzin"),
-    LAST_12_HOURS(Duration.ofHours(12), "12h", "12 godzin"),
-    LAST_24_HOURS(Duration.ofHours(24), "24h", "24 godziny");
+    LAST_1_HOUR(Duration.ofHours(1), "1g", "1 godzina"),
+    LAST_3_HOURS(Duration.ofHours(3), "3g", "3 godziny"),
+    LAST_6_HOURS(Duration.ofHours(6), "6g", "6 godzin"),
+    LAST_9_HOURS(Duration.ofHours(9), "9g", "9 godzin"),
+    LAST_12_HOURS(Duration.ofHours(12), "12g", "12 godzin"),
+    LAST_24_HOURS(Duration.ofHours(24), "24g", "24 godziny"),
+    LAST_3_DAYS(Duration.ofDays(3), "3d", "3 dni"),
+    LAST_7_DAYS(Duration.ofDays(7), "7d", "7 dni"),
+    LAST_14_DAYS(Duration.ofDays(14), "14d", "14 dni"),
+    LAST_1_MONTH(Duration.ofDays(30), "1m", "1 miesiąc"),
+    LAST_3_MONTHS(Duration.ofDays(90), "3m", "3 miesiące"),
+    LAST_6_MONTHS(Duration.ofDays(182), "6m", "6 miesięcy"),
+    LAST_12_MONTHS(Duration.ofDays(365), "12m", "12 miesięcy");
 
     companion object {
         val default = LAST_12_HOURS
     }
+}
+
+/**
+ * One entry of the range selector.
+ *
+ * [enabled] is false for the single "next" range offered as a preview: the user can see that more
+ * history will become available, but cannot select it yet.
+ */
+internal data class HomeChartRangeOption(
+    val range: HomeChartRange,
+    val enabled: Boolean
+)
+
+/**
+ * Builds the visible range chips: every range that already fits into the collected data plus
+ * exactly ONE additional (greyed out) range.
+ */
+internal fun homeChartRangeOptions(dataSpan: Duration): List<HomeChartRangeOption> {
+    val ranges = homeChartRanges()
+    val span = if (dataSpan.isNegative) Duration.ZERO else dataSpan
+    val enabledCount = ranges.count { it.duration <= span }.coerceAtLeast(1)
+    val visibleCount = (enabledCount + 1).coerceAtMost(ranges.size)
+    return ranges.take(visibleCount).mapIndexed { index, range ->
+        HomeChartRangeOption(range = range, enabled = index < enabledCount)
+    }
+}
+
+/** Largest range that can actually be displayed with the data currently stored. */
+internal fun largestSelectableHomeChartRange(dataSpan: Duration): HomeChartRange =
+    homeChartRangeOptions(dataSpan).lastOrNull { it.enabled }?.range ?: HomeChartRange.LAST_1_HOUR
+
+/** X axis grid interval that keeps the labels readable for the given range. */
+internal fun homeChartAxisTickInterval(range: HomeChartRange): Duration = when (range) {
+    HomeChartRange.LAST_1_HOUR -> Duration.ofMinutes(10)
+    HomeChartRange.LAST_3_HOURS -> Duration.ofMinutes(30)
+    HomeChartRange.LAST_6_HOURS -> Duration.ofHours(1)
+    HomeChartRange.LAST_9_HOURS -> Duration.ofMinutes(90)
+    HomeChartRange.LAST_12_HOURS -> Duration.ofHours(2)
+    HomeChartRange.LAST_24_HOURS -> Duration.ofHours(4)
+    HomeChartRange.LAST_3_DAYS -> Duration.ofHours(12)
+    HomeChartRange.LAST_7_DAYS -> Duration.ofDays(1)
+    HomeChartRange.LAST_14_DAYS -> Duration.ofDays(2)
+    HomeChartRange.LAST_1_MONTH -> Duration.ofDays(5)
+    HomeChartRange.LAST_3_MONTHS -> Duration.ofDays(15)
+    HomeChartRange.LAST_6_MONTHS -> Duration.ofDays(30)
+    HomeChartRange.LAST_12_MONTHS -> Duration.ofDays(60)
 }
 
 internal data class HomeChartViewport(
@@ -69,7 +122,7 @@ internal fun buildHomeChartViewport(
     points: List<GlucoseHistoryPoint>,
     requestedRange: HomeChartRange,
     visibleEndOverride: Instant? = null,
-    maxWindow: Duration = Duration.ofHours(12)
+    maxWindow: Duration = Duration.ofHours(24)
 ): HomeChartViewport? {
     val availablePoints = homeChartAvailablePoints(points, maxWindow = maxWindow)
     if (availablePoints.isEmpty()) return null
@@ -172,20 +225,48 @@ internal fun computeHomeNavigatorGeometry(
     )
 }
 
+/**
+ * Distance the navigator thumb can actually travel.
+ *
+ * The thumb - not the track - is what the finger drags, therefore a 1:1 finger movement must be
+ * mapped onto (trackWidth - thumbWidth). Using the full track width made a single swipe move the
+ * viewport only by a few pixels, which was the reported bug.
+ */
+internal fun navigatorPannableWidth(geometry: HomeNavigatorGeometry): Float =
+    (geometry.trackWidth - geometry.viewportWidth).coerceAtLeast(1f)
+
+/** Fraction after dragging the thumb by [dragDeltaPx] pixels. */
+internal fun navigatorFractionAfterDrag(
+    currentFraction: Float,
+    dragDeltaPx: Float,
+    geometry: HomeNavigatorGeometry
+): Float {
+    if (!dragDeltaPx.isFinite()) return currentFraction.coerceIn(0f, 1f)
+    return (currentFraction + dragDeltaPx / navigatorPannableWidth(geometry)).coerceIn(0f, 1f)
+}
+
+/** Fraction for a direct tap on the navigator track (jump to position). */
+internal fun navigatorFractionForPosition(
+    touchXPx: Float,
+    geometry: HomeNavigatorGeometry
+): Float {
+    if (!touchXPx.isFinite()) return 0f
+    val desiredLeft = touchXPx - geometry.viewportWidth / 2f - geometry.trackLeft
+    return (desiredLeft / navigatorPannableWidth(geometry)).coerceIn(0f, 1f)
+}
+
 internal fun buildHomeCoverageSummary(
     points: List<GlucoseHistoryPoint>,
     now: Instant = points.maxOfOrNull { it.timestamp } ?: Instant.now()
 ): HomeCoverageSummary {
     val items = listOf(
-        Duration.ofHours(12) to "12h",
-        Duration.ofDays(3) to "3d",
-        Duration.ofDays(7) to "7d",
-        Duration.ofDays(30) to "30d"
+        Duration.ofHours(12) to "12g",
+        Duration.ofHours(24) to "24g"
     ).map { (window, label) ->
         buildHomeCoverageItem(points, now, window, label)
     }
     return HomeCoverageSummary(
-        title = "Baza",
+        title = "Dane",
         items = items,
         usesCompleteness = true
     )
@@ -231,7 +312,7 @@ private fun buildHomeCoverageItem(
     val isFull = reachesStart && activity >= 98.0 && span >= window.minus(Duration.ofMinutes(20))
     return HomeCoverageItem(
         label = label,
-        statusLabel = if (isFull) "pełne" else PolishDateTimeFormatter.formatCompactDuration(covered),
+        statusLabel = if (isFull) "✓" else PolishDateTimeFormatter.formatCompactDuration(covered),
         isFull = isFull
     )
 }
@@ -255,4 +336,46 @@ private fun Instant.coerceInInstant(min: Instant, max: Instant): Instant = when 
 
 private fun Instant.coerceAtLeastInstant(min: Instant): Instant = if (this.isBefore(min)) min else this
 private fun Instant.coerceAtMostInstant(max: Instant): Instant = if (this.isAfter(max)) max else this
+
+/**
+ * Human readable description of how much history LibreCare already stores.
+ * Replaces the previous cryptic "Dane: 12g · 24g 16g 54m" line.
+ */
+internal data class HomeDataSummary(
+    val storedSpan: Duration,
+    val storedSpanLabel: String,
+    val nextRangeLabel: String?,
+    val missingForNextRangeLabel: String?
+) {
+    val primaryText: String get() = "Zapisana historia: $storedSpanLabel"
+
+    val secondaryText: String?
+        get() = if (nextRangeLabel != null && missingForNextRangeLabel != null) {
+            "Zakres $nextRangeLabel będzie dostępny za ok. $missingForNextRangeLabel"
+        } else {
+            null
+        }
+}
+
+internal fun homeChartDataSpan(points: List<GlucoseHistoryPoint>): Duration {
+    if (points.size < 2) return Duration.ZERO
+    val oldest = points.minOf { it.timestamp }
+    val newest = points.maxOf { it.timestamp }
+    return Duration.between(oldest, newest).coerceAtLeast(Duration.ZERO)
+}
+
+internal fun buildHomeDataSummary(points: List<GlucoseHistoryPoint>): HomeDataSummary {
+    val span = homeChartDataSpan(points)
+    val options = homeChartRangeOptions(span)
+    val pending = options.lastOrNull { !it.enabled }?.range
+    val missing = pending?.let { (it.duration - span).coerceAtLeast(Duration.ZERO) }
+    return HomeDataSummary(
+        storedSpan = span,
+        storedSpanLabel = if (span.isZero) "brak" else PolishDateTimeFormatter.formatCompactDuration(span),
+        nextRangeLabel = pending?.shortLabel,
+        missingForNextRangeLabel = missing
+            ?.takeIf { !it.isZero }
+            ?.let { PolishDateTimeFormatter.formatCompactDuration(it) }
+    )
+}
 

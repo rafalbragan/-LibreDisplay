@@ -44,7 +44,7 @@ class GlucoseSyncRepository(
 ) {
 
     private companion object {
-        val BACKFILL_WINDOW: java.time.Duration = java.time.Duration.ofHours(12)
+        val BACKFILL_WINDOW: java.time.Duration = java.time.Duration.ofHours(24)
     }
 
     private val syncMutex = Mutex()

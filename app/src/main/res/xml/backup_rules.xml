@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+    LibreCare auto backup rules (Android 11 and older, and the transport used by
+    Samsung Smart Switch / Google One backup).
+
+    Only the single automatic LibreCare backup file is transferred. Encrypted preferences are
+    excluded on purpose: their keys live in the device keystore and cannot be moved to another
+    phone, so restoring them would only produce unreadable data.
+-->
+<full-backup-content>
+    <include domain="file" path="backup/" />
+</full-backup-content>
+

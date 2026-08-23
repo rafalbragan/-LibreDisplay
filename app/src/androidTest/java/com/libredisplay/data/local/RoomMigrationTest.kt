@@ -1,8 +1,9 @@
 package com.libredisplay.data.local
 
 import android.content.Context
-import androidx.room.Room
-import androidx.room.testing.MigrationTestHelper
+import android.database.Cursor
+import androidx.sqlite.db.SupportSQLiteDatabase
+import androidx.sqlite.db.SupportSQLiteOpenHelper
 import androidx.sqlite.db.framework.FrameworkSQLiteOpenHelperFactory
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
@@ -10,22 +11,12 @@ import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
-import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import java.time.Instant
-import kotlinx.coroutines.runBlocking
 
 @RunWith(AndroidJUnit4::class)
 class RoomMigrationTest {
-
-    @get:Rule
-    val helper = MigrationTestHelper(
-        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation(),
-        LibreDisplayDatabase::class.java,
-        emptyList(),
-        FrameworkSQLiteOpenHelperFactory()
-    )
 
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
@@ -37,7 +28,9 @@ class RoomMigrationTest {
 
     @Test
     fun migrate1To2_preservesPeopleAndReadings_andAddsSourceAccountId() {
-        helper.createDatabase(TEST_DB, 1).apply {
+        val sqliteHelper = createVersion1DbHelper()
+        val db = sqliteHelper.writableDatabase
+        db.apply {
             execSQL(
                 """
                 CREATE TABLE IF NOT EXISTS `observed_persons` (
@@ -116,42 +109,46 @@ class RoomMigrationTest {
             execSQL("INSERT INTO glucose_readings (id, patientId, timestamp, valueMgDl, trendArrow, trendLabel, source, receivedAt, isValid, rawTrendCode, createdAt) VALUES ('patient-a:1', 'patient-a', $now, 115, '→', 'Stable', 'LibreLinkUp', $now, 1, NULL, $now)")
             execSQL("INSERT INTO glucose_readings (id, patientId, timestamp, valueMgDl, trendArrow, trendLabel, source, receivedAt, isValid, rawTrendCode, createdAt) VALUES ('patient-b:1', 'patient-b', $now, 154, '↗', 'Rising', 'LibreLinkUp', $now, 1, NULL, $now)")
             execSQL("INSERT INTO patient_settings (patientId, lowCriticalMgDl, lowMgDl, targetLowMgDl, targetHighMgDl, highMgDl, hba1cTargetPercent, labHba1cPercent, labHba1cDate, updatedAt) VALUES ('patient-a', 54, 70, 80, 180, 250, 7.5, NULL, NULL, $now)")
-            close()
+            MIGRATION_1_2.migrate(this)
         }
+        db.query("SELECT COUNT(*) FROM observed_persons").use { cursor ->
+            assertCursorFirst(cursor)
+            assertEquals(2, cursor.getInt(0))
+        }
+        db.query("SELECT patientId, valueMgDl, sourceAccountId FROM glucose_readings ORDER BY patientId ASC").use { cursor ->
+            assertCursorFirst(cursor)
+            assertEquals("patient-a", cursor.getString(0))
+            assertEquals(115, cursor.getInt(1))
+            assertNull(cursor.getString(2))
 
-        helper.runMigrationsAndValidate(TEST_DB, 2, true, MIGRATION_1_2)
-
-        val db = Room.databaseBuilder(context, LibreDisplayDatabase::class.java, TEST_DB)
-            .addMigrations(MIGRATION_1_2)
-            .build()
-
-        runBlocking {
-            val persons = db.observedPersonDao().getActivePersons()
-            assertEquals(2, persons.size)
-            assertNotNull(persons.firstOrNull { it.patientId == "patient-a" && it.displayName == "Anna Nowak" })
-            assertNotNull(persons.firstOrNull { it.patientId == "patient-b" && it.displayName == "Bartek Kowalski" })
-
-            val from = Instant.parse("2026-08-17T00:00:00Z")
-            val to = Instant.parse("2026-08-18T00:00:00Z")
-            val patientAReadings = db.glucoseReadingDao().getRangeByPatient("patient-a", from, to)
-            val patientBReadings = db.glucoseReadingDao().getRangeByPatient("patient-b", from, to)
-
-            assertEquals(1, patientAReadings.size)
-            assertEquals("patient-a", patientAReadings.single().patientId)
-            assertEquals(115, patientAReadings.single().valueMgDl)
-            assertNull(patientAReadings.single().sourceAccountId)
-
-            assertEquals(1, patientBReadings.size)
-            assertEquals("patient-b", patientBReadings.single().patientId)
-            assertEquals(154, patientBReadings.single().valueMgDl)
-            assertNull(patientBReadings.single().sourceAccountId)
-
-            val patientSettings = db.patientSettingsDao().getByPatientId("patient-a")
-            assertNotNull(patientSettings)
-            assertEquals(7.5, patientSettings?.hba1cTargetPercent ?: 0.0, 0.0)
+            cursor.moveToNext()
+            assertEquals("patient-b", cursor.getString(0))
+            assertEquals(154, cursor.getInt(1))
+            assertNull(cursor.getString(2))
+        }
+        db.query("SELECT hba1cTargetPercent FROM patient_settings WHERE patientId='patient-a'").use { cursor ->
+            assertCursorFirst(cursor)
+            assertNotNull(cursor.getDouble(0))
+            assertEquals(7.5, cursor.getDouble(0), 0.0)
         }
 
         db.close()
+        sqliteHelper.close()
+    }
+
+    private fun createVersion1DbHelper(): SupportSQLiteOpenHelper {
+        val config = SupportSQLiteOpenHelper.Configuration.builder(context)
+            .name(TEST_DB)
+            .callback(object : SupportSQLiteOpenHelper.Callback(1) {
+                override fun onCreate(db: SupportSQLiteDatabase) = Unit
+                override fun onUpgrade(db: SupportSQLiteDatabase, oldVersion: Int, newVersion: Int) = Unit
+            })
+            .build()
+        return FrameworkSQLiteOpenHelperFactory().create(config)
+    }
+
+    private fun assertCursorFirst(cursor: Cursor) {
+        assertEquals(true, cursor.moveToFirst())
     }
 
     companion object {

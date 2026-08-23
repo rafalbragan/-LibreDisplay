@@ -14,7 +14,7 @@ package com.libredisplay.data.model
 enum class GlucoseTrend(val arrow: String, val description: String) {
     RISING_FAST("↑", "Szybko rośnie"),
     RISING("↗", "Rośnie"),
-    FLAT("→", "Stabilnie"),
+    FLAT("→", "Bez zmian"),
     FALLING("↘", "Spada"),
     FALLING_FAST("↓", "Szybko spada"),
     UNKNOWN("?", "Nieznany");

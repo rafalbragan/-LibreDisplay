@@ -17,9 +17,11 @@ class QuickMetricConfigTest {
                 QuickMetricId.BELOW,
                 QuickMetricId.IN_RANGE,
                 QuickMetricId.ABOVE,
-                QuickMetricId.HBA1C,
                 QuickMetricId.AVERAGE,
-                QuickMetricId.SENSOR_ACTIVITY
+                QuickMetricId.MINIMUM,
+                QuickMetricId.MAXIMUM,
+                QuickMetricId.VERY_LOW_EPISODES,
+                QuickMetricId.VERY_HIGH_EPISODES
             ),
             normalized
         )

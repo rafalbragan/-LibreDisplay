@@ -2,6 +2,147 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.4.0 - 2026-08-23
+
+### PL
+
+#### Added
+- Jedna automatyczna kopia zapasowa w katalogu danych aplikacji (`files/backup/librecare-backup.json`). Użytkownik nie wybiera miejsca, nazwy ani hasła.
+- Kopia obejmuje wyłącznie osoby widoczne po zalogowaniu (dane LIVE) oraz konfigurację aplikacji i sesję, dzięki czemu można przenieść całe ustawienie na inny telefon.
+- Integracja z systemowym przenoszeniem danych: `allowBackup`, reguły `backup_rules.xml` / `data_extraction_rules.xml` oraz `LibreCareBackupAgent`. Działa z Samsung Smart Switch, kopią Google One i transferem przewodowym — uniwersalnie na dowolnym telefonie z Androidem.
+- Zapis kopii w chmurze i udostępnianie pliku (SAF `CREATE_DOCUMENT` + systemowy arkusz udostępniania przez FileProvider).
+- Scalanie przy wczytywaniu: identyczne odczyty są scalane po cichu, nowe zakresy dat są dopisywane, a podsumowanie mówi wprost np. „Anna: wczytano 3 dni (288 odczytów) między 18.08.2026 a 20.08.2026”.
+- Pytanie o rozstrzygnięcie różnic: gdy ten sam znacznik czasu ma inną wartość, aplikacja pyta, czy zachować dane bieżące, czy z archiwum.
+- Obsługa menedżerów haseł (Google, Samsung Pass i inne) na ekranie logowania — autofill dla pola e-mail i hasła oraz propozycja zapisania hasła po zalogowaniu.
+- Blokada aplikacji odciskiem palca, PIN-em, wzorem lub hasłem ekranu blokady (ekran `Prywatność i dane`).
+- Dynamiczne zakresy wykresu: 1g, 3g, 6g, 9g, 12g, 24g, 3d, 7d, 14d, 1m, 3m, 6m, 12m — widoczne są zakresy możliwe do wyświetlenia plus dokładnie jeden wyszarzony „następny”.
+- Informacja „Pojawiły się nowe dane · Pokaż najnowsze” zamiast automatycznego przewijania wykresu.
+
+#### Changed
+- Format kopii podniesiony do wersji 3 (czytelny JSON bez hasła, z sumą kontrolną). Odczyt starszych formatów (v1, v2 zaszyfrowany hasłem, warianty ze skróconymi kluczami) pozostaje wspierany.
+- Zapis kopii jest atomowy (plik tymczasowy + weryfikacja odczytu + kopia poprzednia), więc przerwany zapis nie niszczy poprzedniej kopii.
+- Suwak pod wykresem: jedno przesunięcie palcem przewija cały zakres; dotknięcie ścieżki przeskakuje do wskazanego miejsca; wysokość zwiększona do 40 dp.
+- Napisy „Aktualna glikemia” i „Trend” są w jednej linii.
+- Metryki mają takie same zaokrąglone obwoluty jak przyciski zakresów oraz podpowiedź „przesuń w bok, aby zobaczyć więcej ›”.
+- Nieczytelny wiersz `Dane: 12g · 24g 16g 54m` zastąpiony opisem „Zapisana historia: …” i „Zakres 24g będzie dostępny za ok. …”.
+- Wykres domowy korzysta z pełnej historii z bazy, a nie tylko z historii bieżącego odczytu.
+
+#### Fixed
+- Naprawiono wczytywanie kopii zapasowych — zarówno starych, jak i nowych. Dekoder jest odporny na uszkodzone wiersze, brakujące pola i błędne typy, a wszystkie komunikaty błędów są po polsku.
+- Odświeżanie w tle nie przenosi już użytkownika do najnowszych danych.
+- Linia wykresu biegnie od lewej do prawej krawędzi (interpolacja na granicy okna) i jest przerywana wyłącznie tam, gdzie faktycznie brakuje danych.
+- Suwak wykresu nie resetuje już gestu przy każdym zdarzeniu (przyczyna „skoku o kilka pikseli”).
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS (376 testów)
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Testy podłączone: `No connected device/emulator available.`
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.4.0-debug.apk` (23 629 423 B)
+- `release-artifacts/LibreCare-2.4.0-release.apk` (3 420 808 B)
+- `release-artifacts/LibreCare-2.4.0-release.aab` (6 171 933 B)
+
+### EN
+
+#### Added
+- One automatic backup file inside the app data directory (`files/backup/librecare-backup.json`). No location, file name or password is requested from the user.
+- The backup only contains the people visible after login (LIVE data) plus the app configuration and session, so a whole setup can be moved to another phone.
+- System transfer integration: `allowBackup`, `backup_rules.xml` / `data_extraction_rules.xml` and `LibreCareBackupAgent`. Works with Samsung Smart Switch, Google One backup and cable transfer - universally on any Android phone.
+- Cloud save and share (SAF `CREATE_DOCUMENT` plus the system share sheet through FileProvider).
+- Merge on restore: identical readings are merged silently, new date ranges are appended and the report states exactly what was loaded.
+- Conflict question: when the same timestamp holds a different value, the user chooses current or archived data.
+- Password manager support on the login screen (autofill for e-mail and password, save prompt after login).
+- App lock with fingerprint, PIN, pattern or screen lock password.
+- Dynamic chart ranges: 1h ... 12 months, with exactly one greyed out preview range.
+- "New data available - show latest" indicator instead of auto scrolling.
+
+#### Changed
+- Backup format raised to version 3 (plain, checksummed JSON, no password). Reading legacy v1/v2 files remains supported.
+- Backup writing is atomic and verified, keeping the previous good copy.
+- Navigator slider scrolls the whole range in a single swipe, supports tap-to-jump and is 40 dp high.
+- "Aktualna glikemia" and "Trend" captions share one line.
+- Metric tiles use the same rounded chip container as the range buttons and show a scroll affordance.
+- The cryptic data coverage line was replaced by a readable sentence.
+- The dashboard chart now uses the full database history.
+
+#### Fixed
+- Restoring old and new backups works again; the decoder tolerates broken rows and reports Polish error messages.
+- Background refresh no longer moves the user to the newest data.
+- The chart line spans the full chart width and only breaks on real sensor gaps.
+- The navigator gesture is no longer restarted on every drag event.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.4.0-debug.apk` (23 629 423 B)
+- `release-artifacts/LibreCare-2.4.0-release.apk` (3 420 808 B)
+- `release-artifacts/LibreCare-2.4.0-release.aab` (6 171 933 B)
+
+## 2.3.0 - 2026-08-23
+
+### PL
+
+#### Added
+- Dodano etap podgladu kopii przed przywroceniem: lista osob, liczba odczytow, wybor przywrocenia ustawien oraz tryb `Polacz dane` / `Zastap lokalne`.
+- Dodano selektywny eksport kopii: wybor osob i ustawien przed uruchomieniem systemowego zapisu pliku.
+- Dodano pasek `Time in Range` pod wykresem Home (`Poniżej | W zakresie | Powyżej`) z cienkim paskiem segmentowym.
+
+#### Changed
+- Przywracanie kopii nie usuwa globalnie danych LIVE; operuje selektywnie na wybranych osobach i trybie merge/replace.
+- Metryki Home sa liczone z aktualnie widocznego viewportu wykresu (po przesunieciu okna).
+- Dodano long-press drag metryk Home do zmiany kolejnosci i zapisu lokalnego.
+
+#### Fixed
+- Ograniczono restore do bezpiecznych danych oraz usunieto tylko dane demo podczas przywracania.
+- Zachowano kompatybilnosc ze starszymi kopiami legacy przy jednoczesnym szyfrowaniu nowego formatu.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Testy podlaczone: `No connected device/emulator available.`
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.3.0-debug.apk` (23 545 943 B)
+- `release-artifacts/LibreCare-2.3.0-release.apk` (3 194 389 B)
+- `release-artifacts/LibreCare-2.3.0-release.aab` (5 895 399 B)
+
+### EN
+
+#### Added
+- Added restore preview before commit: person list, reading counts, settings toggle, and per-person `Merge` / `Replace` mode.
+- Added selective backup export flow: choose people/settings before launching system file save.
+- Added a compact `Time in Range` row and stacked bar under the Home chart.
+
+#### Changed
+- Backup restore no longer wipes all LIVE data; it applies selected people with merge/replace semantics.
+- Home metrics now use the currently visible chart viewport window.
+- Added long-press drag reordering for Home metrics with local persistence.
+
+#### Fixed
+- Restore pipeline now removes demo rows only, preserving unrelated LIVE data.
+- Kept legacy backup compatibility while maintaining encrypted secure backup format.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Connected tests: `No connected device/emulator available.`
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.3.0-debug.apk` (23,545,943 B)
+- `release-artifacts/LibreCare-2.3.0-release.apk` (3,194,389 B)
+- `release-artifacts/LibreCare-2.3.0-release.aab` (5,895,399 B)
+
 ## 2.2.3 - 2026-08-21
 
 ### PL

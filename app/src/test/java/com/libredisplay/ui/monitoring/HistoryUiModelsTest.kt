@@ -57,7 +57,7 @@ class HistoryUiModelsTest {
             targetHigh = 180
         )
 
-        assertEquals(LibreCareColors.AccentRed, trend.color)
+        assertEquals(warningToneColor(WarningTone.CRITICAL), trend.color)
     }
 
     @Test

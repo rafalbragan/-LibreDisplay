@@ -116,6 +116,14 @@ class SettingsRepository(context: Context) {
         clearRateLimitState()
     }
 
+    fun isRestorePromptAcknowledged(): Boolean {
+        return storage.getBoolean(SecureStorage.KEY_RESTORE_PROMPT_ACK, false)
+    }
+
+    fun setRestorePromptAcknowledged(value: Boolean) {
+        storage.putBoolean(SecureStorage.KEY_RESTORE_PROMPT_ACK, value)
+    }
+
     fun clearAccountCredentials() {
         storage.putString(SecureStorage.KEY_EMAIL, "")
         storage.putString(SecureStorage.KEY_PASSWORD, "")

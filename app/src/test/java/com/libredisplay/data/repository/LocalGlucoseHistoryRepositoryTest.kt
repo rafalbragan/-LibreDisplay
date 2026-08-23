@@ -75,6 +75,27 @@ class LocalGlucoseHistoryRepositoryTest {
         assertTrue(history.none { it.value == 77 })
     }
 
+    @Test
+    fun deleteReadingsOlderThanHours_respectsRetentionCutoff() = runBlocking {
+        val now = Instant.parse("2026-08-20T12:00:00Z")
+        val patientId = "patient-a"
+        db.glucoseReadingDao().insertReplace(
+            listOf(
+                reading(patientId, now.minusSeconds(30 * 60 * 60), 90),
+                reading(patientId, now.minusSeconds(23 * 60 * 60), 100),
+                reading(patientId, now.minusSeconds(2 * 60 * 60), 110)
+            )
+        )
+
+        val deleted = repository.deleteReadingsOlderThanHours(hours = 24, now = now)
+        val remaining = db.glucoseReadingDao().getAllLiveReadings().sortedBy { it.timestamp }
+
+        assertEquals(1, deleted)
+        assertEquals(2, remaining.size)
+        assertEquals(100, remaining.first().valueMgDl)
+        assertEquals(110, remaining.last().valueMgDl)
+    }
+
     private fun reading(patientId: String, timestamp: Instant, value: Int): GlucoseReadingEntity {
         return GlucoseReadingEntity(
             id = "$patientId:${timestamp.toEpochMilli()}",

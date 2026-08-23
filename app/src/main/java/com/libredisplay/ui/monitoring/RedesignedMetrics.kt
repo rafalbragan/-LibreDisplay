@@ -1,7 +1,9 @@
 package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,10 +24,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -47,9 +54,13 @@ internal fun quickMetricLabel(metricId: QuickMetricId): String = when (metricId)
     QuickMetricId.BELOW -> "Poniżej"
     QuickMetricId.IN_RANGE -> "W zakresie"
     QuickMetricId.ABOVE -> "Powyżej"
-    QuickMetricId.GMI -> "GMI"
-    QuickMetricId.HBA1C -> "HbA1c"
     QuickMetricId.AVERAGE -> "Średnia"
+    QuickMetricId.MINIMUM -> "Minimum"
+    QuickMetricId.MAXIMUM -> "Maksimum"
+    QuickMetricId.GMI -> "GMI"
+    QuickMetricId.VERY_LOW_EPISODES -> "Epizody bardzo niskie"
+    QuickMetricId.VERY_HIGH_EPISODES -> "Epizody bardzo wysokie"
+    QuickMetricId.HBA1C -> "HbA1c"
     QuickMetricId.SENSOR_ACTIVITY -> "Aktywność"
 }
 
@@ -60,10 +71,12 @@ internal fun buildQuickMetricTiles(
     inRangePercent: Int?,
     aboveDuration: Duration?,
     abovePercent: Int?,
+    minValueMgDl: Int?,
+    maxValueMgDl: Int?,
     gmiValue: Double?,
-    hba1cValue: Double?,
     averageValueMgDl: Int?,
-    sensorActivityPercent: Int?
+    veryLowEpisodes: Int?,
+    veryHighEpisodes: Int?
 ): List<QuickMetricTileUi> {
     return listOf(
         QuickMetricTileUi(
@@ -89,32 +102,46 @@ internal fun buildQuickMetricTiles(
             accent = LibreCareColors.AccentAmber
         ),
         QuickMetricTileUi(
+            id = QuickMetricId.AVERAGE,
+            label = "Średnia",
+            primaryValue = averageValueMgDl?.let { "$it mg/dL" } ?: "—",
+            secondaryValue = if (averageValueMgDl == null) "Za mało danych" else "Średnia z widocznego okna",
+            accent = LibreCareColors.AccentBlue
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.MINIMUM,
+            label = "Minimum",
+            primaryValue = minValueMgDl?.let { "$it mg/dL" } ?: "—",
+            secondaryValue = if (minValueMgDl == null) "Za mało danych" else "Minimum z widocznego okna",
+            accent = LibreCareColors.AccentBlue
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.MAXIMUM,
+            label = "Maksimum",
+            primaryValue = maxValueMgDl?.let { "$it mg/dL" } ?: "—",
+            secondaryValue = if (maxValueMgDl == null) "Za mało danych" else "Maksimum z widocznego okna",
+            accent = LibreCareColors.AccentBlue
+        ),
+        QuickMetricTileUi(
             id = QuickMetricId.GMI,
             label = "GMI",
             primaryValue = gmiValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
             secondaryValue = if (gmiValue == null) "Za mało danych" else "Szacunek",
-            accent = LibreCareColors.AccentBlue
+            accent = LibreCareColors.AccentTeal
         ),
         QuickMetricTileUi(
-            id = QuickMetricId.HBA1C,
-            label = "HbA1c",
-            primaryValue = hba1cValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
-            secondaryValue = if (hba1cValue == null) "Brak wyniku laboratoryjnego" else "Wynik laboratoryjny",
-            accent = LibreCareColors.TextPrimary
+            id = QuickMetricId.VERY_LOW_EPISODES,
+            label = "Epizody bardzo niskie",
+            primaryValue = veryLowEpisodes?.toString() ?: "—",
+            secondaryValue = if (veryLowEpisodes == null) "Za mało danych" else "Ciągłe wejścia <54 mg/dL",
+            accent = LibreCareColors.AccentRed
         ),
         QuickMetricTileUi(
-            id = QuickMetricId.AVERAGE,
-            label = "Średnia",
-            primaryValue = averageValueMgDl?.let { "$it mg/dL" } ?: "—",
-            secondaryValue = if (averageValueMgDl == null) "Za mało danych" else "Średnia z lokalnej historii",
-            accent = LibreCareColors.AccentBlue
-        ),
-        QuickMetricTileUi(
-            id = QuickMetricId.SENSOR_ACTIVITY,
-            label = "Aktywność",
-            primaryValue = sensorActivityPercent?.let { "$it%" } ?: "—",
-            secondaryValue = if (sensorActivityPercent == null) "Za mało danych" else "Pokrycie odczytami",
-            accent = LibreCareColors.AccentGreen
+            id = QuickMetricId.VERY_HIGH_EPISODES,
+            label = "Epizody bardzo wysokie",
+            primaryValue = veryHighEpisodes?.toString() ?: "—",
+            secondaryValue = if (veryHighEpisodes == null) "Za mało danych" else "Ciągłe wejścia >250 mg/dL",
+            accent = LibreCareColors.AccentAmber
         )
     )
 }
@@ -139,11 +166,12 @@ internal fun ImprovedQuickMetricsPanel(
 ) {
     val tileById = remember(tiles) { tiles.associateBy { it.id } }
     val homeMetricIds = QuickMetricId.DEFAULT_ORDER
-    val visibleOrder = orderedIds.filter { it in homeMetricIds && tileById.containsKey(it) }
-    val orderedTiles = (visibleOrder + homeMetricIds)
-        .distinct()
-        .mapNotNull { tileById[it] }
-        .filter { visibility[it.id] ?: true }
+    val visibleOrder = orderedIds.filter { it in homeMetricIds && tileById.containsKey(it) && (visibility[it] ?: true) }
+    var orderedVisibleIds by remember(visibleOrder) { mutableStateOf(visibleOrder.ifEmpty { homeMetricIds.filter { tileById.containsKey(it) && (visibility[it] ?: true) } }) }
+    val orderedTiles = orderedVisibleIds.mapNotNull { tileById[it] }
+    val scrollState = rememberScrollState()
+    val canScrollRight = scrollState.value < scrollState.maxValue
+    val canScrollLeft = scrollState.value > 0
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -154,13 +182,27 @@ internal fun ImprovedQuickMetricsPanel(
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text("Metryki", color = LibreCareColors.TextPrimary, fontSize = 17.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
-            Spacer(modifier = Modifier.weight(1f))
+            if (canScrollRight) {
+                Spacer(modifier = Modifier.width(6.dp))
+                Text(
+                    text = "przesuń w bok, aby zobaczyć więcej ›",
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 11.sp,
+                    lineHeight = 13.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+            } else {
+                Spacer(modifier = Modifier.weight(1f))
+            }
             onEditClick?.let {
                 Text(
                     text = "Edytuj >",
                     color = LibreCareColors.AccentGreen,
                     fontSize = 13.sp,
                     fontWeight = FontWeight.SemiBold,
+                    maxLines = 1,
                     modifier = Modifier
                         .clickable(onClick = it)
                         .padding(horizontal = 4.dp, vertical = 4.dp)
@@ -176,20 +218,65 @@ internal fun ImprovedQuickMetricsPanel(
             )
         } else {
             Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .horizontalScroll(rememberScrollState()),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                orderedTiles.forEach { tile ->
-                    QuickMetricTile(
-                        tile = tile,
-                        reorderMode = false,
-                        isDragging = false,
-                        modifier = Modifier
-                            .widthIn(min = 90.dp)
-                            .width(105.dp)
-                    )
+                if (canScrollLeft) {
+                    Text("‹", color = LibreCareColors.TextSecondary, fontSize = 18.sp)
+                }
+                Row(
+                    modifier = Modifier
+                        .weight(1f)
+                        .horizontalScroll(scrollState),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    orderedTiles.forEach { tile ->
+                        var dragAccumulatorX by remember(tile.id) { mutableFloatStateOf(0f) }
+                        QuickMetricTile(
+                            tile = tile,
+                            reorderMode = true,
+                            isDragging = false,
+                            modifier = Modifier
+                                .widthIn(min = 96.dp)
+                                .width(112.dp)
+                                .pointerInput(orderedVisibleIds) {
+                                    detectDragGesturesAfterLongPress(
+                                        onDragEnd = { dragAccumulatorX = 0f },
+                                        onDragCancel = { dragAccumulatorX = 0f }
+                                    ) { change, dragAmount ->
+                                        dragAccumulatorX += dragAmount.x
+                                        val threshold = 52f
+                                        val currentIndex = orderedVisibleIds.indexOf(tile.id)
+                                        when {
+                                            dragAccumulatorX > threshold && currentIndex < orderedVisibleIds.lastIndex -> {
+                                                val updated = orderedVisibleIds.toMutableList().also {
+                                                    val item = it.removeAt(currentIndex)
+                                                    it.add(currentIndex + 1, item)
+                                                }
+                                                orderedVisibleIds = updated
+                                                val hidden = orderedIds.filterNot { it in updated }
+                                                onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
+                                                dragAccumulatorX = 0f
+                                            }
+                                            dragAccumulatorX < -threshold && currentIndex > 0 -> {
+                                                val updated = orderedVisibleIds.toMutableList().also {
+                                                    val item = it.removeAt(currentIndex)
+                                                    it.add(currentIndex - 1, item)
+                                                }
+                                                orderedVisibleIds = updated
+                                                val hidden = orderedIds.filterNot { it in updated }
+                                                onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
+                                                dragAccumulatorX = 0f
+                                            }
+                                        }
+                                        change.consume()
+                                    }
+                                }
+                        )
+                    }
+                }
+                if (canScrollRight) {
+                    Text("›", color = LibreCareColors.AccentGreen, fontSize = 18.sp)
                 }
             }
         }
@@ -198,7 +285,10 @@ internal fun ImprovedQuickMetricsPanel(
 }
 
 /**
- * Single quick metric tile
+ * Single quick metric tile.
+ *
+ * Uses the same rounded outlined container as the time range chips (1g / 3g / 6g ...) so the
+ * dashboard has one consistent visual language.
  */
 @Composable
 private fun QuickMetricTile(
@@ -210,12 +300,17 @@ private fun QuickMetricTile(
     val isRangeTile = tile.id == QuickMetricId.BELOW || tile.id == QuickMetricId.IN_RANGE || tile.id == QuickMetricId.ABOVE
     Box(
         modifier = modifier
-            .requiredHeightIn(min = 80.dp)
+            .requiredHeightIn(min = 84.dp)
             .background(
                 if (isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
-                RoundedCornerShape(8.dp)
+                RoundedCornerShape(10.dp)
             )
-            .padding(horizontal = 5.dp, vertical = 4.dp)
+            .border(
+                width = 1.dp,
+                color = if (tile.emphasized) tile.accent.copy(alpha = 0.6f) else LibreCareColors.SurfaceMuted,
+                shape = RoundedCornerShape(10.dp)
+            )
+            .padding(horizontal = 8.dp, vertical = 6.dp)
     ) {
         Column(
             verticalArrangement = Arrangement.spacedBy(1.dp),

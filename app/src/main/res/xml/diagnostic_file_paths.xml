@@ -3,5 +3,8 @@
     <external-files-path
         name="diagnostic_logs"
         path="logs/" />
+    <files-path
+        name="librecare_backup"
+        path="backup/" />
 </paths>
 

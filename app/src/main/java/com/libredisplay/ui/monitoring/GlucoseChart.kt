@@ -31,6 +31,8 @@ import androidx.compose.ui.unit.sp
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.ui.theme.LibreCareColors
+import java.time.Duration
+import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.ceil
@@ -264,6 +266,103 @@ internal fun interpolateHistoryPointsForRendering(
     return expanded.distinctBy { it.timestamp to it.value }.sortedBy { it.timestamp }
 }
 
+/**
+ * Clips the series to the visible domain and splits it into continuous segments.
+ *
+ * Guarantees:
+ *  - the line always starts at the very left edge and ends at the very right edge of the chart
+ *    whenever data exists on both sides of the boundary (a synthetic, linearly interpolated
+ *    boundary sample is inserted),
+ *  - the line is only broken where the sensor really has no data (gap larger than [maxGapMinutes]).
+ */
+internal fun clipAndSegmentSeries(
+    points: List<GlucoseHistoryPoint>,
+    domainStartMillis: Long,
+    domainEndMillis: Long,
+    maxGapMinutes: Long = 20
+): List<List<GlucoseHistoryPoint>> {
+    if (points.isEmpty()) return emptyList()
+    if (domainEndMillis <= domainStartMillis) return emptyList()
+
+    val sorted = points
+        .distinctBy { it.timestamp to it.value }
+        .sortedBy { it.timestamp }
+    val maxGapSeconds = maxGapMinutes.coerceAtLeast(1L) * 60L
+
+    val inside = sorted.filter { it.timestamp.toEpochMilli() in domainStartMillis..domainEndMillis }
+    val clipped = mutableListOf<GlucoseHistoryPoint>()
+
+    val lastBefore = sorted.lastOrNull { it.timestamp.toEpochMilli() < domainStartMillis }
+    val firstAfterDomain = sorted.firstOrNull { it.timestamp.toEpochMilli() > domainEndMillis }
+
+    if (inside.isEmpty()) {
+        // The whole viewport sits between two samples: draw the interpolated straight line across
+        // the chart when the gap is small enough, otherwise draw nothing.
+        if (lastBefore == null || firstAfterDomain == null) return emptyList()
+        val gapSeconds = Duration.between(lastBefore.timestamp, firstAfterDomain.timestamp).seconds
+        if (gapSeconds > maxGapSeconds) return emptyList()
+        return listOf(
+            listOf(
+                interpolateBoundaryPoint(lastBefore, firstAfterDomain, domainStartMillis),
+                interpolateBoundaryPoint(lastBefore, firstAfterDomain, domainEndMillis)
+            )
+        )
+    }
+
+    val firstInside = inside.firstOrNull()
+    if (lastBefore != null && firstInside != null) {
+        val gapSeconds = Duration.between(lastBefore.timestamp, firstInside.timestamp).seconds
+        if (gapSeconds in 1..maxGapSeconds) {
+            clipped += interpolateBoundaryPoint(lastBefore, firstInside, domainStartMillis)
+        }
+    }
+
+    clipped += inside
+
+    val lastInside = inside.lastOrNull()
+    val firstAfter = firstAfterDomain
+    if (lastInside != null && firstAfter != null) {
+        val gapSeconds = Duration.between(lastInside.timestamp, firstAfter.timestamp).seconds
+        if (gapSeconds in 1..maxGapSeconds) {
+            clipped += interpolateBoundaryPoint(lastInside, firstAfter, domainEndMillis)
+        }
+    }
+
+    if (clipped.isEmpty()) return emptyList()
+
+    val ordered = clipped.distinctBy { it.timestamp.toEpochMilli() }.sortedBy { it.timestamp }
+    val segments = mutableListOf<List<GlucoseHistoryPoint>>()
+    var current = mutableListOf(ordered.first())
+    ordered.zipWithNext().forEach { (previous, next) ->
+        val gapSeconds = Duration.between(previous.timestamp, next.timestamp).seconds
+        if (gapSeconds > maxGapSeconds) {
+            segments += current
+            current = mutableListOf(next)
+        } else {
+            current += next
+        }
+    }
+    segments += current
+    return segments.filter { it.isNotEmpty() }
+}
+
+private fun interpolateBoundaryPoint(
+    from: GlucoseHistoryPoint,
+    to: GlucoseHistoryPoint,
+    targetMillis: Long
+): GlucoseHistoryPoint {
+    val fromMillis = from.timestamp.toEpochMilli()
+    val toMillis = to.timestamp.toEpochMilli()
+    val span = (toMillis - fromMillis).toDouble()
+    val fraction = if (span <= 0.0) 0.0 else ((targetMillis - fromMillis).toDouble() / span).coerceIn(0.0, 1.0)
+    val value = (from.value + (to.value - from.value) * fraction).roundToInt()
+    return GlucoseHistoryPoint(
+        value = value,
+        timestamp = Instant.ofEpochMilli(targetMillis),
+        trend = to.trend
+    )
+}
+
 internal fun findNearestHistoryPoint(
     points: List<GlucoseHistoryPoint>,
     canvasWidth: Float,
@@ -374,6 +473,7 @@ fun GlucoseChart(
     points: List<GlucoseHistoryPoint>,
     targetLow: Int,
     targetHigh: Int,
+    xTickInterval: Duration = Duration.ofHours(2),
     zoneId: ZoneId = DateTimeFormatterProvider.deviceZoneId(),
     domainStart: java.time.Instant? = null,
     domainEnd: java.time.Instant? = null,
@@ -382,7 +482,7 @@ fun GlucoseChart(
     onPointSelectionCleared: (() -> Unit)? = null,
     onChartTapped: (() -> Unit)? = null,
     chartHeight: Dp = 260.dp,
-    maxVisiblePoints: Int = 360,
+    maxVisiblePoints: Int = 300,
     maxYAxisLabels: Int = 6,
     maxXAxisLabels: Int = 5,
     axisLeftPaddingPx: Float = 54f,
@@ -398,16 +498,37 @@ fun GlucoseChart(
     var canvasWidth by remember { mutableStateOf(0f) }
     var canvasHeight by remember { mutableStateOf(0f) }
     val dynamicPointBudget = remember(canvasWidth, maxVisiblePoints) {
-        // Keep approximately one point per horizontal pixel in the drawable chart area.
         val drawableWidth = (canvasWidth - 80f).roundToInt().coerceAtLeast(160)
-        max(maxVisiblePoints, drawableWidth).coerceAtMost(4_000)
+        (drawableWidth / 3).coerceIn(80, maxVisiblePoints)
     }
     val interactionPoints = remember(points, dynamicPointBudget) {
         downsampleHistoryPreservingExtremes(points, dynamicPointBudget)
     }
-    val renderedPoints = remember(interactionPoints) {
-        // Keep drag/tap progression smooth even when upstream data arrives in sparse intervals.
-        interpolateHistoryPointsForRendering(interactionPoints)
+    // Clip to the visible window first so the line always spans the full chart width and is only
+    // broken where the sensor actually produced no data.
+    val segments = remember(points, domainStart, domainEnd, dynamicPointBudget) {
+        val startMillis = domainStart?.toEpochMilli() ?: points.minOfOrNull { it.timestamp.toEpochMilli() }
+        val endMillis = domainEnd?.toEpochMilli() ?: points.maxOfOrNull { it.timestamp.toEpochMilli() }
+        if (startMillis == null || endMillis == null) {
+            emptyList()
+        } else {
+            clipAndSegmentSeries(
+                points = points,
+                domainStartMillis = startMillis,
+                domainEndMillis = endMillis.coerceAtLeast(startMillis + 1L)
+            ).map { segment ->
+                interpolateHistoryPointsForRendering(
+                    downsampleHistoryPreservingExtremes(segment, dynamicPointBudget)
+                )
+            }.filter { it.isNotEmpty() }
+        }
+    }
+    val renderedPoints = remember(segments, interactionPoints) {
+        if (segments.isEmpty()) {
+            interpolateHistoryPointsForRendering(interactionPoints)
+        } else {
+            segments.flatten().sortedBy { it.timestamp }
+        }
     }
     val selectionThresholdPx = 28f
 
@@ -650,11 +771,22 @@ fun GlucoseChart(
         }
 
         if (plottedPoints.size > 1) {
-            val linePath = Path()
-            plottedPoints.forEachIndexed { index, (_, position) ->
-                if (index == 0) linePath.moveTo(position.x, position.y) else linePath.lineTo(position.x, position.y)
+            // One path per continuous segment: gaps in the sensor data stay visible as gaps,
+            // everything else is drawn as an unbroken line from edge to edge.
+            val drawableSegments = if (segments.isEmpty()) listOf(renderedPoints) else segments
+            drawableSegments.forEach { segment ->
+                val offsets = segment.mapNotNull { point ->
+                    val x = xFor(point.timestamp.toEpochMilli().toFloat())
+                    val y = yFor(point.value)
+                    if (isValidChartCoordinate(x, y)) Offset(x, y) else null
+                }
+                if (offsets.size < 2) return@forEach
+                val segmentPath = Path()
+                offsets.forEachIndexed { index, position ->
+                    if (index == 0) segmentPath.moveTo(position.x, position.y) else segmentPath.lineTo(position.x, position.y)
+                }
+                drawPath(path = segmentPath, color = Color(0xFF55C8F2), style = Stroke(width = 3f))
             }
-            drawPath(path = linePath, color = Color(0xFF55C8F2), style = Stroke(width = 3f))
         }
 
         if (plottedPoints.size == 1) {
@@ -687,17 +819,46 @@ fun GlucoseChart(
         }
         DiagnosticLogger.logInfo("GlucoseChart", "CHART Y LABELS count=$renderedYLabels")
 
-        val xLabelFractions = selectXAxisFractions(maxLabels = maxXAxisLabels)
-        DiagnosticLogger.logInfo("GlucoseChart", "CHART X AXIS labels=$xLabelFractions")
-        var renderedXLabels = 0
-        xLabelFractions.forEach { fraction ->
-            val labelEpochMillis = resolvedDomainStartMillis + ((resolvedDomainEndMillis - resolvedDomainStartMillis) * fraction).roundToLong()
-            val labelX = chartLeft + fraction * chartWidth
-            val labelText = PolishDateTimeFormatter.formatChartAxisLabel(
-                instant = java.time.Instant.ofEpochMilli(labelEpochMillis),
-                visibleDuration = visibleDuration,
-                zoneId = zoneId
+        val gridIntervalMillis = xTickInterval.toMillis().coerceAtLeast(60_000L)
+        val xTicks = buildList {
+            add(resolvedDomainStartMillis)
+            var tick = ((resolvedDomainStartMillis / gridIntervalMillis) + 1) * gridIntervalMillis
+            while (tick < resolvedDomainEndMillis) {
+                add(tick)
+                tick += gridIntervalMillis
+            }
+            if (resolvedDomainEndMillis != resolvedDomainStartMillis) add(resolvedDomainEndMillis)
+        }.distinct().sorted()
+
+        xTicks.forEach { tickMillis ->
+            val gridFraction = (tickMillis.toFloat() - minTime) / (maxTime - minTime)
+            if (gridFraction !in 0f..1f) return@forEach
+            val gridX = chartLeft + gridFraction * chartWidth
+            drawLine(
+                color = Color.White.copy(alpha = 0.08f),
+                start = Offset(gridX, chartTop),
+                end = Offset(gridX, chartBottom),
+                strokeWidth = 1f
             )
+        }
+
+        DiagnosticLogger.logInfo("GlucoseChart", "CHART X AXIS labels=$xTicks")
+        var renderedXLabels = 0
+        var previousTickDate: java.time.LocalDate? = null
+        val crossesMidnight = Instant.ofEpochMilli(resolvedDomainStartMillis).atZone(zoneId).toLocalDate() !=
+            Instant.ofEpochMilli(resolvedDomainEndMillis).atZone(zoneId).toLocalDate()
+        xTicks.forEachIndexed { index, labelEpochMillis ->
+            val fraction = (labelEpochMillis.toFloat() - minTime) / (maxTime - minTime)
+            val labelX = chartLeft + fraction * chartWidth
+            val instant = Instant.ofEpochMilli(labelEpochMillis)
+            val localDate = instant.atZone(zoneId).toLocalDate()
+            val showDate = visibleDuration >= Duration.ofHours(24) && crossesMidnight && (index == 0 || previousTickDate != localDate)
+            val labelText = if (showDate) {
+                "${DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(instant)}\n${PolishDateTimeFormatter.formatTime(instant, zoneId)}"
+            } else {
+                PolishDateTimeFormatter.formatTime(instant, zoneId)
+            }
+            previousTickDate = localDate
             val xLayout = textMeasurer.measure(
                 text = AnnotatedString(labelText),
                 style = labelStyle,
@@ -722,6 +883,17 @@ fun GlucoseChart(
         }
         DiagnosticLogger.logInfo("GlucoseChart", "CHART X LABELS count=$renderedXLabels")
 
+        drawSafeTextLabel(
+            text = "mg/dL",
+            style = labelStyle,
+            preferredTopLeft = Offset(8f, chartTop - 14f),
+            boundsLeft = 0f,
+            boundsTop = 0f,
+            boundsRight = chartLeft,
+            boundsBottom = chartTop,
+            textMeasurer = textMeasurer
+        )
+
         val selectedMarker = selectedPoint?.let { selected ->
             plottedPoints.firstOrNull { (point, _) ->
                 point.epochMillis == selected.timestamp.toEpochMilli() && point.value == selected.value
@@ -739,8 +911,8 @@ fun GlucoseChart(
             drawCircle(color = Color(0xFF0F172A), radius = 6f, center = selectedOffset)
 
             val valueText = "${selectedChartPoint.value} mg/dL"
-            val timeText = PolishDateTimeFormatter.formatTime(
-                instant = java.time.Instant.ofEpochMilli(selectedChartPoint.epochMillis),
+            val timeText = PolishDateTimeFormatter.formatAbsoluteWithSeconds(
+                instant = Instant.ofEpochMilli(selectedChartPoint.epochMillis),
                 zoneId = zoneId
             )
 

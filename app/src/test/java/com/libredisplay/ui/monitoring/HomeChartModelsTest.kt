@@ -55,7 +55,7 @@ class HomeChartModelsTest {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         val summary = buildHomeCoverageSummary(samplePoints(now, 24), now)
 
-        assertEquals(listOf("12h", "3d", "7d", "30d"), summary.items.map { it.label })
+        assertEquals(listOf("12g", "24g"), summary.items.map { it.label })
         assertFalse(summary.items.any { it.statusLabel.isBlank() })
     }
 

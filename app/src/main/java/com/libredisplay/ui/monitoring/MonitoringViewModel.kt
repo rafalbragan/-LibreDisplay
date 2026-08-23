@@ -61,6 +61,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private val _detailedHistory = MutableStateFlow<List<GlucoseHistoryPoint>>(emptyList())
     val detailedHistory: StateFlow<List<GlucoseHistoryPoint>> = _detailedHistory.asStateFlow()
 
+    private val _homeHistory = MutableStateFlow<List<GlucoseHistoryPoint>>(emptyList())
+    val homeHistory: StateFlow<List<GlucoseHistoryPoint>> = _homeHistory.asStateFlow()
+
     private var refreshController = RefreshController(intervalMs = settingsRepository.loadSettings().refreshInterval * 1000L)
     private var pollingJob: Job? = null
     private var retryJob: Job? = null
@@ -98,15 +101,26 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         bootstrapUsingPersistedTokenOnly()
     }
 
-    internal fun loadDetailedHistory(range: TimeRange) {
+    internal fun loadDetailedHistory(range: TimeRange) = loadHistoryInto(_detailedHistory, range.duration)
+
+    /**
+     * History used by the dashboard chart. Kept separate from [detailedHistory] so that the full
+     * screen chart and the dashboard never overwrite each other's window.
+     */
+    internal fun loadHomeHistory(duration: Duration) = loadHistoryInto(_homeHistory, duration)
+
+    private fun loadHistoryInto(
+        target: MutableStateFlow<List<GlucoseHistoryPoint>>,
+        duration: Duration
+    ) {
         val patientId = _uiState.value.selectedPatientId ?: run {
-            _detailedHistory.value = emptyList()
+            target.value = emptyList()
             return
         }
         val end = _uiState.value.lastMeasurementTimestamp
             ?: _uiState.value.reading?.timestamp
             ?: Instant.now()
-        val start = end.minus(range.duration)
+        val start = end.minus(duration)
         viewModelScope.launch(viewModelExceptionHandler) {
             val local = glucoseSyncRepository.loadHistory(patientId, start, end)
             val currentPoint = _uiState.value.reading?.takeIf {
@@ -114,7 +128,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             }?.let {
                 GlucoseHistoryPoint(value = it.value, timestamp = it.timestamp, trend = it.trend)
             }
-            _detailedHistory.value = (local + listOfNotNull(currentPoint))
+            target.value = (local + listOfNotNull(currentPoint))
                 .distinctBy { it.timestamp to it.value }
                 .sortedBy { it.timestamp }
         }

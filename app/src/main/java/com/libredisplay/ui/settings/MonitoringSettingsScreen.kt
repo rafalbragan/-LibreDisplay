@@ -258,8 +258,12 @@ private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
     QuickMetricId.BELOW -> "Poniżej"
     QuickMetricId.IN_RANGE -> "W zakresie"
     QuickMetricId.ABOVE -> "Powyżej"
+    QuickMetricId.AVERAGE -> "Średnia glikemia"
+    QuickMetricId.MINIMUM -> "Minimum"
+    QuickMetricId.MAXIMUM -> "Maksimum"
     QuickMetricId.GMI -> "GMI"
+    QuickMetricId.VERY_LOW_EPISODES -> "Epizody bardzo niskie"
+    QuickMetricId.VERY_HIGH_EPISODES -> "Epizody bardzo wysokie"
     QuickMetricId.HBA1C -> "HbA1c"
-    QuickMetricId.AVERAGE -> "Średnia"
     QuickMetricId.SENSOR_ACTIVITY -> "Aktywność sensora"
 }

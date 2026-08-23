@@ -27,6 +27,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.libredisplay.BuildConfig
 import com.libredisplay.R
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.ui.theme.LibreCareColors
@@ -50,19 +51,21 @@ fun LibreTopBar(
     lastReadingAt: Instant?,
     reading: GlucoseReading?,
     appVersionLabel: String,
-    dbRangeLabel: String,
-    defaultDataRangeLabel: String,
     now: Instant = Instant.now(),
     onRunUiAudit: (() -> Unit)? = null,
     modifier: Modifier = Modifier
 ) {
-    val freshnessDuration = lastReadingAt?.let { Duration.between(it, now) }
-    val freshnessText = freshnessDuration?.let { RelativeTimeFormatter.formatDurationAgo(it) } ?: "brak danych"
-    val sensorStatus = SensorStatusCalculator.calculateSensorStatus(reading, now)
-    val sensorRemaining = SensorStatusCalculator.formatSensorDuration(sensorStatus.remainingDuration)
-    val sensorText = "Sensor koniec za: $sensorRemaining"
-    val readingText = "Odczyt: $freshnessText"
-    val rangeText = "Zakres: $defaultDataRangeLabel"
+    val topUpdateText = lastReadingAt?.let {
+        val zoneId = DateTimeFormatterProvider.deviceZoneId()
+        val readingDate = it.atZone(zoneId).toLocalDate()
+        val nowDate = now.atZone(zoneId).toLocalDate()
+        val timeLabel = PolishDateTimeFormatter.formatTime(it, zoneId)
+        when (readingDate) {
+            nowDate -> "dziś $timeLabel"
+            nowDate.minusDays(1) -> "wczoraj $timeLabel"
+            else -> "${DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(it)} $timeLabel"
+        }
+    } ?: "brak danych"
 
     Surface(
         color = LibreCareColors.Background,
@@ -83,9 +86,10 @@ fun LibreTopBar(
                         verticalAlignment = Alignment.Top,
                         horizontalArrangement = Arrangement.spacedBy(6.dp)
                     ) {
-                        Column(
+                        Row(
                             modifier = Modifier.weight(1f),
-                            verticalArrangement = Arrangement.spacedBy(0.dp)
+                            verticalAlignment = Alignment.Bottom,
+                            horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
                             Text(
                                 text = stringResource(R.string.app_name),
@@ -96,11 +100,12 @@ fun LibreTopBar(
                                 maxLines = 1
                             )
                             Text(
-                                text = "v$appVersionLabel · DB: $dbRangeLabel",
+                                text = "v$appVersionLabel",
                                 color = LibreCareColors.TextSecondary,
-                                fontSize = 12.sp,
-                                lineHeight = 13.sp,
-                                maxLines = 1
+                                fontSize = 13.sp,
+                                lineHeight = 16.sp,
+                                maxLines = 1,
+                                modifier = Modifier.padding(bottom = 2.dp)
                             )
                         }
                         Column(
@@ -108,20 +113,20 @@ fun LibreTopBar(
                             verticalArrangement = Arrangement.spacedBy(2.dp)
                         ) {
                             Text(
-                                text = "Libre $freshnessText",
+                                text = "Ostatnia aktualizacja: $topUpdateText",
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 11.sp,
                                 lineHeight = 12.sp,
                                 maxLines = 1,
                                 textAlign = TextAlign.End
                             )
-                            if (onRunUiAudit != null) {
-                                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(24.dp).height(24.dp)) {
+                            if (onRunUiAudit != null && BuildConfig.DEBUG) {
+                                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(28.dp).height(28.dp)) {
                                     Icon(
                                         Icons.Default.PhotoCamera,
                                         contentDescription = "Raport UI",
                                         tint = LibreCareColors.TextPrimary,
-                                        modifier = Modifier.width(12.dp)
+                                        modifier = Modifier.width(14.dp)
                                     )
                                 }
                             }
@@ -134,9 +139,10 @@ fun LibreTopBar(
                     verticalAlignment = Alignment.Top,
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    Column(
+                    Row(
                         modifier = Modifier.weight(1f),
-                        verticalArrangement = Arrangement.spacedBy(0.dp)
+                        verticalAlignment = Alignment.Bottom,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         Text(
                             text = stringResource(R.string.app_name),
@@ -147,11 +153,12 @@ fun LibreTopBar(
                             maxLines = 1
                         )
                         Text(
-                            text = "v$appVersionLabel · DB: $dbRangeLabel",
+                            text = "v$appVersionLabel",
                             color = LibreCareColors.TextSecondary,
-                            fontSize = 12.sp,
-                            lineHeight = 13.sp,
-                            maxLines = 1
+                            fontSize = 13.sp,
+                            lineHeight = 16.sp,
+                            maxLines = 1,
+                            modifier = Modifier.padding(bottom = 3.dp)
                         )
                     }
                     Column(
@@ -165,7 +172,7 @@ fun LibreTopBar(
                             modifier = Modifier.height(20.dp)
                         ) {
                             Text(
-                                text = "Libre $freshnessText",
+                                text = "Ostatnia aktualizacja: $topUpdateText",
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 13.sp,
@@ -173,13 +180,13 @@ fun LibreTopBar(
                                 textAlign = TextAlign.End
                             )
                         }
-                        if (onRunUiAudit != null) {
-                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(32.dp).height(32.dp)) {
+                        if (onRunUiAudit != null && BuildConfig.DEBUG) {
+                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(36.dp).height(36.dp)) {
                                 Icon(
                                     Icons.Default.PhotoCamera,
                                     contentDescription = "Raport UI",
                                     tint = LibreCareColors.TextPrimary,
-                                    modifier = Modifier.width(16.dp)
+                                    modifier = Modifier.width(18.dp)
                                 )
                             }
                         }

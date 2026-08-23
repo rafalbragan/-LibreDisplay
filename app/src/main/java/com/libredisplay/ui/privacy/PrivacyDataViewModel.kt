@@ -5,6 +5,8 @@ import android.net.Uri
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.libredisplay.LibreDisplayApp
+import com.libredisplay.data.backup.ConflictResolution
+import com.libredisplay.data.repository.AppDataBackupRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -25,8 +27,155 @@ class PrivacyDataViewModel(application: Application) : AndroidViewModel(applicat
     private val _event = MutableStateFlow<PrivacyActionEvent?>(null)
     val event: StateFlow<PrivacyActionEvent?> = _event.asStateFlow()
 
+    private val _backupInfo = MutableStateFlow<AppDataBackupRepository.AutomaticBackupInfo?>(null)
+    val backupInfo: StateFlow<AppDataBackupRepository.AutomaticBackupInfo?> = _backupInfo.asStateFlow()
+
+    private val _staged = MutableStateFlow<AppDataBackupRepository.StagedRestore?>(null)
+    val staged: StateFlow<AppDataBackupRepository.StagedRestore?> = _staged.asStateFlow()
+
+    private val _restoreReport = MutableStateFlow<String?>(null)
+    val restoreReport: StateFlow<String?> = _restoreReport.asStateFlow()
+
+    /** Set when a legacy (encrypted) archive was selected and needs the original password. */
+    private val _passwordRequiredForUri = MutableStateFlow<Uri?>(null)
+    val passwordRequiredForUri: StateFlow<Uri?> = _passwordRequiredForUri.asStateFlow()
+
+    private val _busy = MutableStateFlow(false)
+    val busy: StateFlow<Boolean> = _busy.asStateFlow()
+
     val isDemoMode: Boolean
         get() = app.settingsRepository.loadSettings().useMock
+
+    init {
+        refreshBackupInfo()
+    }
+
+    // ------------------------------------------------------------------ backup
+
+    fun refreshBackupInfo() {
+        viewModelScope.launch {
+            runCatching { backupRepository.automaticBackupInfo() }
+                .onSuccess { _backupInfo.value = it }
+        }
+    }
+
+    fun createBackupNow() {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { backupRepository.createAutomaticBackup(includeConfiguration = true) }
+                .onSuccess { summary ->
+                    _event.value = PrivacyActionEvent(
+                        "Kopia zapisana automatycznie. Osoby: ${summary.livePersons}, odczyty: ${summary.liveReadings}."
+                    )
+                    refreshBackupInfo()
+                }
+                .onFailure { _event.value = PrivacyActionEvent("Nie udało się zapisać kopii: ${it.message.orEmpty()}") }
+            _busy.value = false
+        }
+    }
+
+    fun exportBackupTo(uri: Uri) {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { backupRepository.exportAutomaticBackupTo(uri) }
+                .onSuccess { summary ->
+                    _event.value = PrivacyActionEvent(
+                        "Plik przeniesienia zapisany. Osoby: ${summary.livePersons}, odczyty: ${summary.liveReadings}."
+                    )
+                    refreshBackupInfo()
+                }
+                .onFailure { _event.value = PrivacyActionEvent("Nie udało się zapisać pliku: ${it.message.orEmpty()}") }
+            _busy.value = false
+        }
+    }
+
+    /** Ensures the file exists before it is shared through the system share sheet. */
+    fun prepareBackupForSharing(onReady: () -> Unit) {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { backupRepository.createAutomaticBackup(includeConfiguration = true) }
+                .onSuccess {
+                    refreshBackupInfo()
+                    onReady()
+                }
+                .onFailure { _event.value = PrivacyActionEvent("Nie udało się przygotować pliku: ${it.message.orEmpty()}") }
+            _busy.value = false
+        }
+    }
+
+    // ------------------------------------------------------------------ restore
+
+    fun stageFromAutomaticBackup() {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { backupRepository.stageAutomaticBackupRestore() }
+                .onSuccess { _staged.value = it }
+                .onFailure { _event.value = PrivacyActionEvent("Nie udało się odczytać kopii: ${it.message.orEmpty()}") }
+            _busy.value = false
+        }
+    }
+
+    fun stageFromUri(uri: Uri, password: String? = null) {
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching { backupRepository.stageRestoreFromUri(uri, password) }
+                .onSuccess {
+                    _passwordRequiredForUri.value = null
+                    _staged.value = it
+                }
+                .onFailure { error ->
+                    val message = error.message.orEmpty()
+                    if (message.contains("zaszyfrowany") || message.contains("hasło")) {
+                        _passwordRequiredForUri.value = uri
+                    } else {
+                        _event.value = PrivacyActionEvent("Nie udało się odczytać kopii: $message")
+                    }
+                }
+            _busy.value = false
+        }
+    }
+
+    fun cancelPasswordPrompt() {
+        _passwordRequiredForUri.value = null
+    }
+
+    fun clearStaged() {
+        _staged.value = null
+    }
+
+    fun clearRestoreReport() {
+        _restoreReport.value = null
+    }
+
+    fun applyStaged(
+        selectedPatientIds: Set<String>,
+        conflictResolution: ConflictResolution,
+        restoreConfiguration: Boolean
+    ) {
+        val staged = _staged.value ?: return
+        viewModelScope.launch {
+            _busy.value = true
+            runCatching {
+                backupRepository.applyRestorePlan(
+                    staged = staged,
+                    selectedPatientIds = selectedPatientIds,
+                    conflictResolution = conflictResolution,
+                    restoreConfiguration = restoreConfiguration
+                )
+            }
+                .onSuccess { result ->
+                    _restoreReport.value = result.report
+                    _staged.value = null
+                    refreshBackupInfo()
+                }
+                .onFailure {
+                    _event.value = PrivacyActionEvent("Nie udało się przywrócić kopii: ${it.message.orEmpty()}")
+                }
+            _busy.value = false
+        }
+    }
+
+    // ------------------------------------------------------------------ privacy actions
 
     fun deleteMyStoredData() {
         viewModelScope.launch {
@@ -78,35 +227,6 @@ class PrivacyDataViewModel(application: Application) : AndroidViewModel(applicat
         viewModelScope.launch {
             privacyRepository.deleteDemoData()
             _event.value = PrivacyActionEvent("Dane trybu demo zostały usunięte.", navigateToStart = true)
-        }
-    }
-
-    fun exportBackup(uri: Uri) {
-        viewModelScope.launch {
-            runCatching { backupRepository.exportToUri(uri) }
-                .onSuccess { summary ->
-                    _event.value = PrivacyActionEvent(
-                        "Kopia zapisana. Osoby LIVE: ${summary.livePersons}, odczyty LIVE: ${summary.liveReadings}, ustawienia pacjentow: ${summary.patientSettings}."
-                    )
-                }
-                .onFailure { throwable ->
-                    _event.value = PrivacyActionEvent("Nie udalo sie zapisac kopii: ${throwable.message.orEmpty()}")
-                }
-        }
-    }
-
-    fun restoreBackup(uri: Uri) {
-        viewModelScope.launch {
-            runCatching { backupRepository.restoreFromUri(uri) }
-                .onSuccess { summary ->
-                    _event.value = PrivacyActionEvent(
-                        "Przywrocono kopie. Osoby LIVE: ${summary.livePersons}, odczyty LIVE: ${summary.liveReadings}, ustawienia pacjentow: ${summary.patientSettings}.",
-                        navigateToStart = true
-                    )
-                }
-                .onFailure { throwable ->
-                    _event.value = PrivacyActionEvent("Nie udalo sie przywrocic kopii: ${throwable.message.orEmpty()}")
-                }
         }
     }
 

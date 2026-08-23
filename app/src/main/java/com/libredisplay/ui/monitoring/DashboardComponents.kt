@@ -57,28 +57,35 @@ fun CompactPersonSwitcherBar(
     isDemoMode: Boolean,
     modifier: Modifier = Modifier
 ) {
-    Row(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(8.dp)
-    ) {
-        VisiblePersonSwitcher(
-            persons = persons,
-            selectedPatientId = selectedPatientId,
-            recentPatientIds = recentPatientIds,
-            onPersonSelected = onPersonSelected,
-            modifier = Modifier.weight(1f)
+    Column(modifier = modifier.fillMaxWidth()) {
+        androidx.compose.material3.HorizontalDivider(
+            color = DashboardMutedText.copy(alpha = 0.2f),
+            thickness = 1.dp,
+            modifier = Modifier.fillMaxWidth()
         )
-        if (isDemoMode) {
-            Text(
-                text = "DEMO",
-                color = AccentWarning,
-                fontSize = 10.sp,
-                fontWeight = FontWeight.Bold,
-                modifier = Modifier.padding(end = 2.dp)
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        ) {
+            VisiblePersonSwitcher(
+                persons = persons,
+                selectedPatientId = selectedPatientId,
+                recentPatientIds = recentPatientIds,
+                onPersonSelected = onPersonSelected,
+                modifier = Modifier.weight(1f)
             )
+            if (isDemoMode) {
+                Text(
+                    text = "DEMO",
+                    color = AccentWarning,
+                    fontSize = 10.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(end = 2.dp)
+                )
+            }
         }
     }
 }

@@ -69,6 +69,9 @@ internal fun trendPresentation(
     targetHigh: Int
 ): TrendPresentation {
     val base = trendPresentation(trend)
+    val boundaryMargin = 10
+    val nearLowBoundary = glucoseValue in targetLow..(targetLow + boundaryMargin)
+    val nearHighBoundary = glucoseValue in (targetHigh - boundaryMargin)..targetHigh
     val context = when {
         glucoseValue < targetLow -> GlucoseContext.LOW
         glucoseValue > targetHigh -> GlucoseContext.HIGH
@@ -78,19 +81,23 @@ internal fun trendPresentation(
     val contextualColor = when (context) {
         GlucoseContext.HIGH -> when (trend) {
             GlucoseTrend.FALLING, GlucoseTrend.FALLING_FAST -> LibreCareColors.AccentGreen
-            GlucoseTrend.RISING -> LibreCareColors.AccentAmber
-            GlucoseTrend.RISING_FAST -> LibreCareColors.AccentRed
+            GlucoseTrend.RISING -> warningToneColor(WarningTone.WARNING)
+            GlucoseTrend.RISING_FAST -> warningToneColor(WarningTone.CRITICAL)
             GlucoseTrend.FLAT -> LibreCareColors.AccentAmber
             GlucoseTrend.UNKNOWN -> LibreCareColors.TextSecondary
         }
         GlucoseContext.LOW -> when (trend) {
-            GlucoseTrend.RISING, GlucoseTrend.RISING_FAST -> LibreCareColors.AccentGreen
-            GlucoseTrend.FALLING -> LibreCareColors.AccentRed
-            GlucoseTrend.FALLING_FAST -> LibreCareColors.AccentPurple
+            GlucoseTrend.RISING, GlucoseTrend.RISING_FAST -> LibreCareColors.AccentAmber
+            GlucoseTrend.FALLING -> warningToneColor(WarningTone.WARNING)
+            GlucoseTrend.FALLING_FAST -> warningToneColor(WarningTone.CRITICAL)
             GlucoseTrend.FLAT -> LibreCareColors.AccentAmber
             GlucoseTrend.UNKNOWN -> LibreCareColors.TextSecondary
         }
-        GlucoseContext.IN_RANGE -> base.color
+        GlucoseContext.IN_RANGE -> when {
+            nearLowBoundary && trend in setOf(GlucoseTrend.FALLING, GlucoseTrend.FALLING_FAST) -> warningToneColor(WarningTone.CAUTION)
+            nearHighBoundary && trend in setOf(GlucoseTrend.RISING, GlucoseTrend.RISING_FAST) -> warningToneColor(WarningTone.CAUTION)
+            else -> base.color
+        }
     }
 
     return base.copy(color = contextualColor)

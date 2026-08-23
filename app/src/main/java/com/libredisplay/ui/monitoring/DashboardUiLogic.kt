@@ -198,7 +198,7 @@ internal fun formatChartPointLabel(
     targetHigh: Int,
     zoneId: ZoneId
 ): ChartPointLabel {
-    val absoluteDateTime = PolishDateTimeFormatter.formatAbsolute(point.timestamp, zoneId)
+    val absoluteDateTime = PolishDateTimeFormatter.formatAbsoluteWithSeconds(point.timestamp, zoneId)
     return ChartPointLabel(
         dateTime = absoluteDateTime,
         valueText = glucoseValueAndUnitText(point.value),
