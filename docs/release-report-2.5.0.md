@@ -108,8 +108,9 @@ Polecenia:
 - `./gradlew assembleRelease` – PASS
 - `./gradlew bundleRelease` – PASS
 
-Testy instrumentalne: nie uruchamiano w tej sesji (`connectedDebugAndroidTest` nie był częścią
-przebiegu 2.5.0). Schemat bazy nie uległ zmianie, więc test migracji pozostaje aktualny.
+Testy instrumentalne: `./gradlew connectedDebugAndroidTest` – PASS na dwóch urządzeniach
+(`SM-S948B` – Android 16, `LibreCare_API35(AVD)` – Android 15). Schemat bazy nie uległ zmianie,
+więc test migracji Room pozostaje aktualny i przechodzi.
 
 ---
 
@@ -147,4 +148,5 @@ klasyfikacją nie są zmieniane, bo zmiana `applicationId` zerwałaby aktualizac
    obserwować czas zapisu.
 5. **Brak testów UI Compose** dla nowych dialogów — logika i treści są pokryte testami jednostkowymi,
    ale sam render nie jest testowany automatycznie.
+
 
