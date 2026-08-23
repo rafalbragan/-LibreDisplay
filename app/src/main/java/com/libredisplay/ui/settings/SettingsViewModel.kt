@@ -8,6 +8,7 @@ import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.HbA1cSettings
 import com.libredisplay.data.model.QuickMetricId
+import com.libredisplay.data.repository.SyncReason
 import com.libredisplay.diagnostics.DiagnosticLogger
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -161,6 +162,15 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
         }
     }
 
+    /**
+     * Login is a single, non-interactive flow:
+     *
+     *  1. the password is verified against LibreLinkUp,
+     *  2. only then the stored data file is merged into the live database,
+     *  3. the last 12 hours are downloaded immediately,
+     *  4. the refreshed data is written back into the automatic data file,
+     *  5. the Home screen opens - the user is never asked whether to "connect".
+     */
     fun saveAndLogin() {
         if (_isSaving.value) return
         val draft = _settings.value.copy(appMode = AppMode.LIVE)
@@ -173,8 +183,10 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 )
                 settingsRepository.saveQuickMetricsOrder(_quickMetricsOrder.value)
                 settingsRepository.saveQuickMetricsVisibility(_quickMetricsVisibility.value)
+                // Step 1 - verify the credentials before anything is restored.
                 authRepository.ensureAuthenticated(force = true)
             }.onSuccess {
+                prepareDataAfterVerifiedLogin()
                 reloadFromRepository()
                 _message.value = "Ustawienia zapisane"
             }.onFailure {
@@ -188,6 +200,34 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
                 _isSaving.value = false
             }
         }
+    }
+
+    private suspend fun prepareDataAfterVerifiedLogin() {
+        // Step 2 - merge the archive with whatever is already on the device.
+        runCatching { app.appDataBackupRepository.mergeAutomaticBackupAfterLogin() }
+            .onSuccess { result ->
+                result?.let {
+                    DiagnosticLogger.logInfo(
+                        "SettingsViewModel",
+                        "LOGIN MERGE persons=${it.summary.livePersons} readings=${it.summary.liveReadings}"
+                    )
+                }
+            }
+            .onFailure {
+                DiagnosticLogger.logWarning("SettingsViewModel", "LOGIN MERGE failed reason=${it.message}")
+            }
+
+        // Step 3 - immediately download the window LibreLinkUp reliably exposes.
+        runCatching { app.glucoseSyncRepository.syncAllPersons(SyncReason.LOGIN) }
+            .onFailure {
+                DiagnosticLogger.logWarning("SettingsViewModel", "LOGIN SYNC failed reason=${it.message}")
+            }
+
+        // Step 4 - the fresh readings belong in the automatic data file right away.
+        app.appDataBackupRepository.refreshAutomaticBackupQuietly()
+
+        // The user just logged in explicitly, so the startup data question is redundant.
+        settingsRepository.setRestorePromptAcknowledged(true)
     }
 
     fun resetSession() {

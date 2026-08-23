@@ -22,8 +22,12 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.fragment.app.FragmentActivity
+import com.libredisplay.auth.AppLockRepository
 import com.libredisplay.auth.BiometricAuthManager
 import com.libredisplay.auth.BiometricResult
+import com.libredisplay.auth.PasskeyManager
+import com.libredisplay.auth.PasskeyResult
+import com.libredisplay.auth.UnlockMethod
 import com.libredisplay.ui.theme.LibreCareColors
 import kotlinx.coroutines.launch
 
@@ -52,6 +56,26 @@ fun AppLockScreen(
         if (prompting) return
         prompting = true
         scope.launch {
+            val lockRepository = AppLockRepository(hostActivity)
+            if (lockRepository.method == UnlockMethod.PASSKEY && lockRepository.hasPasskey) {
+                when (val passkeyResult = PasskeyManager(hostActivity).verifyPasskey(lockRepository.passkeyId)) {
+                    PasskeyResult.Verified -> {
+                        onUnlocked()
+                        prompting = false
+                        return@launch
+                    }
+                    PasskeyResult.Cancelled -> {
+                        status = "Odblokowanie anulowane."
+                        prompting = false
+                        return@launch
+                    }
+                    // Fall back to the keyguard so the user is never locked out of their own data.
+                    is PasskeyResult.Unsupported -> status = passkeyResult.message
+                    is PasskeyResult.Error -> status = passkeyResult.message
+                    is PasskeyResult.Created -> Unit
+                }
+            }
+
             val manager = BiometricAuthManager(hostActivity)
             if (!manager.canAuthenticate()) {
                 // Never lock the user out of their own medical data.

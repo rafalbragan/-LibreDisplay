@@ -324,6 +324,122 @@ class AppDataBackupRepositoryTest {
         assertTrue(backupRepository.isLocalLiveDataEmpty())
     }
 
+    // ------------------------------------------------------------------ data offer
+
+    @Test
+    fun offer_isEmptyWhenNothingWasEverStored() = runBlocking {
+        val offer = backupRepository.loadAutomaticBackupOffer()
+
+        assertFalse(offer.exists)
+        assertFalse(offer.hasData)
+        assertTrue(offer.persons.isEmpty())
+    }
+
+    @Test
+    fun offer_listsPeoplePeriodAndExcludesDemoContent() = runBlocking {
+        backupRepository.createAutomaticBackup()
+
+        val offer = backupRepository.loadAutomaticBackupOffer()
+
+        assertTrue(offer.exists)
+        assertTrue(offer.hasData)
+        assertEquals(1, offer.persons.size)
+        val person = offer.persons.single()
+        assertEquals("real-person-a", person.patientId)
+        assertEquals("Real User", person.displayName)
+        assertEquals(1, person.readingsCount)
+        assertEquals(now, person.firstTimestamp)
+        assertEquals(now, person.lastTimestamp)
+        assertTrue(offer.settingsAvailable)
+    }
+
+    @Test
+    fun offer_reportsMissingPercentForSparseHistory() = runBlocking {
+        // Two readings one hour apart -> only 2 of the 13 expected 5-minute slots are present.
+        db.glucoseReadingDao().insertReplace(
+            listOf(
+                GlucoseReadingEntity(
+                    id = "real-person-a:sparse",
+                    patientId = "real-person-a",
+                    timestamp = now.minus(Duration.ofHours(1)),
+                    valueMgDl = 101,
+                    trendArrow = "->",
+                    trendLabel = "Stable",
+                    source = "LibreLinkUp",
+                    sourceAccountId = "acc-1",
+                    receivedAt = now,
+                    isValid = true,
+                    rawTrendCode = null,
+                    createdAt = now
+                )
+            )
+        )
+        backupRepository.createAutomaticBackup()
+
+        val person = backupRepository.loadAutomaticBackupOffer().persons.single()
+
+        assertEquals(2, person.readingsCount)
+        assertEquals(13, person.expectedReadings)
+        assertTrue("expected gaps, got ${person.missingPercent}%", person.hasGaps)
+        assertEquals(84, person.missingPercent)
+    }
+
+    @Test
+    fun offer_reportsCorruptedFileInsteadOfCrashing() = runBlocking {
+        backupRepository.createAutomaticBackup()
+        backupRepository.automaticBackupFile().writeText("{ this is not a backup", Charsets.UTF_8)
+
+        val offer = backupRepository.loadAutomaticBackupOffer()
+
+        assertTrue(offer.exists)
+        assertFalse(offer.hasData)
+        assertNotNull(offer.errorMessage)
+    }
+
+    // ------------------------------------------------------------------ login merge
+
+    @Test
+    fun loginMerge_addsArchiveDaysWithoutTouchingCredentials() = runBlocking {
+        tmpFile.writeText(buildArchiveWithExtraDays(), Charsets.UTF_8)
+        backupRepository.automaticBackupFile().parentFile?.mkdirs()
+        backupRepository.automaticBackupFile().writeText(buildArchiveWithExtraDays(), Charsets.UTF_8)
+        settingsRepository.saveSettings(settingsRepository.loadSettings().copy(email = "current@example.com"))
+
+        val result = backupRepository.mergeAutomaticBackupAfterLogin()
+
+        assertNotNull(result)
+        assertEquals(
+            4,
+            db.glucoseReadingDao().getAllLiveReadings().count { it.patientId == "real-person-a" }
+        )
+        assertEquals("current@example.com", settingsRepository.loadSettings().email)
+    }
+
+    @Test
+    fun loginMerge_keepsCurrentValuesWhenArchiveDisagrees() = runBlocking {
+        backupRepository.automaticBackupFile().parentFile?.mkdirs()
+        backupRepository.automaticBackupFile().writeText(buildArchiveWithConflict(200), Charsets.UTF_8)
+
+        backupRepository.mergeAutomaticBackupAfterLogin()
+
+        val stored = db.glucoseReadingDao().getAllLiveReadings()
+            .single { it.patientId == "real-person-a" && it.timestamp == now }
+        assertEquals(118, stored.valueMgDl)
+    }
+
+    @Test
+    fun loginMerge_returnsNullWhenThereIsNoArchive() = runBlocking {
+        assertNull(backupRepository.mergeAutomaticBackupAfterLogin())
+    }
+
+    @Test
+    fun refreshAutomaticBackupQuietly_writesTheFile() = runBlocking {
+        backupRepository.refreshAutomaticBackupQuietly()
+
+        assertTrue(backupRepository.automaticBackupFile().exists())
+        assertEquals(1, backupRepository.automaticBackupInfo().persons)
+    }
+
     // ------------------------------------------------------------------ helpers
 
     private fun buildArchiveWithExtraDays(): String {

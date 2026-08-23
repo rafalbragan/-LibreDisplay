@@ -13,6 +13,7 @@ import java.time.Instant
 
 enum class SyncReason {
     APP_START,
+    LOGIN,
     PERIODIC,
     MANUAL,
     PERSON_SWITCH,
@@ -40,12 +41,23 @@ class GlucoseSyncRepository(
     private val settingsProvider: () -> AppSettings,
     private val authRepository: AuthRepository,
     private val productionClient: RetrofitLibreLinkUpClient,
-    private val localRepository: LocalGlucoseHistoryRepository
+    private val localRepository: LocalGlucoseHistoryRepository,
+    /**
+     * Invoked after every sync that actually stored new readings, so the single automatic
+     * backup file immediately contains the fresh data.
+     */
+    private val onReadingsStored: suspend () -> Unit = {}
 ) {
 
     private companion object {
         val BACKFILL_WINDOW: java.time.Duration = java.time.Duration.ofHours(24)
+
+        /** Right after a verified login LibreLinkUp reliably exposes the last 12 hours. */
+        val LOGIN_BACKFILL_WINDOW: java.time.Duration = java.time.Duration.ofHours(12)
     }
+
+    private fun backfillWindowFor(reason: SyncReason): java.time.Duration =
+        if (reason == SyncReason.LOGIN) LOGIN_BACKFILL_WINDOW else BACKFILL_WINDOW
 
     private val syncMutex = Mutex()
 
@@ -93,7 +105,7 @@ class GlucoseSyncRepository(
                     try {
                         val reading = productionClient.getLatestReading(person.patientId) ?: continue
                         val now = Instant.now()
-                        val backfillFrom = now.minus(BACKFILL_WINDOW)
+                        val backfillFrom = now.minus(backfillWindowFor(reason))
                         val allPoints = mergeBackfillWindowPoints(reading, backfillFrom)
                         val summary = localRepository.insertReadings(
                             patientId = person.patientId,
@@ -151,6 +163,15 @@ class GlucoseSyncRepository(
                 httpStatus = httpStatus,
                 retryAfterSeconds = retryAfterSeconds
             ).also {
+                if (it.inserted > 0) {
+                    // Fresh readings must land in the automatic data file immediately.
+                    runCatching { onReadingsStored() }.onFailure { failure ->
+                        DiagnosticLogger.logWarning(
+                            "GlucoseSyncRepository",
+                            "BACKUP REFRESH after sync failed reason=${failure.message}"
+                        )
+                    }
+                }
                 DiagnosticLogger.logInfo(
                     "GlucoseSyncRepository",
                     "SYNC END inserted=${it.inserted} duplicates=${it.duplicates} status=${it.status.name}"

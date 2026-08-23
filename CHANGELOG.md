@@ -2,6 +2,57 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.5.0 - 2026-08-24
+
+### PL
+
+#### Added
+- Zamiast mylącego pytania „przywrócić kopię zapasową?” aplikacja proponuje wczytanie danych, które faktycznie ma, i wypisuje: kto, od kiedy do kiedy, ile dni i ile odczytów.
+- Dla każdej osoby pokazywana jest jakość okresu: „dane ciągłe” albo „z przerwami – brakuje ok. X% danych z całego okresu”.
+- Pytanie o dodatkowy plik pojawia się dopiero po wczytaniu (lub pominięciu) danych z urządzenia, a okno wyboru pliku otwiera się wyłącznie po wyraźnej zgodzie użytkownika.
+- Logowanie odciskiem palca wymaga teraz faktycznego potwierdzenia odciskiem – dopiero po udanej weryfikacji metoda odblokowania zostaje przełączona.
+- Możliwość utworzenia klucza dostępu (passkey) przez systemowego menedżera poświadczeń i odblokowania nim aplikacji, z bezpiecznym powrotem do odcisku palca / PIN-u.
+
+#### Changed
+- Logowanie jest jednym, bezobsługowym przepływem: sprawdzenie hasła → scalenie zapisanych danych → natychmiastowe pobranie ostatnich 12 godzin → dopisanie świeżych odczytów do pliku danych → ekran główny. Aplikacja nie pyta już, czy połączyć się z kontem LibreLinkUp.
+- Po wczytaniu archiwum zawierającego konfigurację aplikacja łączy się z LibreLinkUp samodzielnie i dopisuje wynik do podsumowania.
+- Każda synchronizacja, która zapisała nowe odczyty, natychmiast odświeża jeden automatyczny plik danych.
+- Scalanie po zalogowaniu jest nieniszczące: identyczne odczyty są scalane, nowe dopisywane, a bieżące wartości mają pierwszeństwo do czasu decyzji użytkownika.
+
+#### Fixed
+- Uszkodzony plik danych nie wywraca już startu aplikacji – użytkownik dostaje czytelny komunikat po polsku.
+- Pytanie o dane nie pojawia się po ręcznym zalogowaniu, bo dane zostały już scalone w trakcie logowania.
+
+#### Tests
+- `BackupCoverageCalculatorTest` – 6 testów pokrycia okresu, procentu braków i opisów po polsku.
+- `StartupRestoreFormatterTest` – 5 testów treści okna oferty i podsumowania rozbieżności.
+- `PasskeyRequestFactoryTest` – 7 testów kontraktu WebAuthn.
+- `AppDataBackupRepositoryTest` – 8 nowych testów oferty danych i scalania po zalogowaniu.
+- `./gradlew testDebugUnitTest` – PASS (402 testy, 0 błędów)
+- `./gradlew lint` – PASS
+- `./gradlew assembleDebug` / `assembleRelease` / `bundleRelease` – PASS
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.5.0-debug.apk` – 23 678 597 B
+- `release-artifacts/LibreCare-2.5.0-release.apk` – 3 490 239 B
+- `release-artifacts/LibreCare-2.5.0-release.aab` – 6 325 791 B (plik do Google Play)
+
+### EN
+
+#### Added
+- The startup question now offers the data LibreCare actually holds and lists who, from when to when, how many days and how many readings.
+- Per person quality is shown: continuous data or "with gaps - about X% of the period is missing".
+- The extra-file question is asked only after the stored data step, and the file picker opens only after an explicit yes.
+- Enabling fingerprint unlock now requires a real fingerprint check first.
+- Passkeys can be created through the system credential manager and used to unlock the app, with a safe fallback to fingerprint / PIN.
+
+#### Changed
+- Login is one non-interactive flow: verify password, merge stored data, download the last 12 hours, write the fresh readings back into the data file, open Home. The app no longer asks whether to connect to LibreLinkUp.
+- Every sync that stored new readings refreshes the single automatic data file immediately.
+
+#### Fixed
+- A corrupted data file no longer breaks startup; a clear Polish message is shown instead.
+
 ## 2.4.0 - 2026-08-23
 
 ### PL

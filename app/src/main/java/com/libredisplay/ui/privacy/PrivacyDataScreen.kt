@@ -40,6 +40,7 @@ import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -51,6 +52,7 @@ import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.data.backup.BackupMergeEngine
 import com.libredisplay.data.backup.ConflictResolution
+import kotlinx.coroutines.launch
 import java.time.Instant
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
@@ -381,27 +383,145 @@ fun PrivacyDataScreen(
 @Composable
 private fun AppLockSection() {
     val context = LocalContext.current
+    val activity = remember(context) { context as? androidx.fragment.app.FragmentActivity }
+    val scope = rememberCoroutineScope()
     val repository = remember(context) { com.libredisplay.auth.AppLockRepository(context) }
-    var enabled by remember { mutableStateOf(repository.isEnabled) }
+    val passkeyManager = remember(context) { com.libredisplay.auth.PasskeyManager(context) }
+
+    var method by remember { mutableStateOf(repository.method) }
+    var hasPasskey by remember { mutableStateOf(repository.hasPasskey) }
+    var status by remember { mutableStateOf(repository.describeStatus()) }
+    var busy by remember { mutableStateOf(false) }
+    var feedback by remember { mutableStateOf<String?>(null) }
     val capable = remember(repository) { repository.isDeviceCapable() }
 
-    Column(verticalArrangement = Arrangement.spacedBy(4.dp), modifier = Modifier.fillMaxWidth()) {
+    fun refresh() {
+        method = repository.method
+        hasPasskey = repository.hasPasskey
+        status = repository.describeStatus()
+    }
+
+    /** The fingerprint is verified FIRST; the method is switched only after a real success. */
+    fun enableBiometric() {
+        val host = activity ?: run {
+            feedback = "Nie można uruchomić weryfikacji na tym ekranie."
+            return
+        }
+        if (busy) return
+        busy = true
+        scope.launch {
+            val manager = com.libredisplay.auth.BiometricAuthManager(host)
+            if (!manager.canAuthenticate()) {
+                feedback = "Najpierw skonfiguruj odcisk palca lub blokadę ekranu w ustawieniach telefonu."
+                busy = false
+                return@launch
+            }
+            when (val result = manager.authenticate(
+                title = "Potwierdź odcisk palca",
+                subtitle = "Potwierdź, aby włączyć logowanie odciskiem palca"
+            )) {
+                com.libredisplay.auth.BiometricResult.Success -> {
+                    repository.enableBiometricUnlock()
+                    feedback = "Logowanie odciskiem palca zostało włączone."
+                }
+                com.libredisplay.auth.BiometricResult.Cancelled ->
+                    feedback = "Weryfikacja anulowana – nic nie zostało zmienione."
+                com.libredisplay.auth.BiometricResult.NotAvailable ->
+                    feedback = "To urządzenie nie obsługuje weryfikacji odciskiem palca."
+                com.libredisplay.auth.BiometricResult.LockedOut ->
+                    feedback = "Zbyt wiele prób. Spróbuj ponownie za chwilę."
+                is com.libredisplay.auth.BiometricResult.Error -> feedback = result.message
+            }
+            refresh()
+            busy = false
+        }
+    }
+
+    fun createPasskey() {
+        if (busy) return
+        busy = true
+        scope.launch {
+            val settings = (context.applicationContext as com.libredisplay.LibreDisplayApp)
+                .settingsRepository.loadSettings()
+            val userName = settings.email.ifBlank { "LibreCare" }
+            when (val result = passkeyManager.createPasskey(userId = userName, userName = userName)) {
+                is com.libredisplay.auth.PasskeyResult.Created -> {
+                    repository.enablePasskeyUnlock(result.credentialId)
+                    feedback = "Klucz dostępu został utworzony i będzie używany do odblokowania."
+                }
+                com.libredisplay.auth.PasskeyResult.Cancelled ->
+                    feedback = "Tworzenie klucza dostępu anulowane."
+                is com.libredisplay.auth.PasskeyResult.Unsupported -> feedback = result.message
+                is com.libredisplay.auth.PasskeyResult.Error -> feedback = result.message
+                com.libredisplay.auth.PasskeyResult.Verified -> Unit
+            }
+            refresh()
+            busy = false
+        }
+    }
+
+    Column(verticalArrangement = Arrangement.spacedBy(6.dp), modifier = Modifier.fillMaxWidth()) {
         Text("Blokada aplikacji", fontWeight = FontWeight.SemiBold, fontSize = 15.sp)
+
         Row(verticalAlignment = Alignment.CenterVertically) {
             Checkbox(
-                checked = enabled && capable,
-                enabled = capable,
-                onCheckedChange = {
-                    enabled = it
-                    repository.isEnabled = it
+                checked = method == com.libredisplay.auth.UnlockMethod.BIOMETRIC,
+                enabled = capable && !busy,
+                onCheckedChange = { checked ->
+                    if (checked) {
+                        enableBiometric()
+                    } else {
+                        repository.disable()
+                        feedback = "Blokada aplikacji została wyłączona."
+                        refresh()
+                    }
                 }
             )
-            Text(
-                "Wymagaj odcisku palca, PIN-u lub blokady ekranu przy uruchomieniu",
-                fontSize = 13.sp
-            )
+            Text("Odcisk palca, PIN lub blokada ekranu przy uruchomieniu", fontSize = 13.sp)
         }
-        Text(repository.describeStatus(), fontSize = 11.sp)
+
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Checkbox(
+                checked = method == com.libredisplay.auth.UnlockMethod.PASSKEY,
+                enabled = hasPasskey && !busy,
+                onCheckedChange = { checked ->
+                    if (checked && hasPasskey) {
+                        repository.enablePasskeyUnlock(repository.passkeyId)
+                        feedback = "Odblokowanie kluczem dostępu zostało włączone."
+                    } else {
+                        repository.disable()
+                        feedback = "Blokada aplikacji została wyłączona."
+                    }
+                    refresh()
+                }
+            )
+            Text("Klucz dostępu (passkey)", fontSize = 13.sp)
+        }
+
+        OutlinedButton(
+            onClick = { createPasskey() },
+            enabled = !busy,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Text(if (hasPasskey) "Utwórz nowy klucz dostępu" else "Utwórz klucz dostępu")
+        }
+
+        if (hasPasskey) {
+            OutlinedButton(
+                onClick = {
+                    repository.forgetPasskey()
+                    feedback = "Klucz dostępu został usunięty z aplikacji."
+                    refresh()
+                },
+                enabled = !busy,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Usuń klucz dostępu")
+            }
+        }
+
+        Text(status, fontSize = 11.sp)
+        feedback?.let { Text(it, fontSize = 12.sp) }
     }
 }
 

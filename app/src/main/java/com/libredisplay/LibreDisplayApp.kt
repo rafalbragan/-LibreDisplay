@@ -109,7 +109,13 @@ class LibreDisplayApp : Application() {
             settingsProvider = { settingsRepository.loadSettings() },
             authRepository = authRepository,
             productionClient = productionClient,
-            localRepository = localGlucoseHistoryRepository
+            localRepository = localGlucoseHistoryRepository,
+            onReadingsStored = {
+                // Keeps the single automatic data file in sync with every new reading.
+                if (::appDataBackupRepository.isInitialized) {
+                    appDataBackupRepository.refreshAutomaticBackupQuietly()
+                }
+            }
         )
 
         privacyRepository = PrivacyRepository(

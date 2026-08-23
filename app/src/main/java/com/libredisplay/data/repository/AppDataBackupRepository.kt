@@ -8,6 +8,7 @@ import com.libredisplay.BuildConfig
 import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.backup.BackupBundle
 import com.libredisplay.data.backup.BackupCodec
+import com.libredisplay.data.backup.BackupCoverageCalculator
 import com.libredisplay.data.backup.BackupFormatException
 import com.libredisplay.data.backup.BackupMergeEngine
 import com.libredisplay.data.backup.BackupPatientSettingsDto
@@ -18,6 +19,7 @@ import com.libredisplay.data.backup.BackupSettingsDto
 import com.libredisplay.data.backup.ConflictResolution
 import com.libredisplay.data.backup.LocalBackupStore
 import com.libredisplay.data.backup.LocalReadingKey
+import com.libredisplay.data.backup.PersonDataCoverage
 import com.libredisplay.data.backup.RestorePlan
 import com.libredisplay.data.local.GlucoseReadingDao
 import com.libredisplay.data.local.GlucoseReadingEntity
@@ -127,6 +129,32 @@ class AppDataBackupRepository(
         }
     }
 
+    /**
+     * Everything the user needs to decide whether the stored database should be loaded:
+     * who is inside, for which period and how complete that period is.
+     */
+    data class BackupOffer(
+        val exists: Boolean,
+        val createdAtIso: String?,
+        val appVersion: String?,
+        val persons: List<PersonDataCoverage>,
+        val settingsAvailable: Boolean,
+        val errorMessage: String? = null
+    ) {
+        val totalReadings: Int get() = persons.sumOf { it.readingsCount }
+        val hasData: Boolean get() = exists && persons.any { it.readingsCount > 0 }
+
+        companion object {
+            val EMPTY = BackupOffer(
+                exists = false,
+                createdAtIso = null,
+                appVersion = null,
+                persons = emptyList(),
+                settingsAvailable = false
+            )
+        }
+    }
+
     // ------------------------------------------------------------------ status
 
     suspend fun isLocalLiveDataEmpty(): Boolean {
@@ -150,7 +178,65 @@ class AppDataBackupRepository(
         )
     }
 
+    /**
+     * Describes the locally stored database so the user can be asked
+     * "czy wczytać dane, które mam?" instead of an abstract "przywrócić kopię?".
+     */
+    suspend fun loadAutomaticBackupOffer(): BackupOffer {
+        val content = store.read() ?: return BackupOffer.EMPTY
+        val bundle = runCatching { BackupCodec.decode(content) }.getOrElse { error ->
+            DiagnosticLogger.logWarning(
+                "AppDataBackupRepository",
+                "AUTO BACKUP OFFER decode failed reason=${error.message}"
+            )
+            return BackupOffer.EMPTY.copy(
+                exists = true,
+                errorMessage = "Zapisany plik danych jest uszkodzony i nie można go odczytać."
+            )
+        }
+        return bundle.withoutDemoContent().toOffer()
+    }
+
+    /** Same description, but for an external file the user picked. */
+    suspend fun loadOfferFromUri(uri: Uri, password: String? = null): BackupOffer {
+        val bundle = BackupCodec.decode(readFromUri(uri), password)
+        return bundle.withoutDemoContent().toOffer()
+    }
+
+    private fun BackupBundle.toOffer(): BackupOffer {
+        val readings = readingsByPatient
+        val names = persons.associate { it.patientId to it.displayName }
+        val patientIds = (persons.map { it.patientId } + readings.keys).distinct()
+        return BackupOffer(
+            exists = true,
+            createdAtIso = createdAtIso,
+            appVersion = appVersion,
+            persons = patientIds.map { patientId ->
+                BackupCoverageCalculator.forPerson(
+                    patientId = patientId,
+                    displayName = names[patientId] ?: patientId,
+                    timestamps = readings[patientId]
+                        .orEmpty()
+                        .mapNotNull { BackupMergeEngine.parseInstantOrNull(it.timestampIso) }
+                )
+            }.sortedByDescending { it.readingsCount },
+            settingsAvailable = settings != null
+        )
+    }
+
     // ------------------------------------------------------------------ create backup
+
+    /** Silently refreshes the single automatic backup file. Never throws. */
+    suspend fun refreshAutomaticBackupQuietly() {
+        runCatching { createAutomaticBackup(includeConfiguration = true) }
+            .onFailure {
+                DiagnosticLogger.logWarning(
+                    "AppDataBackupRepository",
+                    "AUTO BACKUP REFRESH FAILED reason=${it.message}"
+                )
+            }
+    }
+
 
     /**
      * Rebuilds the single automatic backup file from the currently visible (LIVE) data.
@@ -300,8 +386,41 @@ class AppDataBackupRepository(
         )
     }
 
-    private fun applyConfiguration(bundle: BackupBundle) {
-        bundle.settings?.let { settings ->
+    /** Applies everything the staged plan contains, for every person it mentions. */
+    suspend fun applyWholeStagedRestore(
+        staged: StagedRestore,
+        conflictResolution: ConflictResolution = ConflictResolution.KEEP_LOCAL,
+        restoreConfiguration: Boolean = true
+    ): RestoreResult = applyRestorePlan(
+        staged = staged,
+        selectedPatientIds = staged.plan.persons.map { it.patientId }.toSet(),
+        conflictResolution = conflictResolution,
+        restoreConfiguration = restoreConfiguration
+    )
+
+    /**
+     * Runs right after a verified LibreLinkUp login: the archive is merged into the live database
+     * without touching the freshly verified credentials and without asking anything, because
+     * identical readings simply merge. Returns null when there is nothing to merge.
+     */
+    suspend fun mergeAutomaticBackupAfterLogin(): RestoreResult? {
+        val staged = runCatching { stageAutomaticBackupRestore() }.getOrElse { error ->
+            DiagnosticLogger.logWarning(
+                "AppDataBackupRepository",
+                "LOGIN MERGE skipped reason=${error.message}"
+            )
+            return null
+        }
+        if (staged.plan.persons.none { it.hasAnythingToRestore }) return null
+        return applyWholeStagedRestore(
+            staged = staged,
+            // The device already holds verified data; differences are surfaced separately.
+            conflictResolution = ConflictResolution.KEEP_LOCAL,
+            restoreConfiguration = false
+        )
+    }
+
+    private fun applyConfiguration(bundle: BackupBundle) {        bundle.settings?.let { settings ->
             settingsRepository.saveSettings(settings.toAppSettings(settingsRepository.loadSettings()))
         }
         if (bundle.quickMetricOrder.isNotEmpty()) {

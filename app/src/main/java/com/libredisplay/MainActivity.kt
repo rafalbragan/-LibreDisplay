@@ -25,6 +25,7 @@ import com.libredisplay.data.model.AppMode
 import com.libredisplay.ui.monitoring.MonitoringScreen
 import com.libredisplay.ui.analytics.AnalyticsScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
+import com.libredisplay.ui.restore.StartupRestoreHost
 import com.libredisplay.ui.settings.AboutScreen
 import com.libredisplay.ui.settings.DiagnosticScreen
 import com.libredisplay.ui.settings.PollingFrequencyScreen
@@ -102,7 +103,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 val currentScreen = navigationState.current
                 var settingsFocusSection by remember { mutableStateOf(SettingsFocusSection.GENERAL) }
                 var showExitConfirmation by remember { mutableStateOf(false) }
-                var showRestoreAfterInstallPrompt by remember { mutableStateOf(false) }
+                var startupRestoreActive by remember { mutableStateOf(false) }
                 var autoOpenRestorePicker by remember { mutableStateOf(false) }
 
                 fun relaunchNavigation() {
@@ -147,35 +148,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     if (!isLive || !hasSession || alreadyAcknowledged) return@LaunchedEffect
                     val emptyLocal = app.appDataBackupRepository.isLocalLiveDataEmpty()
                     if (emptyLocal) {
-                        showRestoreAfterInstallPrompt = true
+                        app.settingsRepository.setRestorePromptAcknowledged(true)
+                        startupRestoreActive = true
                     }
                 }
 
-                if (showRestoreAfterInstallPrompt) {
-                    AlertDialog(
-                        onDismissRequest = {},
-                        title = { Text("Wykryto nową instalację") },
-                        text = { Text("Znaleziono nową instalację LibreCare. Czy chcesz przywrócić kopię danych i ustawień?") },
-                        confirmButton = {
-                            TextButton(onClick = {
-                                showRestoreAfterInstallPrompt = false
-                                app.settingsRepository.setRestorePromptAcknowledged(true)
-                                autoOpenRestorePicker = true
-                                navigateTo(AppScreen.PrivacyData)
-                            }) {
-                                Text("Przywróć kopię")
-                            }
-                        },
-                        dismissButton = {
-                            TextButton(onClick = {
-                                showRestoreAfterInstallPrompt = false
-                                app.settingsRepository.setRestorePromptAcknowledged(true)
-                            }) {
-                                Text("Pomiń")
-                            }
-                        }
-                    )
-                }
+                StartupRestoreHost(
+                    active = startupRestoreActive,
+                    onFinished = {
+                        startupRestoreActive = false
+                        refreshNonce += 1
+                    }
+                )
 
                 if (uiAuditInProgress && uiAuditProgressLabel != null) {
                     AlertDialog(
