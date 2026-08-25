@@ -2,6 +2,40 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.10.1 - 2026-08-25
+
+### PL
+
+#### Added
+- Ekran Analizy: dodano picker zakresu własnego `od-do` (dialog wyboru dat) i przeliczanie metryk dla wybranego zakresu.
+- Ekran Analizy: dodano dotykowe wskazanie punktu/słupka (tooltip tekstowy pod wykresem) dla wykresu tygodniowego i nakładki 14 dni.
+
+#### Changed
+- Eksport `.xlsx` korzysta teraz z aktualnie wybranego zakresu własnego (jeśli został ustawiony), zamiast zawsze eksportować cały zakres lokalnych danych.
+
+#### Fixed
+- Selektor zakresu na ekranie głównym pozostaje ręcznie przewijany i nie zmienia zakresu automatycznie podczas scrollowania; dodano test regresyjny zachowania.
+
+#### Tests
+- `DataAnalysisCustomRangeTest` — mapowanie zakresu z pickera dat na granice dobowe.
+- `HomeChartRangeSelectorBehaviorTest` — ręczne przewijanie bez automatycznej zmiany wyboru.
+
+### EN
+
+#### Added
+- Analysis screen: added custom `from-to` date range picker and metrics recomputation for the selected range.
+- Analysis screen: added tap-based selection feedback (text tooltip under charts) for weekly bars and 14-day overlay.
+
+#### Changed
+- `.xlsx` export now uses the currently selected custom range (when set), instead of always exporting the full local history.
+
+#### Fixed
+- Home range selector remains manually scrollable and does not auto-switch range during scrolling; regression behavior test added.
+
+#### Tests
+- `DataAnalysisCustomRangeTest` — picker range to day-boundary mapping.
+- `HomeChartRangeSelectorBehaviorTest` — manual scroll without implicit selection change.
+
 ## 2.10.0 - 2026-08-25
 
 ### PL

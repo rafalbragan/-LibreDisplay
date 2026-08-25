@@ -6,6 +6,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -21,6 +22,10 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.Button
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -28,14 +33,20 @@ import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.rememberDateRangePickerState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -46,10 +57,14 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.analytics.FourteenDayOverlay
 import com.libredisplay.analytics.PeriodMetrics
 import com.libredisplay.analytics.WeeklyRangeBar
+import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
 import com.libredisplay.ui.monitoring.CompactPersonSwitcherBar
 import com.libredisplay.ui.monitoring.DashboardNavItem
 import com.libredisplay.ui.monitoring.TopLevelNavigationBar
 import com.libredisplay.ui.theme.LibreCareColors
+import java.time.Duration
+import java.time.Instant
+import java.time.ZoneOffset
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -63,6 +78,9 @@ fun DataAnalysisScreen(
     val context = LocalContext.current
     val state by viewModel.uiState.collectAsState()
     val exportEvent by viewModel.exportEvent.collectAsState()
+    var showRangeDialog by remember { mutableStateOf(false) }
+    var selectedBarIndex by remember { mutableIntStateOf(-1) }
+    var selectedMinute by remember { mutableIntStateOf(-1) }
 
     LaunchedEffect(exportEvent) {
         val event = exportEvent ?: return@LaunchedEffect
@@ -133,6 +151,13 @@ fun DataAnalysisScreen(
                 fontSize = 12.sp
             )
 
+            OutlinedButton(
+                modifier = Modifier.fillMaxWidth(),
+                onClick = { showRangeDialog = true }
+            ) {
+                Text("Ustaw zakres własny (od-do)")
+            }
+
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
                     label = "Cały dzień",
@@ -147,10 +172,33 @@ fun DataAnalysisScreen(
             }
 
             Text("Tygodniowy rozkład zakresów", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            WeeklyStackedChart(state.weeklyBars)
+            WeeklyStackedChart(
+                bars = state.weeklyBars,
+                selectedIndex = selectedBarIndex,
+                onBarSelected = { selectedBarIndex = it }
+            )
+            state.weeklyBars.getOrNull(selectedBarIndex)?.let { bar ->
+                Text(
+                    text = "Wybrany dzień: ${bar.date} • ep. niskie: ${bar.veryLowEpisodes}, ep. wysokie: ${bar.veryHighEpisodes}",
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
 
             Text("Nakładka 14 dni", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            FourteenDayOverlayChart(state.overlay14Days)
+            FourteenDayOverlayChart(
+                overlay = state.overlay14Days,
+                selectedMinute = selectedMinute,
+                onMinuteSelected = { selectedMinute = it }
+            )
+            state.overlay14Days.averageLine.firstOrNull { it.minuteOfDay == selectedMinute }?.let { point ->
+                val time = String.format("%02d:%02d", point.minuteOfDay / 60, point.minuteOfDay % 60)
+                Text(
+                    text = "Średnia o $time: ${"%.0f".format(point.averageMgDl)} mg/dL (próbki: ${point.sampleCount})",
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 11.sp
+                )
+            }
 
             MetricsTable(metricsByPeriod = state.metricsByPeriod)
 
@@ -163,6 +211,53 @@ fun DataAnalysisScreen(
 
             state.infoMessage?.let {
                 Text(it, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+            }
+        }
+
+        if (showRangeDialog) {
+            val startUtc = state.customStart
+                ?.atZone(ZoneOffset.UTC)
+                ?.toLocalDate()
+                ?.atStartOfDay(ZoneOffset.UTC)
+                ?.toInstant()
+                ?.toEpochMilli()
+            val endUtc = state.customEnd
+                ?.atZone(ZoneOffset.UTC)
+                ?.toLocalDate()
+                ?.atStartOfDay(ZoneOffset.UTC)
+                ?.toInstant()
+                ?.toEpochMilli()
+
+            val dateRangeState = rememberDateRangePickerState(
+                initialSelectedStartDateMillis = startUtc,
+                initialSelectedEndDateMillis = endUtc
+            )
+            DatePickerDialog(
+                onDismissRequest = { showRangeDialog = false },
+                confirmButton = {
+                    Button(onClick = {
+                        val start = dateRangeState.selectedStartDateMillis
+                        val end = dateRangeState.selectedEndDateMillis
+                        if (start != null && end != null) {
+                            viewModel.onCustomRangeSelected(PickerUtcDateRange(start, end))
+                            showRangeDialog = false
+                        }
+                    }) {
+                        Text("Zastosuj")
+                    }
+                },
+                dismissButton = {
+                    OutlinedButton(onClick = { showRangeDialog = false }) {
+                        Text("Anuluj")
+                    }
+                },
+                colors = DatePickerDefaults.colors()
+            ) {
+                DateRangePicker(
+                    state = dateRangeState,
+                    title = { Text("Wybierz zakres własny") },
+                    showModeToggle = false
+                )
             }
         }
     }
@@ -185,7 +280,11 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun WeeklyStackedChart(bars: List<WeeklyRangeBar>) {
+private fun WeeklyStackedChart(
+    bars: List<WeeklyRangeBar>,
+    selectedIndex: Int,
+    onBarSelected: (Int) -> Unit
+) {
     val safeBars = if (bars.isEmpty()) List(7) { null } else bars.map { it }
     Canvas(
         modifier = Modifier
@@ -193,6 +292,14 @@ private fun WeeklyStackedChart(bars: List<WeeklyRangeBar>) {
             .height(140.dp)
             .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(8.dp)
+            .pointerInput(safeBars.size) {
+                detectTapGestures { offset ->
+                    if (safeBars.isEmpty()) return@detectTapGestures
+                    val slotWidth = size.width / safeBars.size.toFloat()
+                    val index = (offset.x / slotWidth).toInt().coerceIn(0, safeBars.lastIndex)
+                    onBarSelected(index)
+                }
+            }
     ) {
         if (safeBars.isEmpty()) return@Canvas
         val slotWidth = size.width / safeBars.size
@@ -229,18 +336,38 @@ private fun WeeklyStackedChart(bars: List<WeeklyRangeBar>) {
                     size = androidx.compose.ui.geometry.Size(barWidth, 1f)
                 )
             }
+            if (index == selectedIndex) {
+                drawRect(
+                    color = LibreCareColors.TextPrimary.copy(alpha = 0.35f),
+                    topLeft = Offset(x - 2f, 0f),
+                    size = androidx.compose.ui.geometry.Size(barWidth + 4f, size.height),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
+                )
+            }
         }
     }
 }
 
 @Composable
-private fun FourteenDayOverlayChart(overlay: FourteenDayOverlay) {
+private fun FourteenDayOverlayChart(
+    overlay: FourteenDayOverlay,
+    selectedMinute: Int,
+    onMinuteSelected: (Int) -> Unit
+) {
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
             .height(180.dp)
             .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(8.dp)
+            .pointerInput(overlay.averageLine.size) {
+                detectTapGestures { offset ->
+                    if (overlay.averageLine.isEmpty()) return@detectTapGestures
+                    val minute = ((offset.x / size.width) * 1439f).toInt().coerceIn(0, 1439)
+                    val nearest = overlay.averageLine.minByOrNull { kotlin.math.abs(it.minuteOfDay - minute) }
+                    if (nearest != null) onMinuteSelected(nearest.minuteOfDay)
+                }
+            }
     ) {
         val dayColor = LibreCareColors.TextSecondary.copy(alpha = 0.3f)
         val avgColor = LibreCareColors.AccentTeal
@@ -271,6 +398,16 @@ private fun FourteenDayOverlayChart(overlay: FourteenDayOverlay) {
                 if (index == 0) avgPath.moveTo(x, y) else avgPath.lineTo(x, y)
             }
             drawPath(path = avgPath, color = avgColor)
+        }
+
+        if (selectedMinute in 0..1439) {
+            val x = (selectedMinute / 1439f) * size.width
+            drawLine(
+                color = LibreCareColors.TextPrimary.copy(alpha = 0.4f),
+                start = Offset(x, 0f),
+                end = Offset(x, size.height),
+                strokeWidth = 2f
+            )
         }
     }
 }

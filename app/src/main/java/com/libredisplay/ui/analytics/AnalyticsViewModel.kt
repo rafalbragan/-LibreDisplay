@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneOffset
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.temporal.ChronoUnit
@@ -28,6 +29,19 @@ data class DataAnalysisExportEvent(
     val filePath: String,
     val message: String
 )
+
+data class PickerUtcDateRange(
+    val startUtcMillis: Long,
+    val endUtcMillis: Long
+)
+
+internal fun pickerRangeToInstants(range: PickerUtcDateRange, zoneId: ZoneId): Pair<Instant, Instant> {
+    val startDate = Instant.ofEpochMilli(range.startUtcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+    val endDate = Instant.ofEpochMilli(range.endUtcMillis).atZone(ZoneOffset.UTC).toLocalDate()
+    val start = startDate.atStartOfDay(zoneId).toInstant()
+    val end = endDate.plusDays(1).atStartOfDay(zoneId).toInstant().minusSeconds(1)
+    return start to end
+}
 
 enum class AnalysisPeriod(val label: String, val duration: Duration?) {
     H1("1g", Duration.ofHours(1)),
@@ -128,6 +142,24 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         recalculate()
     }
 
+    fun onCustomRangeSelected(range: PickerUtcDateRange) {
+        val zone = ZoneId.systemDefault()
+        val (start, end) = pickerRangeToInstants(range, zone)
+        if (end.isBefore(start)) {
+            _uiState.update { it.copy(infoMessage = "Nieprawidłowy zakres dat.") }
+            return
+        }
+        _uiState.update {
+            it.copy(
+                customStart = start,
+                customEnd = end,
+                customRangeLabel = "Zakres własny: ${PolishDateTimeFormatter.formatRangeLabel(start, end).removePrefix("Zakres: ")}",
+                infoMessage = null
+            )
+        }
+        recalculate()
+    }
+
     fun exportRawDataToExcel() {
         viewModelScope.launch {
             val state = _uiState.value
@@ -141,7 +173,11 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             runCatching {
                 val range = localRepository.loadStoredRange(patientId)
                     ?: error("Brak danych do eksportu.")
-                val readings = localRepository.loadHistory(patientId, range.oldest, range.newest)
+                val customStart = state.customStart
+                val customEnd = state.customEnd
+                val from = customStart ?: range.oldest
+                val to = customEnd ?: range.newest
+                val readings = localRepository.loadHistory(patientId, from, to)
                 if (readings.isEmpty()) error("Brak danych do eksportu.")
 
                 val personName = state.selectedPersonName ?: patientId
