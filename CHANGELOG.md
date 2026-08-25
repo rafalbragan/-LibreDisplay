@@ -2,6 +2,36 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.9.1 - 2026-08-25
+
+### PL
+
+#### Changed
+- Drag&drop metryk na ekranie głównym: **sąsiedni kafelek płynnie „ucieka" w nowe miejsce** podczas przenoszenia (strip przełączony na `LazyRow` + `animateItem`); przeciągany kafelek nadal ma animację uniesienia.
+
+#### Tests
+- `MonitoringResponsiveUiTest` — dostosowany do `LazyRow` (przewija do każdej wartości i sprawdza pełny, nieucinany tekst przez `performScrollToNode`).
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.9.1-debug.apk`
+- `release-artifacts/LibreCare-2.9.1-release.apk`
+- `release-artifacts/LibreCare-2.9.1-release.aab` (plik do Google Play)
+
+### EN
+
+#### Changed
+- Home-screen metrics drag & drop: the **displaced neighbour now slides smoothly into place** while dragging (strip switched to `LazyRow` + `animateItem`); the dragged tile keeps its lift animation.
+
+#### Tests
+- `MonitoringResponsiveUiTest` — adapted to `LazyRow` (scrolls to each value and checks full, untruncated text via `performScrollToNode`).
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.9.1-debug.apk`
+- `release-artifacts/LibreCare-2.9.1-release.apk`
+- `release-artifacts/LibreCare-2.9.1-release.aab` (Google Play upload file)
+
 ## 2.9.0 - 2026-08-25
 
 ### PL

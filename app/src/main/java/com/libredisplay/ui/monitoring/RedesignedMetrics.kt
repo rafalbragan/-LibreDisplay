@@ -198,9 +198,9 @@ internal fun ImprovedQuickMetricsPanel(
     val visibleOrder = orderedIds.filter { it in homeMetricIds && tileById.containsKey(it) && (visibility[it] ?: true) }
     var orderedVisibleIds by remember(visibleOrder) { mutableStateOf(visibleOrder.ifEmpty { homeMetricIds.filter { tileById.containsKey(it) && (visibility[it] ?: true) } }) }
     val orderedTiles = orderedVisibleIds.mapNotNull { tileById[it] }
-    val scrollState = rememberScrollState()
-    val canScrollRight = scrollState.value < scrollState.maxValue
-    val canScrollLeft = scrollState.value > 0
+    val listState = rememberLazyListState()
+    val canScrollRight = listState.canScrollForward
+    val canScrollLeft = listState.canScrollBackward
     var draggingId by remember { mutableStateOf<QuickMetricId?>(null) }
     var dragDx by remember { mutableFloatStateOf(0f) }
 
@@ -256,79 +256,70 @@ internal fun ImprovedQuickMetricsPanel(
                 fontSize = 13.sp
             )
         } else {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
+            // Long-press lifts the tile (scale + shadow, pops out slightly); dragging past a
+            // threshold reorders, and the displaced neighbour slides into place via animateItem().
+            LazyRow(
+                state = listState,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .testTag(LibreCareTestTags.METRICS_STRIP),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                if (canScrollLeft) {
-                    Text("‹", color = LibreCareColors.TextSecondary, fontSize = 18.sp)
-                }
-                Row(
-                    modifier = Modifier
-                        .weight(1f)
-                        .horizontalScroll(scrollState),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp)
-                ) {
-                    // Long-press lifts the tile (scale + shadow, pops out slightly); dragging past a
-                    // threshold reorders. All tiles stay composed for accessibility.
-                    orderedVisibleIds.forEach { id ->
-                        val tile = tileById[id] ?: return@forEach
-                        val lifted = draggingId == id
-                        QuickMetricTile(
-                            tile = tile,
-                            reorderMode = true,
-                            isDragging = lifted,
-                            modifier = Modifier
-                                .zIndex(if (lifted) 1f else 0f)
-                                .graphicsLayer {
-                                    if (lifted) {
-                                        translationX = dragDx
-                                        translationY = -10f
-                                        scaleX = 1.06f
-                                        scaleY = 1.06f
-                                        shadowElevation = 12f
-                                        alpha = 0.96f
-                                    }
+                items(orderedVisibleIds, key = { it }) { id ->
+                    val tile = tileById[id] ?: return@items
+                    val lifted = draggingId == id
+                    QuickMetricTile(
+                        tile = tile,
+                        reorderMode = true,
+                        isDragging = lifted,
+                        modifier = Modifier
+                            .animateItem()
+                            .zIndex(if (lifted) 1f else 0f)
+                            .graphicsLayer {
+                                if (lifted) {
+                                    translationX = dragDx
+                                    translationY = -10f
+                                    scaleX = 1.06f
+                                    scaleY = 1.06f
+                                    shadowElevation = 12f
+                                    alpha = 0.96f
                                 }
-                                .widthIn(min = 96.dp)
-                                .width(112.dp)
-                                .pointerInput(orderedVisibleIds) {
-                                    detectDragGesturesAfterLongPress(
-                                        onDragStart = { draggingId = id; dragDx = 0f },
-                                        onDragEnd = { draggingId = null; dragDx = 0f },
-                                        onDragCancel = { draggingId = null; dragDx = 0f }
-                                    ) { change, dragAmount ->
-                                        change.consume()
-                                        dragDx += dragAmount.x
-                                        val threshold = 60f
-                                        val currentIndex = orderedVisibleIds.indexOf(id)
-                                        when {
-                                            dragDx > threshold && currentIndex < orderedVisibleIds.lastIndex -> {
-                                                val updated = orderedVisibleIds.toMutableList().also {
-                                                    it.add(currentIndex + 1, it.removeAt(currentIndex))
-                                                }
-                                                orderedVisibleIds = updated
-                                                val hidden = orderedIds.filterNot { it in updated }
-                                                onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
-                                                dragDx -= threshold
+                            }
+                            .widthIn(min = 96.dp)
+                            .width(112.dp)
+                            .pointerInput(orderedVisibleIds) {
+                                detectDragGesturesAfterLongPress(
+                                    onDragStart = { draggingId = id; dragDx = 0f },
+                                    onDragEnd = { draggingId = null; dragDx = 0f },
+                                    onDragCancel = { draggingId = null; dragDx = 0f }
+                                ) { change, dragAmount ->
+                                    change.consume()
+                                    dragDx += dragAmount.x
+                                    val threshold = 60f
+                                    val currentIndex = orderedVisibleIds.indexOf(id)
+                                    when {
+                                        dragDx > threshold && currentIndex < orderedVisibleIds.lastIndex -> {
+                                            val updated = orderedVisibleIds.toMutableList().also {
+                                                it.add(currentIndex + 1, it.removeAt(currentIndex))
                                             }
-                                            dragDx < -threshold && currentIndex > 0 -> {
-                                                val updated = orderedVisibleIds.toMutableList().also {
-                                                    it.add(currentIndex - 1, it.removeAt(currentIndex))
-                                                }
-                                                orderedVisibleIds = updated
-                                                val hidden = orderedIds.filterNot { it in updated }
-                                                onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
-                                                dragDx += threshold
+                                            orderedVisibleIds = updated
+                                            val hidden = orderedIds.filterNot { it in updated }
+                                            onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
+                                            dragDx -= threshold
+                                        }
+                                        dragDx < -threshold && currentIndex > 0 -> {
+                                            val updated = orderedVisibleIds.toMutableList().also {
+                                                it.add(currentIndex - 1, it.removeAt(currentIndex))
                                             }
+                                            orderedVisibleIds = updated
+                                            val hidden = orderedIds.filterNot { it in updated }
+                                            onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
+                                            dragDx += threshold
                                         }
                                     }
                                 }
-                        )
-                    }
-                }
-                if (canScrollRight) {
-                    Text("›", color = LibreCareColors.AccentGreen, fontSize = 18.sp)
+                            }
+                    )
                 }
             }
         }

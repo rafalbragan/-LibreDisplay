@@ -14,6 +14,7 @@ internal object LibreCareTestTags {
     const val TOP_BAR_UI_AUDIT = "topBar.uiAudit"
     const val METRICS_HEADER = "home.metrics.header"
     const val METRICS_EDIT = "home.metrics.edit"
+    const val METRICS_STRIP = "home.metrics.strip"
     const val HOME_CHART_SELECTED_LABEL = "home.chart.selectedLabel"
     const val HOME_CHART_NAVIGATOR = "home.chart.navigator"
 

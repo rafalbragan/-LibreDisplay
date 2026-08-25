@@ -7,9 +7,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
+import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.unit.Density
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
@@ -128,9 +130,11 @@ class MonitoringResponsiveUiTest {
             )
         }
 
-        // The complete text is present in the semantics tree even when horizontally/vertically
-        // scrolled out of the current viewport; assertTextEquals confirms the full, untruncated string.
+        // The metrics strip is a LazyRow, so scroll each value into view before asserting its full,
+        // untruncated text (assertTextEquals confirms no ellipsis).
         listOf("0m", "59m", "23g 59m", "1%", "99%", "100%", "Za mało danych do dokładnej estymacji").forEach { text ->
+            composeRule.onNodeWithTag(LibreCareTestTags.METRICS_STRIP)
+                .performScrollToNode(hasText(text))
             composeRule.onNodeWithText(text, substring = false).assertTextEquals(text)
         }
     }
