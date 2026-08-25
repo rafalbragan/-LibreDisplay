@@ -23,7 +23,7 @@ import com.libredisplay.diagnostics.UiAuditExporter
 import com.libredisplay.diagnostics.UiAuditStep
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.ui.monitoring.MonitoringScreen
-import com.libredisplay.ui.analytics.AnalyticsScreen
+import com.libredisplay.ui.analytics.DataAnalysisScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
 import com.libredisplay.ui.restore.StartupRestoreHost
 import com.libredisplay.ui.settings.AboutScreen
@@ -350,7 +350,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
 
                     AppScreen.Analytics -> {
                         BackHandler { navigateBack() }
-                        AnalyticsScreen(
+                        DataAnalysisScreen(
                             showBackButton = navigationState.stack.size > 2,
                             onNavigateBack = { navigateBack() },
                             onOpenHome = { navigateTo(AppScreen.Monitoring) },

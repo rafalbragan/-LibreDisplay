@@ -17,6 +17,7 @@ internal object LibreCareTestTags {
     const val METRICS_STRIP = "home.metrics.strip"
     const val HOME_CHART_SELECTED_LABEL = "home.chart.selectedLabel"
     const val HOME_CHART_NAVIGATOR = "home.chart.navigator"
+    const val HOME_CHART_RANGE_SELECTOR = "home.chart.rangeSelector"
 
     internal fun bottomNav(item: DashboardNavItem): String = "bottomNav.${item.name.lowercase()}"
 

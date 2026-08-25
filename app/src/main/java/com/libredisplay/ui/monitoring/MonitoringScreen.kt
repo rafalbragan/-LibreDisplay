@@ -1291,19 +1291,6 @@ internal fun HomeChartRangeSelector(
     val canScrollRight = scrollState.value < scrollState.maxValue
     val canScrollLeft = scrollState.value > 0
 
-    // Stable (scroll-independent) right edge of the currently selected chip and the viewport width,
-    // used to auto-scroll the selected chip to the right when the list overflows the screen.
-    var selectedRightPx by remember { mutableStateOf(0) }
-    var viewportWidthPx by remember { mutableStateOf(0) }
-
-    // When the scale list is scrollable, keep the highlighted chip aligned to the right edge (so the
-    // largest available range stays in view). When it already fits on screen, do nothing.
-    LaunchedEffect(selectedRange, scrollState.maxValue, viewportWidthPx, selectedRightPx) {
-        if (scrollState.maxValue <= 0 || viewportWidthPx <= 0 || selectedRightPx <= 0) return@LaunchedEffect
-        val target = (selectedRightPx - viewportWidthPx).coerceIn(0, scrollState.maxValue)
-        scrollState.animateScrollTo(target)
-    }
-
     Row(
         modifier = Modifier.fillMaxWidth(),
         verticalAlignment = Alignment.CenterVertically
@@ -1314,8 +1301,8 @@ internal fun HomeChartRangeSelector(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(scrollState)
-                .onSizeChanged { viewportWidthPx = it.width },
+                .testTag(LibreCareTestTags.HOME_CHART_RANGE_SELECTOR)
+                .horizontalScroll(scrollState),
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             options.forEach { option ->
@@ -1328,18 +1315,6 @@ internal fun HomeChartRangeSelector(
                         .testTag(LibreCareTestTags.rangeChip(range))
                         .widthIn(min = 52.dp)
                         .heightIn(min = 48.dp)
-                        .then(
-                            if (isSelected) {
-                                Modifier.onGloballyPositioned { coords ->
-                                    // boundsInParent() is scroll-dependent; add the current scroll to
-                                    // recover a stable content offset that does not move while scrolling.
-                                    val stableRight = coords.boundsInParent().right + scrollState.value
-                                    selectedRightPx = stableRight.roundToInt()
-                                }
-                            } else {
-                                Modifier
-                            }
-                        )
                         .semantics {
                             contentDescription = if (option.enabled) {
                                 range.accessibilityLabel

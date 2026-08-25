@@ -6,5 +6,8 @@
     <files-path
         name="librecare_backup"
         path="backup/" />
+    <files-path
+        name="librecare_exports"
+        path="exports/" />
 </paths>
 

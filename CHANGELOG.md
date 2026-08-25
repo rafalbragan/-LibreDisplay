@@ -2,6 +2,56 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.10.0 - 2026-08-25
+
+### PL
+
+#### Added
+- Nowy ekran `Analiza danych` z tabelą metryk dla okresów `1g / 3g / 6g / 24g / 7d / 30d / Własny` (TIR, poniżej/powyżej, średnia, CV, GMI, min/max, epizody, aktywność sensora).
+- Wykres tygodniowy stacked (poniżej / w zakresie / powyżej) oraz nakładka 14 dni (linie dzienne + średnia minutowa).
+- Eksport surowych danych do Excela (`.xlsx`) z arkuszami `Dane surowe` i `Podsumowanie`, z możliwością udostępnienia pliku.
+
+#### Changed
+- Selektor zakresu wykresu Home (`1g`, `3g`, `...`) działa teraz w pełni manualnie: można go przewijać bez auto-przeskoków, a samo przewijanie nie zmienia automatycznie wybranego zakresu.
+
+#### Fixed
+- Poprawiono problem "uciekających" klocków zakresu w wąskich szerokościach i orientacji poziomej; większe zakresy są dostępne po ręcznym przewinięciu.
+
+#### Tests
+- `AnalysisMetricsFactoryTest` — metryki okresowe i epizody.
+- `AnalysisChartFactoryTest` — tygodniowe słupki i nakładka 14 dni.
+- `RawDataExcelExporterTest` — generowanie pliku `.xlsx` i struktury arkuszy.
+- `HomeChartRangeSelectorBehaviorTest` — przewijanie selektora zakresu bez samoczynnej zmiany wyboru.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.10.0-debug.apk`
+- `release-artifacts/LibreCare-2.10.0-release.apk`
+- `release-artifacts/LibreCare-2.10.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Added
+- New `Data analysis` screen with a metrics table for `1h / 3h / 6h / 24h / 7d / 30d / Custom` periods (TIR, below/above, average, CV, GMI, min/max, episodes, sensor activity).
+- Weekly stacked range chart (below / in range / above) and 14-day overlay (daily lines + minute average).
+- Raw data export to Excel (`.xlsx`) with `Dane surowe` and `Podsumowanie` sheets, including file sharing.
+
+#### Changed
+- The Home chart range selector (`1h`, `3h`, `...`) is now fully manual: users can scroll it without auto-jumps, and scrolling no longer auto-changes the selected range.
+
+#### Fixed
+- Fixed the "escaping" range chips issue on narrow widths and landscape; larger ranges are reachable via manual scrolling.
+
+#### Tests
+- `AnalysisMetricsFactoryTest` — period metrics and episodes.
+- `AnalysisChartFactoryTest` — weekly stacked bars and 14-day overlay.
+- `RawDataExcelExporterTest` — `.xlsx` generation and sheet structure.
+- `HomeChartRangeSelectorBehaviorTest` — range selector scrolling without implicit selection change.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.10.0-debug.apk`
+- `release-artifacts/LibreCare-2.10.0-release.apk`
+- `release-artifacts/LibreCare-2.10.0-release.aab` (Google Play upload file)
+
 ## 2.9.1 - 2026-08-25
 
 ### PL
