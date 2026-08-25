@@ -1,31 +1,34 @@
 package com.libredisplay.ui.analytics
 
 import android.content.Intent
+import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.DatePickerDefaults
-import androidx.compose.material3.DateRangePicker
-import androidx.compose.material3.DatePickerDialog
 import androidx.compose.material3.Button
+import androidx.compose.material3.DatePickerDefaults
+import androidx.compose.material3.DatePickerDialog
+import androidx.compose.material3.DateRangePicker
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -38,33 +41,40 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.libredisplay.analytics.BarChartMode
+import com.libredisplay.analytics.BarChartWindow
 import com.libredisplay.analytics.FourteenDayOverlay
 import com.libredisplay.analytics.PeriodMetrics
-import com.libredisplay.analytics.WeeklyRangeBar
-import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
+import com.libredisplay.analytics.RangeBar
 import com.libredisplay.ui.monitoring.CompactPersonSwitcherBar
 import com.libredisplay.ui.monitoring.DashboardNavItem
 import com.libredisplay.ui.monitoring.TopLevelNavigationBar
 import com.libredisplay.ui.theme.LibreCareColors
-import java.time.Duration
-import java.time.Instant
 import java.time.ZoneOffset
+import kotlin.math.roundToInt
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -79,18 +89,12 @@ fun DataAnalysisScreen(
     val state by viewModel.uiState.collectAsState()
     val exportEvent by viewModel.exportEvent.collectAsState()
     var showRangeDialog by remember { mutableStateOf(false) }
-    var selectedBarIndex by remember { mutableIntStateOf(-1) }
-    var selectedMinute by remember { mutableIntStateOf(-1) }
 
     LaunchedEffect(exportEvent) {
         val event = exportEvent ?: return@LaunchedEffect
         runCatching {
             val file = java.io.File(event.filePath)
-            val uri = FileProvider.getUriForFile(
-                context,
-                "${context.packageName}.fileprovider",
-                file
-            )
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
             val share = Intent(Intent.ACTION_SEND).apply {
                 type = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
                 putExtra(Intent.EXTRA_STREAM, uri)
@@ -132,7 +136,7 @@ fun DataAnalysisScreen(
                 .padding(padding)
                 .padding(horizontal = 16.dp, vertical = 8.dp)
                 .verticalScroll(rememberScrollState()),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
+            verticalArrangement = Arrangement.spacedBy(10.dp)
         ) {
             CompactPersonSwitcherBar(
                 persons = state.persons,
@@ -145,89 +149,95 @@ fun DataAnalysisScreen(
 
             HorizontalDivider(color = LibreCareColors.Surface)
 
-            Text(
-                text = state.customRangeLabel,
-                color = LibreCareColors.TextSecondary,
-                fontSize = 12.sp
-            )
-
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { showRangeDialog = true }
-            ) {
-                Text("Ustaw zakres własny (od-do)")
-            }
-
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                FilterChip(
-                    label = "Cały dzień",
-                    selected = !state.nightOnlyEnabled,
-                    onClick = { viewModel.onNightOnlyChanged(false) }
-                )
-                FilterChip(
-                    label = "Tylko nocne",
-                    selected = state.nightOnlyEnabled,
-                    onClick = { viewModel.onNightOnlyChanged(true) }
-                )
+                SelectableChip("Cały dzień", !state.nightOnlyEnabled) { viewModel.onNightOnlyChanged(false) }
+                SelectableChip("Tylko nocne", state.nightOnlyEnabled) { viewModel.onNightOnlyChanged(true) }
             }
 
-            Text("Tygodniowy rozkład zakresów", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            WeeklyStackedChart(
-                bars = state.weeklyBars,
-                selectedIndex = selectedBarIndex,
-                onBarSelected = { selectedBarIndex = it }
-            )
-            state.weeklyBars.getOrNull(selectedBarIndex)?.let { bar ->
-                Text(
-                    text = "Wybrany dzień: ${bar.date} • ep. niskie: ${bar.veryLowEpisodes}, ep. wysokie: ${bar.veryHighEpisodes}",
-                    color = LibreCareColors.TextSecondary,
-                    fontSize = 11.sp
-                )
+            // ---- Bar chart section ----
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text("Rozkład czasu w zakresie", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+                Spacer(Modifier.weight(1f))
+                SelectableChip("Dzień", state.barMode == BarChartMode.DAILY) { viewModel.onBarModeChanged(BarChartMode.DAILY) }
+                if (state.monthlyAvailable) {
+                    SelectableChip("Miesiąc", state.barMode == BarChartMode.MONTHLY) { viewModel.onBarModeChanged(BarChartMode.MONTHLY) }
+                }
             }
 
-            Text("Nakładka 14 dni", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
-            FourteenDayOverlayChart(
-                overlay = state.overlay14Days,
-                selectedMinute = selectedMinute,
-                onMinuteSelected = { selectedMinute = it }
-            )
-            state.overlay14Days.averageLine.firstOrNull { it.minuteOfDay == selectedMinute }?.let { point ->
-                val time = String.format("%02d:%02d", point.minuteOfDay / 60, point.minuteOfDay % 60)
-                Text(
-                    text = "Średnia o $time: ${"%.0f".format(point.averageMgDl)} mg/dL (próbki: ${point.sampleCount})",
-                    color = LibreCareColors.TextSecondary,
-                    fontSize = 11.sp
+            state.barWindow?.let { window ->
+                Text(window.rangeLabel, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+                RangeBarChart(
+                    window = window,
+                    selectedIndex = state.selectedBarIndex,
+                    onSelect = viewModel::onBarSelected,
+                    onScroll = viewModel::onBarScroll
                 )
+                RangeLegend()
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = window.canScrollOlder,
+                        onClick = { viewModel.onBarScroll(if (window.mode == BarChartMode.DAILY) 7 else 3) }
+                    ) { Text("‹ Starsze") }
+                    OutlinedButton(
+                        modifier = Modifier.weight(1f),
+                        enabled = window.canScrollNewer,
+                        onClick = { viewModel.onBarScroll(if (window.mode == BarChartMode.DAILY) -7 else -3) }
+                    ) { Text("Nowsze ›") }
+                }
+                window.bars.getOrNull(state.selectedBarIndex)?.let { bar ->
+                    Text(barDetail(bar), color = LibreCareColors.TextPrimary, fontSize = 12.sp)
+                }
+            }
+
+            HorizontalDivider(color = LibreCareColors.Surface)
+
+            // ---- Overlay section ----
+            Text("Profil dobowy (nakładka 14 dni)", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            OverlayLineChart(state.overlay)
+            OverlayLegend()
+
+            if (state.trendObservations.isNotEmpty()) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
+                        .padding(10.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                ) {
+                    Text("Obserwacje", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    state.trendObservations.forEach { obs ->
+                        Text("• $obs", color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+                    }
+                }
+            }
+
+            HorizontalDivider(color = LibreCareColors.Surface)
+
+            Text(state.customRangeLabel, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { showRangeDialog = true }) {
+                Text("Ustaw zakres własny (od-do)")
             }
 
             MetricsTable(metricsByPeriod = state.metricsByPeriod)
 
-            OutlinedButton(
-                modifier = Modifier.fillMaxWidth(),
-                onClick = { viewModel.exportRawDataToExcel() }
-            ) {
+            OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { viewModel.exportRawDataToExcel() }) {
                 Text("Eksportuj surowe dane do Excela")
             }
 
-            state.infoMessage?.let {
-                Text(it, color = LibreCareColors.TextSecondary, fontSize = 12.sp)
-            }
+            state.infoMessage?.let { Text(it, color = LibreCareColors.TextSecondary, fontSize = 12.sp) }
+            Spacer(Modifier.height(8.dp))
         }
 
         if (showRangeDialog) {
             val startUtc = state.customStart
-                ?.atZone(ZoneOffset.UTC)
-                ?.toLocalDate()
-                ?.atStartOfDay(ZoneOffset.UTC)
-                ?.toInstant()
-                ?.toEpochMilli()
+                ?.atZone(ZoneOffset.UTC)?.toLocalDate()?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
             val endUtc = state.customEnd
-                ?.atZone(ZoneOffset.UTC)
-                ?.toLocalDate()
-                ?.atStartOfDay(ZoneOffset.UTC)
-                ?.toInstant()
-                ?.toEpochMilli()
-
+                ?.atZone(ZoneOffset.UTC)?.toLocalDate()?.atStartOfDay(ZoneOffset.UTC)?.toInstant()?.toEpochMilli()
             val dateRangeState = rememberDateRangePickerState(
                 initialSelectedStartDateMillis = startUtc,
                 initialSelectedEndDateMillis = endUtc
@@ -242,29 +252,26 @@ fun DataAnalysisScreen(
                             viewModel.onCustomRangeSelected(PickerUtcDateRange(start, end))
                             showRangeDialog = false
                         }
-                    }) {
-                        Text("Zastosuj")
-                    }
+                    }) { Text("Zastosuj") }
                 },
-                dismissButton = {
-                    OutlinedButton(onClick = { showRangeDialog = false }) {
-                        Text("Anuluj")
-                    }
-                },
+                dismissButton = { OutlinedButton(onClick = { showRangeDialog = false }) { Text("Anuluj") } },
                 colors = DatePickerDefaults.colors()
             ) {
-                DateRangePicker(
-                    state = dateRangeState,
-                    title = { Text("Wybierz zakres własny") },
-                    showModeToggle = false
-                )
+                DateRangePicker(state = dateRangeState, title = { Text("Wybierz zakres własny") }, showModeToggle = false)
             }
         }
     }
 }
 
+private fun barDetail(bar: RangeBar): String {
+    if (!bar.hasData) return "${bar.fullLabel}: brak danych"
+    return "${bar.fullLabel}: w zakresie ${bar.inRangePercent}% · poniżej ${bar.belowPercent}% · powyżej ${bar.abovePercent}%" +
+        " · śr ${bar.averageGlucose?.roundToInt() ?: "—"} · zakres ${bar.minGlucose}–${bar.maxGlucose}" +
+        " · ep. ↓${bar.veryLowEpisodes}/↑${bar.veryHighEpisodes} (${bar.readingsCount} odczytów)"
+}
+
 @Composable
-private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
+private fun SelectableChip(label: String, selected: Boolean, onClick: () -> Unit) {
     Box(
         modifier = Modifier
             .background(
@@ -280,134 +287,189 @@ private fun FilterChip(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun WeeklyStackedChart(
-    bars: List<WeeklyRangeBar>,
+private fun LegendDot(color: Color, label: String) {
+    Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        Box(modifier = Modifier.size(10.dp).background(color, RoundedCornerShape(2.dp)))
+        Text(label, color = LibreCareColors.TextSecondary, fontSize = 11.sp)
+    }
+}
+
+@Composable
+private fun RangeLegend() {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        LegendDot(LibreCareColors.AccentRed, "Poniżej")
+        LegendDot(LibreCareColors.AccentTeal, "W zakresie")
+        LegendDot(LibreCareColors.AccentAmber, "Powyżej")
+    }
+}
+
+@Composable
+private fun OverlayLegend() {
+    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+        LegendDot(LibreCareColors.TextSecondary.copy(alpha = 0.5f), "dni (cienkie)")
+        LegendDot(LibreCareColors.AccentTeal, "średnia (gruba)")
+    }
+}
+
+@Composable
+private fun RangeBarChart(
+    window: BarChartWindow,
     selectedIndex: Int,
-    onBarSelected: (Int) -> Unit
+    onSelect: (Int) -> Unit,
+    onScroll: (Int) -> Unit
 ) {
-    val safeBars = if (bars.isEmpty()) List(7) { null } else bars.map { it }
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val leftInsetPx = with(density) { 30.dp.toPx() }
+    val labelStyle = TextStyle(color = LibreCareColors.TextSecondary, fontSize = 9.sp)
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(140.dp)
+            .height(200.dp)
             .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-            .padding(8.dp)
-            .pointerInput(safeBars.size) {
-                detectTapGestures { offset ->
-                    if (safeBars.isEmpty()) return@detectTapGestures
-                    val slotWidth = size.width / safeBars.size.toFloat()
-                    val index = (offset.x / slotWidth).toInt().coerceIn(0, safeBars.lastIndex)
-                    onBarSelected(index)
+            .padding(6.dp)
+            .pointerInput(window.bars.size, window.mode) {
+                detectTapGestures { off ->
+                    val n = window.bars.size
+                    if (n == 0) return@detectTapGestures
+                    val slot = (size.width - leftInsetPx) / n
+                    val idx = ((off.x - leftInsetPx) / slot).toInt()
+                    if (idx in 0 until n) onSelect(idx)
+                }
+            }
+            .pointerInput(window.bars.size, window.mode) {
+                var acc = 0f
+                detectHorizontalDragGestures(
+                    onDragEnd = { acc = 0f },
+                    onDragCancel = { acc = 0f }
+                ) { change, dragAmount ->
+                    change.consume()
+                    val n = window.bars.size
+                    if (n == 0) return@detectHorizontalDragGestures
+                    val slot = ((size.width - leftInsetPx) / n).coerceAtLeast(1f)
+                    acc += dragAmount
+                    while (acc >= slot) { onScroll(1); acc -= slot }   // drag right -> older
+                    while (acc <= -slot) { onScroll(-1); acc += slot } // drag left  -> newer
                 }
             }
     ) {
-        if (safeBars.isEmpty()) return@Canvas
-        val slotWidth = size.width / safeBars.size
-        val barWidth = slotWidth * 0.55f
-        safeBars.forEachIndexed { index, bar ->
-            val x = index * slotWidth + (slotWidth - barWidth) / 2f
-            val totalHeight = size.height
-            val belowHeight = totalHeight * (((bar?.belowPercent ?: 0).coerceIn(0, 100)) / 100f)
-            val inRangeHeight = totalHeight * (((bar?.inRangePercent ?: 0).coerceIn(0, 100)) / 100f)
-            val aboveHeight = totalHeight * (((bar?.abovePercent ?: 0).coerceIn(0, 100)) / 100f)
-            val stackedHeight = (belowHeight + inRangeHeight + aboveHeight).coerceAtMost(totalHeight)
-            var y = size.height
-            drawRect(
-                color = LibreCareColors.AccentRed,
-                topLeft = Offset(x, y - belowHeight),
-                size = androidx.compose.ui.geometry.Size(barWidth, belowHeight)
-            )
-            y -= belowHeight
-            drawRect(
-                color = LibreCareColors.AccentTeal,
-                topLeft = Offset(x, y - inRangeHeight),
-                size = androidx.compose.ui.geometry.Size(barWidth, inRangeHeight)
-            )
-            y -= inRangeHeight
-            drawRect(
-                color = LibreCareColors.AccentAmber,
-                topLeft = Offset(x, y - aboveHeight),
-                size = androidx.compose.ui.geometry.Size(barWidth, aboveHeight)
-            )
-            if (stackedHeight < 1f) {
+        val topInset = 6f
+        val bottomInset = 16f
+        val plotW = size.width - leftInsetPx
+        val plotH = size.height - topInset - bottomInset
+        val grid = LibreCareColors.SurfaceMuted
+
+        listOf(0, 25, 50, 75, 100).forEach { p ->
+            val y = topInset + plotH * (1 - p / 100f)
+            drawLine(grid, Offset(leftInsetPx, y), Offset(size.width, y), 1f)
+            val l = measurer.measure(AnnotatedString("$p"), labelStyle)
+            drawText(l, topLeft = Offset(0f, y - l.size.height / 2f))
+        }
+
+        val n = window.bars.size
+        if (n == 0) return@Canvas
+        val slot = plotW / n
+        val barW = slot * 0.6f
+        window.bars.forEachIndexed { i, bar ->
+            val cx = leftInsetPx + i * slot + slot / 2
+            val x0 = cx - barW / 2
+            if (bar.hasData) {
+                val belowFrac = bar.belowPercent / 100f
+                val aboveFrac = bar.abovePercent / 100f
+                val inFrac = (1f - belowFrac - aboveFrac).coerceAtLeast(0f)
+                var yBottom = topInset + plotH
+                val hBelow = plotH * belowFrac
+                drawRect(LibreCareColors.AccentRed, Offset(x0, yBottom - hBelow), Size(barW, hBelow))
+                yBottom -= hBelow
+                val hIn = plotH * inFrac
+                drawRect(LibreCareColors.AccentTeal, Offset(x0, yBottom - hIn), Size(barW, hIn))
+                yBottom -= hIn
+                val hAbove = plotH * aboveFrac
+                drawRect(LibreCareColors.AccentAmber, Offset(x0, yBottom - hAbove), Size(barW, hAbove))
+            } else {
+                drawLine(grid, Offset(x0, topInset + plotH), Offset(x0 + barW, topInset + plotH), 2f)
+            }
+            if (i == selectedIndex) {
                 drawRect(
-                    color = LibreCareColors.Surface,
-                    topLeft = Offset(x, size.height - 1f),
-                    size = androidx.compose.ui.geometry.Size(barWidth, 1f)
+                    color = LibreCareColors.TextPrimary.copy(alpha = 0.5f),
+                    topLeft = Offset(x0 - 2f, topInset),
+                    size = Size(barW + 4f, plotH),
+                    style = Stroke(width = 2f)
                 )
             }
-            if (index == selectedIndex) {
-                drawRect(
-                    color = LibreCareColors.TextPrimary.copy(alpha = 0.35f),
-                    topLeft = Offset(x - 2f, 0f),
-                    size = androidx.compose.ui.geometry.Size(barWidth + 4f, size.height),
-                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = 2f)
-                )
-            }
+            val lbl = measurer.measure(AnnotatedString(bar.label), labelStyle)
+            drawText(lbl, topLeft = Offset(cx - lbl.size.width / 2f, topInset + plotH + 2f))
         }
     }
 }
 
 @Composable
-private fun FourteenDayOverlayChart(
-    overlay: FourteenDayOverlay,
-    selectedMinute: Int,
-    onMinuteSelected: (Int) -> Unit
-) {
+private fun OverlayLineChart(overlay: FourteenDayOverlay) {
+    val measurer = rememberTextMeasurer()
+    val density = LocalDensity.current
+    val leftInsetPx = with(density) { 30.dp.toPx() }
+    val labelStyle = TextStyle(color = LibreCareColors.TextSecondary, fontSize = 9.sp)
+
+    val allValues = overlay.dayLines.flatMap { line -> line.points.map { it.valueMgDl } }
+    val dataMin = allValues.minOrNull() ?: 40
+    val dataMax = allValues.maxOrNull() ?: 300
+    val yMin = minOf(60, dataMin).coerceAtLeast(40)
+    val yMax = maxOf(200, dataMax).coerceAtMost(360)
+
     Canvas(
         modifier = Modifier
             .fillMaxWidth()
-            .height(180.dp)
+            .height(200.dp)
             .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-            .padding(8.dp)
-            .pointerInput(overlay.averageLine.size) {
-                detectTapGestures { offset ->
-                    if (overlay.averageLine.isEmpty()) return@detectTapGestures
-                    val minute = ((offset.x / size.width) * 1439f).toInt().coerceIn(0, 1439)
-                    val nearest = overlay.averageLine.minByOrNull { kotlin.math.abs(it.minuteOfDay - minute) }
-                    if (nearest != null) onMinuteSelected(nearest.minuteOfDay)
-                }
-            }
+            .padding(6.dp)
     ) {
-        val dayColor = LibreCareColors.TextSecondary.copy(alpha = 0.3f)
-        val avgColor = LibreCareColors.AccentTeal
-        val minY = 40f
-        val maxY = 320f
-        fun xForMinute(minute: Int): Float = (minute.coerceIn(0, 1439) / 1439f) * size.width
-        fun yForValue(value: Double): Float {
-            val normalized = ((value - minY) / (maxY - minY)).coerceIn(0.0, 1.0)
-            return size.height - (normalized.toFloat() * size.height)
+        val topInset = 6f
+        val bottomInset = 16f
+        val plotW = size.width - leftInsetPx
+        val plotH = size.height - topInset - bottomInset
+        val grid = LibreCareColors.SurfaceMuted
+
+        fun yFor(v: Double): Float {
+            val norm = ((v - yMin) / (yMax - yMin)).coerceIn(0.0, 1.0)
+            return topInset + plotH * (1f - norm.toFloat())
+        }
+        fun xFor(minute: Int): Float = leftInsetPx + plotW * (minute.coerceIn(0, 1440) / 1440f)
+
+        val bandTop = yFor(180.0)
+        val bandBottom = yFor(80.0)
+        drawRect(LibreCareColors.AccentTeal.copy(alpha = 0.10f), Offset(leftInsetPx, bandTop), Size(plotW, bandBottom - bandTop))
+
+        listOf(yMin, (yMin + yMax) / 2, yMax).forEach { v ->
+            val y = yFor(v.toDouble())
+            drawLine(grid, Offset(leftInsetPx, y), Offset(size.width, y), 1f)
+            val l = measurer.measure(AnnotatedString("$v"), labelStyle)
+            drawText(l, topLeft = Offset(0f, y - l.size.height / 2f))
+        }
+
+        listOf(0, 6, 12, 18, 24).forEach { h ->
+            val x = xFor(h * 60)
+            drawLine(grid.copy(alpha = 0.4f), Offset(x, topInset), Offset(x, topInset + plotH), 1f)
+            val l = measurer.measure(AnnotatedString("%02d".format(h % 24)), labelStyle)
+            drawText(l, topLeft = Offset(x - l.size.width / 2f, topInset + plotH + 2f))
         }
 
         overlay.dayLines.forEach { line ->
             if (line.points.size < 2) return@forEach
             val path = Path()
-            line.points.sortedBy { it.minuteOfDay }.forEachIndexed { index, point ->
-                val x = xForMinute(point.minuteOfDay)
-                val y = yForValue(point.valueMgDl.toDouble())
-                if (index == 0) path.moveTo(x, y) else path.lineTo(x, y)
+            line.points.sortedBy { it.minuteOfDay }.forEachIndexed { i, p ->
+                val x = xFor(p.minuteOfDay); val y = yFor(p.valueMgDl.toDouble())
+                if (i == 0) path.moveTo(x, y) else path.lineTo(x, y)
             }
-            drawPath(path = path, color = dayColor)
+            drawPath(path, LibreCareColors.TextSecondary.copy(alpha = 0.25f), style = Stroke(width = 1f))
         }
-
         if (overlay.averageLine.size >= 2) {
-            val avgPath = Path()
-            overlay.averageLine.sortedBy { it.minuteOfDay }.forEachIndexed { index, point ->
-                val x = xForMinute(point.minuteOfDay)
-                val y = yForValue(point.averageMgDl)
-                if (index == 0) avgPath.moveTo(x, y) else avgPath.lineTo(x, y)
+            val avg = Path()
+            overlay.averageLine.sortedBy { it.minuteOfDay }.forEachIndexed { i, p ->
+                val x = xFor(p.minuteOfDay); val y = yFor(p.averageMgDl)
+                if (i == 0) avg.moveTo(x, y) else avg.lineTo(x, y)
             }
-            drawPath(path = avgPath, color = avgColor)
-        }
-
-        if (selectedMinute in 0..1439) {
-            val x = (selectedMinute / 1439f) * size.width
-            drawLine(
-                color = LibreCareColors.TextPrimary.copy(alpha = 0.4f),
-                start = Offset(x, 0f),
-                end = Offset(x, size.height),
-                strokeWidth = 2f
-            )
+            drawPath(avg, LibreCareColors.AccentTeal, style = Stroke(width = 3f))
         }
     }
 }

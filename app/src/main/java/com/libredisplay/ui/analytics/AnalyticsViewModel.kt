@@ -6,10 +6,13 @@ import androidx.lifecycle.viewModelScope
 import com.libredisplay.LibreDisplayApp
 import com.libredisplay.analytics.AnalysisChartFactory
 import com.libredisplay.analytics.AnalysisMetricsFactory
+import com.libredisplay.analytics.AnalysisTrendInterpreter
+import com.libredisplay.analytics.BarChartMode
+import com.libredisplay.analytics.BarChartWindow
 import com.libredisplay.analytics.FourteenDayOverlay
 import com.libredisplay.analytics.PeriodMetrics
 import com.libredisplay.analytics.RawDataExcelExporter
-import com.libredisplay.analytics.WeeklyRangeBar
+import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -61,8 +64,12 @@ data class DataAnalysisUiState(
     val customEnd: Instant? = null,
     val customRangeLabel: String = "Zakres własny: —",
     val metricsByPeriod: Map<AnalysisPeriod, PeriodMetrics> = emptyMap(),
-    val weeklyBars: List<WeeklyRangeBar> = emptyList(),
-    val overlay14Days: FourteenDayOverlay = FourteenDayOverlay(emptyList(), emptyList()),
+    val barMode: BarChartMode = BarChartMode.DAILY,
+    val monthlyAvailable: Boolean = false,
+    val barWindow: BarChartWindow? = null,
+    val selectedBarIndex: Int = -1,
+    val overlay: FourteenDayOverlay = FourteenDayOverlay(emptyList(), emptyList()),
+    val trendObservations: List<String> = emptyList(),
     val nightOnlyEnabled: Boolean = false,
     val isLoading: Boolean = false,
     val infoMessage: String? = null
@@ -79,6 +86,11 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
 
     private val _exportEvent = MutableStateFlow<DataAnalysisExportEvent?>(null)
     val exportEvent: StateFlow<DataAnalysisExportEvent?> = _exportEvent.asStateFlow()
+
+    /** In-memory buffer (last ~400 days) so scrolling/zooming the bars never re-hits the DB. */
+    private var analysisBuffer: List<GlucoseHistoryPoint> = emptyList()
+    private var barOffsetDays: Int = 0
+    private var barOffsetMonths: Int = 0
 
     init {
         reload()
@@ -103,16 +115,14 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                     selectedPersonName = selectedName,
                     customStart = customStart,
                     customEnd = customEnd,
-                    customRangeLabel = if (customStart != null && customEnd != null) {
-                        "Zakres własny: ${PolishDateTimeFormatter.formatRangeLabel(customStart, customEnd).removePrefix("Zakres: ")}"
-                    } else {
-                        "Zakres własny: —"
-                    },
-                    isLoading = false,
+                    customRangeLabel = customLabel(customStart, customEnd),
                     infoMessage = if (persons.isEmpty()) "Brak lokalnych danych. Poczekaj na synchronizację." else null
                 )
             }
+            loadBuffer(selectedPatientId)
             recalculate()
+            recomputeCharts()
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
@@ -120,26 +130,52 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch {
             val selected = _uiState.value.persons.firstOrNull { it.patientId == patientId }
             val storedRange = localRepository.loadStoredRange(patientId)
+            barOffsetDays = 0
+            barOffsetMonths = 0
             _uiState.update {
                 it.copy(
                     selectedPatientId = patientId,
                     selectedPersonName = selected?.displayName ?: it.selectedPersonName,
                     customStart = storedRange?.oldest,
                     customEnd = storedRange?.newest,
-                    customRangeLabel = if (storedRange != null) {
-                        "Zakres własny: ${PolishDateTimeFormatter.formatRangeLabel(storedRange.oldest, storedRange.newest).removePrefix("Zakres: ")}"
-                    } else {
-                        "Zakres własny: —"
-                    }
+                    customRangeLabel = customLabel(storedRange?.oldest, storedRange?.newest),
+                    selectedBarIndex = -1
                 )
             }
+            loadBuffer(patientId)
             recalculate()
+            recomputeCharts()
         }
     }
 
     fun onNightOnlyChanged(enabled: Boolean) {
-        _uiState.update { it.copy(nightOnlyEnabled = enabled) }
-        recalculate()
+        _uiState.update { it.copy(nightOnlyEnabled = enabled, selectedBarIndex = -1) }
+        recomputeCharts()
+    }
+
+    fun onBarModeChanged(mode: BarChartMode) {
+        barOffsetDays = 0
+        barOffsetMonths = 0
+        _uiState.update { it.copy(barMode = mode, selectedBarIndex = -1) }
+        recomputeCharts()
+    }
+
+    /** Positive = older, negative = newer. Unit is days (DAILY) or months (MONTHLY). */
+    fun onBarScroll(deltaUnits: Int) {
+        val now = Instant.now()
+        if (_uiState.value.barMode == BarChartMode.DAILY) {
+            val max = AnalysisChartFactory.maxDailyOffset(analysisBuffer, now)
+            barOffsetDays = (barOffsetDays + deltaUnits).coerceIn(0, max)
+        } else {
+            val max = AnalysisChartFactory.maxMonthlyOffset(analysisBuffer, now)
+            barOffsetMonths = (barOffsetMonths + deltaUnits).coerceIn(0, max)
+        }
+        _uiState.update { it.copy(selectedBarIndex = -1) }
+        recomputeCharts()
+    }
+
+    fun onBarSelected(index: Int) {
+        _uiState.update { it.copy(selectedBarIndex = if (it.selectedBarIndex == index) -1 else index) }
     }
 
     fun onCustomRangeSelected(range: PickerUtcDateRange) {
@@ -153,7 +189,7 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             it.copy(
                 customStart = start,
                 customEnd = end,
-                customRangeLabel = "Zakres własny: ${PolishDateTimeFormatter.formatRangeLabel(start, end).removePrefix("Zakres: ")}",
+                customRangeLabel = customLabel(start, end),
                 infoMessage = null
             )
         }
@@ -218,87 +254,95 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         _exportEvent.value = null
     }
 
-    private fun recalculate() {
-        viewModelScope.launch {
-            _uiState.update { it.copy(isLoading = true) }
-            val state = _uiState.value
-            val patientId = state.selectedPatientId
-            if (patientId == null) {
-                _uiState.update {
-                    it.copy(
-                        isLoading = false,
-                        metricsByPeriod = AnalysisPeriod.entries.associateWith { PeriodMetrics.empty },
-                        infoMessage = "Brak wybranej osoby do analizy."
-                    )
-                }
-                return@launch
-            }
+    private suspend fun loadBuffer(patientId: String?) {
+        analysisBuffer = if (patientId == null) {
+            emptyList()
+        } else {
             val now = Instant.now()
-            val fixedWindowStart = now.minus(30, ChronoUnit.DAYS)
-            val fixedWindowReadings = localRepository.loadHistory(patientId, fixedWindowStart, now)
-            val customStart = state.customStart
-            val customEnd = state.customEnd
-            val customReadings = if (customStart != null && customEnd != null) {
-                if (customStart >= fixedWindowStart && customEnd <= now) {
-                    fixedWindowReadings.filter { point ->
-                        !point.timestamp.isBefore(customStart) && !point.timestamp.isAfter(customEnd)
-                    }
-                } else {
-                    localRepository.loadHistory(patientId, customStart, customEnd)
-                }
-            } else {
-                emptyList()
-            }
-            val settings = settingsRepository.loadSettings()
-            val weeklyBars = AnalysisChartFactory.weeklyStackedBars(
-                readings = fixedWindowReadings,
-                now = now,
-                targetLow = settings.targetLow,
-                targetHigh = settings.targetHigh,
-                lowCritical = 54,
-                highCritical = 250,
-                nightOnly = state.nightOnlyEnabled
-            )
-            val overlay14 = AnalysisChartFactory.fourteenDayOverlay(
-                readings = fixedWindowReadings,
-                now = now
-            )
-
-            val matrix = AnalysisPeriod.entries.associateWith { period ->
-                val (periodStart, periodEnd, source) = if (period == AnalysisPeriod.CUSTOM && customStart != null && customEnd != null) {
-                    Triple(customStart, customEnd, customReadings)
-                } else {
-                    val start = now.minus(period.duration ?: Duration.ofDays(30))
-                    Triple(start, now, fixedWindowReadings)
-                }
-                val scoped = source.filter { point ->
-                    !point.timestamp.isBefore(periodStart) && !point.timestamp.isAfter(periodEnd)
-                }
-                AnalysisMetricsFactory.calculate(
-                    readings = scoped,
-                    periodStart = periodStart,
-                    periodEnd = periodEnd,
-                    targetLow = settings.targetLow,
-                    targetHigh = settings.targetHigh,
-                    lowCritical = 54,
-                    highCritical = 250
-                )
-            }
-
-            _uiState.update {
-                it.copy(
-                    metricsByPeriod = matrix,
-                    weeklyBars = weeklyBars,
-                    overlay14Days = overlay14,
-                    isLoading = false,
-                    infoMessage = if (matrix.values.all { metrics -> metrics.readingsCount == 0 }) {
-                        "Brak danych dla wybranych okresów."
-                    } else {
-                        null
-                    }
-                )
-            }
+            localRepository.loadHistory(patientId, now.minus(400, ChronoUnit.DAYS), now)
         }
     }
+
+    private fun recomputeCharts() {
+        val state = _uiState.value
+        if (state.selectedPatientId == null) {
+            _uiState.update {
+                it.copy(
+                    barWindow = null,
+                    overlay = FourteenDayOverlay(emptyList(), emptyList()),
+                    trendObservations = emptyList(),
+                    monthlyAvailable = false
+                )
+            }
+            return
+        }
+        val now = Instant.now()
+        val settings = settingsRepository.loadSettings()
+        val monthlyAvailable = AnalysisChartFactory.hasMonthlyData(analysisBuffer, now)
+        val effectiveMode = if (state.barMode == BarChartMode.MONTHLY && !monthlyAvailable) BarChartMode.DAILY else state.barMode
+        val window = if (effectiveMode == BarChartMode.MONTHLY) {
+            AnalysisChartFactory.monthlyWindow(
+                analysisBuffer, now, barOffsetMonths, 12,
+                settings.targetLow, settings.targetHigh, 54, 250, state.nightOnlyEnabled
+            )
+        } else {
+            AnalysisChartFactory.dailyWindow(
+                analysisBuffer, now, barOffsetDays, 14,
+                settings.targetLow, settings.targetHigh, 54, 250, state.nightOnlyEnabled
+            )
+        }
+        val overlay = AnalysisChartFactory.overlayForWindow(analysisBuffer, window.windowStart, window.windowEnd, maxDays = 14)
+        val trends = AnalysisTrendInterpreter.interpret(overlay, settings.targetLow, settings.targetHigh)
+        _uiState.update {
+            it.copy(
+                barMode = effectiveMode,
+                monthlyAvailable = monthlyAvailable,
+                barWindow = window,
+                overlay = overlay,
+                trendObservations = trends
+            )
+        }
+    }
+
+    private fun recalculate() {
+        val state = _uiState.value
+        val patientId = state.selectedPatientId ?: run {
+            _uiState.update {
+                it.copy(
+                    metricsByPeriod = AnalysisPeriod.entries.associateWith { PeriodMetrics.empty },
+                    infoMessage = "Brak wybranej osoby do analizy."
+                )
+            }
+            return
+        }
+        val now = Instant.now()
+        val settings = settingsRepository.loadSettings()
+        val buffer = analysisBuffer
+        val customStart = state.customStart
+        val customEnd = state.customEnd
+        val matrix = AnalysisPeriod.entries.associateWith { period ->
+            val (periodStart, periodEnd) =
+                if (period == AnalysisPeriod.CUSTOM && customStart != null && customEnd != null) {
+                    customStart to customEnd
+                } else {
+                    now.minus(period.duration ?: Duration.ofDays(30)) to now
+                }
+            val scoped = buffer.filter { !it.timestamp.isBefore(periodStart) && !it.timestamp.isAfter(periodEnd) }
+            AnalysisMetricsFactory.calculate(scoped, periodStart, periodEnd, settings.targetLow, settings.targetHigh, 54, 250)
+        }
+        _uiState.update {
+            it.copy(
+                metricsByPeriod = matrix,
+                infoMessage = if (matrix.values.all { m -> m.readingsCount == 0 }) "Brak danych dla wybranych okresów." else null
+            )
+        }
+    }
+
+    private fun customLabel(start: Instant?, end: Instant?): String =
+        if (start != null && end != null) {
+            "Zakres własny: ${PolishDateTimeFormatter.formatRangeLabel(start, end).removePrefix("Zakres: ")}"
+        } else {
+            "Zakres własny: —"
+        }
 }
 

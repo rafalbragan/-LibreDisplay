@@ -2,6 +2,51 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.11.0 - 2026-08-25
+
+### PL
+
+#### Added
+- Menu dolne: `Historia` → `Analiza` z ikoną wykresu słupkowego.
+- Wykres słupkowy: 14 słupków dziennych, podpisane osie (0–100%) i legenda, dotknięcie słupka pokazuje szczegóły dnia (TIR/poniżej/powyżej, średnia, min–max, epizody, liczba odczytów), przewijanie w czasie (przeciąganie i przyciski `‹ Starsze` / `Nowsze ›`), etykieta zakresu dat aktualizowana na bieżąco.
+- Widok miesięczny (12 słupków) odblokowywany, gdy zebrano wystarczająco danych (≥ ~2 miesiące).
+- Nakładka 14 dni przebudowana: 14 cienkich linii dziennych + gruba linia średniej, oś godzin (00–24) i pasmo docelowe; aktualizuje się przy przewijaniu słupków.
+- Automatyczne obserwacje trendów dobowych (np. poranny wzrost, wysokie wartości koło południa, nocne spadki, szczyt/minimum, duża zmienność).
+
+#### Changed
+- Eksport `.xlsx` respektuje aktualnie wybrany zakres własny (jeśli ustawiony).
+
+#### Tests
+- `AnalysisChartFactoryTest` — dzienne/miesięczne okna, przesunięcie w czasie, nakładka, maks. offset.
+- `AnalysisTrendInterpreterTest` — za mało danych oraz wykrycie szczytu w południe.
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.11.0-debug.apk`
+- `release-artifacts/LibreCare-2.11.0-release.apk`
+- `release-artifacts/LibreCare-2.11.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Added
+- Bottom nav `Historia` → `Analiza` with a bar-chart icon.
+- Bar chart: 14 daily bars, labeled axes (0–100%) + legend, tap a bar to inspect its details (TIR/below/above, average, min–max, episodes, reading count), time scrolling (drag & `‹ Starsze` / `Nowsze ›` buttons), live date-range label.
+- Monthly view (12 bars) unlocked once enough data is collected (≥ ~2 months).
+- Rebuilt 14-day overlay: 14 thin daily lines + a thick average line, hour axis (00–24) + target band; updates as the bars scroll.
+- Automatic day-profile trend observations (morning rise, high around noon, night lows, peak/trough, high variability).
+
+#### Changed
+- `.xlsx` export honours the currently selected custom range (when set).
+
+#### Tests
+- `AnalysisChartFactoryTest`, `AnalysisTrendInterpreterTest`.
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.11.0-debug.apk`
+- `release-artifacts/LibreCare-2.11.0-release.apk`
+- `release-artifacts/LibreCare-2.11.0-release.aab` (Google Play upload file)
+
 ## 2.10.1 - 2026-08-25
 
 ### PL

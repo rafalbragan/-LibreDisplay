@@ -11,7 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.automirrored.outlined.ShowChart
+import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Icon
@@ -31,7 +31,7 @@ import com.libredisplay.ui.theme.LibreCareColors
 
 internal enum class DashboardNavItem(val label: String, val accessibilityLabel: String) {
     GLOWNA("Główna", "Główna"),
-    HISTORIA("Historia", "Historia"),
+    HISTORIA("Analiza", "Analiza"),
     USTAWIENIA("Ustawienia", "Ustawienia")
 }
 
@@ -48,7 +48,7 @@ internal fun TopLevelNavigationBar(
         modifier = Modifier.heightIn(min = 68.dp)
     ) {
         TopLevelNavItem(selected == DashboardNavItem.GLOWNA, DashboardNavItem.GLOWNA.label, Icons.Default.Home, onOpenHome)
-        TopLevelNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.AutoMirrored.Outlined.ShowChart, onOpenHistory)
+        TopLevelNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.Filled.BarChart, onOpenHistory)
         TopLevelNavItem(selected == DashboardNavItem.USTAWIENIA, DashboardNavItem.USTAWIENIA.label, Icons.Default.Settings, onOpenSettings)
     }
 }
@@ -107,7 +107,7 @@ internal fun SideNavigationRail(
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         SideNavItem(selected == DashboardNavItem.GLOWNA, DashboardNavItem.GLOWNA.label, Icons.Default.Home, onOpenHome)
-        SideNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.AutoMirrored.Outlined.ShowChart, onOpenHistory)
+        SideNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.Filled.BarChart, onOpenHistory)
         SideNavItem(selected == DashboardNavItem.USTAWIENIA, DashboardNavItem.USTAWIENIA.label, Icons.Default.Settings, onOpenSettings)
     }
 }

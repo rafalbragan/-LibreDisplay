@@ -5,7 +5,6 @@ import com.libredisplay.data.model.GlucoseTrend
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 
@@ -15,87 +14,60 @@ class AnalysisChartFactoryTest {
     private val now: Instant = Instant.parse("2026-08-24T21:00:00Z")
 
     @Test
-    fun weeklyStackedBars_returnsSevenBars() {
-        val readings = listOf(
-            point("2026-08-24T00:10:00Z", 70),
-            point("2026-08-24T04:10:00Z", 120),
-            point("2026-08-24T08:10:00Z", 230),
-            point("2026-08-23T10:10:00Z", 100)
+    fun dailyWindow_returns14Bars() {
+        val window = AnalysisChartFactory.dailyWindow(
+            readings = listOf(point("2026-08-24T10:10:00Z", 120), point("2026-08-20T10:10:00Z", 90)),
+            now = now, offsetDays = 0, count = 14,
+            targetLow = 80, targetHigh = 180, lowCritical = 54, highCritical = 250, zoneId = zone
         )
-
-        val bars = AnalysisChartFactory.weeklyStackedBars(
-            readings = readings,
-            now = now,
-            targetLow = 80,
-            targetHigh = 180,
-            lowCritical = 54,
-            highCritical = 250,
-            zoneId = zone
-        )
-
-        assertEquals(7, bars.size)
-        assertTrue(bars.any { it.readingsCount > 0 })
+        assertEquals(14, window.bars.size)
+        assertTrue(window.bars.any { it.readingsCount > 0 })
     }
 
     @Test
-    fun weeklyStackedBars_nightOnlyFiltersOutDayReadings() {
-        val readings = listOf(
-            point("2026-08-24T01:10:00Z", 90),
-            point("2026-08-24T12:10:00Z", 220)
-        )
-
-        val allDay = AnalysisChartFactory.weeklyStackedBars(
-            readings = readings,
-            now = now,
-            targetLow = 80,
-            targetHigh = 180,
-            lowCritical = 54,
-            highCritical = 250,
-            zoneId = zone,
-            nightOnly = false
-        )
-        val nightOnly = AnalysisChartFactory.weeklyStackedBars(
-            readings = readings,
-            now = now,
-            targetLow = 80,
-            targetHigh = 180,
-            lowCritical = 54,
-            highCritical = 250,
-            zoneId = zone,
-            nightOnly = true
-        )
-
-        val allDayCount = allDay.sumOf { it.readingsCount }
-        val nightCount = nightOnly.sumOf { it.readingsCount }
-        assertTrue(nightCount < allDayCount)
+    fun dailyWindow_nightOnlyReducesReadings() {
+        val readings = listOf(point("2026-08-24T01:10:00Z", 90), point("2026-08-24T12:10:00Z", 220))
+        val all = AnalysisChartFactory.dailyWindow(readings, now, 0, 14, 80, 180, 54, 250, false, zone)
+        val night = AnalysisChartFactory.dailyWindow(readings, now, 0, 14, 80, 180, 54, 250, true, zone)
+        assertTrue(night.bars.sumOf { it.readingsCount } < all.bars.sumOf { it.readingsCount })
     }
 
     @Test
-    fun fourteenDayOverlay_buildsAverageMinuteLine() {
-        val readings = listOf(
-            point("2026-08-20T05:30:00Z", 100),
-            point("2026-08-21T05:30:00Z", 140),
-            point("2026-08-21T12:10:00Z", 180)
-        )
+    fun dailyWindow_offsetShiftsWindowOlder() {
+        val readings = listOf(point("2026-07-29T10:10:00Z", 100))
+        val current = AnalysisChartFactory.dailyWindow(readings, now, 0, 14, 80, 180, 54, 250, false, zone)
+        val older = AnalysisChartFactory.dailyWindow(readings, now, 14, 14, 80, 180, 54, 250, false, zone)
+        assertEquals(0, current.bars.sumOf { it.readingsCount })
+        assertTrue(older.bars.sumOf { it.readingsCount } > 0)
+        assertTrue(older.canScrollNewer)
+    }
 
-        val overlay = AnalysisChartFactory.fourteenDayOverlay(
-            readings = readings,
-            now = now,
-            zoneId = zone
-        )
+    @Test
+    fun monthlyWindow_returns12Bars() {
+        val readings = listOf(point("2026-08-10T10:00:00Z", 120), point("2026-07-10T10:00:00Z", 150))
+        val window = AnalysisChartFactory.monthlyWindow(readings, now, 0, 12, 80, 180, 54, 250, false, zone)
+        assertEquals(12, window.bars.size)
+        assertTrue(window.bars.any { it.readingsCount > 0 })
+    }
 
+    @Test
+    fun overlayForWindow_buildsAverage() {
+        val readings = listOf(point("2026-08-23T05:30:00Z", 100), point("2026-08-24T05:30:00Z", 140))
+        val start = Instant.parse("2026-08-22T22:00:00Z")
+        val end = Instant.parse("2026-08-25T22:00:00Z")
+        val overlay = AnalysisChartFactory.overlayForWindow(readings, start, end, zone, 14)
         assertTrue(overlay.dayLines.isNotEmpty())
-        val minute = overlay.averageLine.firstOrNull { it.sampleCount == 2 }
-        assertTrue(minute != null)
-        assertEquals(120.0, minute!!.averageMgDl, 0.01)
+        assertTrue(overlay.averageLine.any { it.sampleCount == 2 && it.averageMgDl == 120.0 })
     }
 
-    private fun point(timestamp: String, value: Int): GlucoseHistoryPoint {
-        return GlucoseHistoryPoint(
-            value = value,
-            timestamp = Instant.parse(timestamp).plus(Duration.ZERO),
-            trend = GlucoseTrend.FLAT
-        )
+    @Test
+    fun maxDailyOffset_reflectsData() {
+        val readings = listOf(point("2026-07-15T10:00:00Z", 100)) // ~40 days before now
+        val max = AnalysisChartFactory.maxDailyOffset(readings, now, 14, zone)
+        assertTrue(max in 20..30)
     }
+
+    private fun point(timestamp: String, value: Int): GlucoseHistoryPoint =
+        GlucoseHistoryPoint(value = value, timestamp = Instant.parse(timestamp), trend = GlucoseTrend.FLAT)
 }
 
