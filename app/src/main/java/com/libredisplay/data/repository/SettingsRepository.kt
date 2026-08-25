@@ -62,6 +62,7 @@ class SettingsRepository(context: Context) {
             settings.retentionHours.coerceIn(AppSettings.MIN_RETENTION_HOURS, AppSettings.MAX_RETENTION_HOURS)
         )
         storage.putInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, settings.backgroundPollingMinutes.coerceIn(5, 60))
+        storage.putBoolean(SecureStorage.KEY_BACKGROUND_SERVICE_ENABLED, settings.backgroundServiceEnabled)
     }
 
     fun loadSettings(): AppSettings {
@@ -92,7 +93,8 @@ class SettingsRepository(context: Context) {
                 SecureStorage.KEY_RETENTION_HOURS,
                 AppSettings.DEFAULT_RETENTION_HOURS
             ).coerceIn(AppSettings.MIN_RETENTION_HOURS, AppSettings.MAX_RETENTION_HOURS),
-            backgroundPollingMinutes = storage.getInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, 60).coerceIn(5, 60)
+            backgroundPollingMinutes = storage.getInt(SecureStorage.KEY_BACKGROUND_POLLING_MINUTES, 60).coerceIn(5, 60),
+            backgroundServiceEnabled = storage.getBoolean(SecureStorage.KEY_BACKGROUND_SERVICE_ENABLED, true)
         ).normalized()
     }
 

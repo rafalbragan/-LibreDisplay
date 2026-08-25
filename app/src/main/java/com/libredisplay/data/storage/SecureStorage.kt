@@ -75,6 +75,7 @@ class SecureStorage(context: Context) {
         const val KEY_KIOSK_MODE = "kiosk_mode"
         const val KEY_RETENTION_HOURS = "retention_hours"
         const val KEY_BACKGROUND_POLLING_MINUTES = "background_polling_minutes"
+        const val KEY_BACKGROUND_SERVICE_ENABLED = "background_service_enabled"
         const val KEY_QUICK_METRICS_ORDER = "quick_metrics_order"
         const val KEY_QUICK_METRICS_VISIBILITY = "quick_metrics_visibility"
         const val KEY_APP_MODE = "app_mode"

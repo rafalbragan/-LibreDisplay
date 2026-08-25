@@ -519,6 +519,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
             appLock.clearSession()
         }
     }
+
+    override fun onStart() {
+        super.onStart()
+        // Start the always-on foreground monitoring service (if the user kept it enabled and
+        // monitoring is configured). Starting from a visible Activity satisfies Android 12+ FGS
+        // launch restrictions, and the service keeps running after the UI is closed.
+        com.libredisplay.service.MonitoringServiceController.startIfEnabled(this)
+    }
 }
 
 

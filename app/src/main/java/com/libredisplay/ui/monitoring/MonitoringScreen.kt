@@ -20,6 +20,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
@@ -166,24 +167,31 @@ fun MonitoringScreen(
         return
     }
 
+    val configuration = LocalConfiguration.current
+    val isLandscapeHome = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+
          Scaffold(
          containerColor = DashboardBackground,
          topBar = {
-             LibreTopBar(
-                  lastReadingAt = state.lastSuccessfulFetchAt ?: state.reading?.timestamp ?: state.lastMeasurementTimestamp,
-                  reading = state.reading,
-                  appVersionLabel = BuildConfig.VERSION_NAME,
-                  onRunUiAudit = onRunUiAudit
-             )
+             if (!isLandscapeHome) {
+                 LibreTopBar(
+                      lastReadingAt = state.lastSuccessfulFetchAt ?: state.reading?.timestamp ?: state.lastMeasurementTimestamp,
+                      reading = state.reading,
+                      appVersionLabel = BuildConfig.VERSION_NAME,
+                      onRunUiAudit = onRunUiAudit
+                 )
+             }
          },
          contentWindowInsets = WindowInsets(0, 0, 0, 0),
         bottomBar = {
-            TopLevelNavigationBar(
-                selected = DashboardNavItem.GLOWNA,
-                onOpenHome = {},
-                onOpenHistory = onNavigateToAnalytics,
-                onOpenSettings = onNavigateToSettings
-            )
+            if (!isLandscapeHome) {
+                TopLevelNavigationBar(
+                    selected = DashboardNavItem.GLOWNA,
+                    onOpenHome = {},
+                    onOpenHistory = onNavigateToAnalytics,
+                    onOpenSettings = onNavigateToSettings
+                )
+            }
         }
     ) { padding ->
         Surface(
@@ -192,13 +200,13 @@ fun MonitoringScreen(
                 .fillMaxSize()
                 .padding(padding)
         ) {
+            Row(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
             when {
                 !state.isConfigured -> EmptyConfigurationState(onNavigateToSettings)
                 state.isLoading && state.reading == null -> LoadingState()
                 else -> {
                     val reading = state.reading
-                    val configuration = LocalConfiguration.current
-                    val isLandscapeHome = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
                     val contentModifier = Modifier
                         .fillMaxSize()
                         .verticalScroll(rememberScrollState())
@@ -228,6 +236,40 @@ fun MonitoringScreen(
                                         modifier = Modifier.weight(0.38f),
                                         verticalArrangement = Arrangement.spacedBy(4.dp)
                                     ) {
+                                        // Landscape hides the top app bar; this compact header keeps
+                                        // the LibreCare title and the last-update time on the left.
+                                        Column(verticalArrangement = Arrangement.spacedBy(1.dp)) {
+                                            Row(
+                                                verticalAlignment = Alignment.Bottom,
+                                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                                            ) {
+                                                Text(
+                                                    text = stringResource(R.string.app_name),
+                                                    color = LibreCareColors.TextPrimary,
+                                                    fontSize = 20.sp,
+                                                    fontWeight = FontWeight.SemiBold,
+                                                    maxLines = 1
+                                                )
+                                                Text(
+                                                    text = "v${BuildConfig.VERSION_NAME}",
+                                                    color = LibreCareColors.TextSecondary,
+                                                    fontSize = 12.sp,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            val landscapeLastAt = state.lastSuccessfulFetchAt
+                                                ?: state.reading?.timestamp
+                                                ?: state.lastMeasurementTimestamp
+                                            Text(
+                                                text = "Ostatnia aktualizacja: " + (landscapeLastAt?.let {
+                                                    val zone = DateTimeFormatterProvider.deviceZoneId()
+                                                    "${DateTimeFormatterProvider.compactDateFormatter().withZone(zone).format(it)} ${PolishDateTimeFormatter.formatTime(it, zone)}"
+                                                } ?: "brak danych"),
+                                                color = LibreCareColors.TextSecondary,
+                                                fontSize = 11.sp,
+                                                maxLines = 1
+                                            )
+                                        }
                                         RedesignedCurrentGlucoseCard(
                                             reading = reading,
                                             targetLow = state.settings.targetLow,
@@ -313,6 +355,16 @@ fun MonitoringScreen(
                         ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)
                     }
                 }
+            }
+            }
+            if (isLandscapeHome) {
+                SideNavigationRail(
+                    selected = DashboardNavItem.GLOWNA,
+                    onOpenHome = {},
+                    onOpenHistory = onNavigateToAnalytics,
+                    onOpenSettings = onNavigateToSettings
+                )
+            }
             }
         }
     }

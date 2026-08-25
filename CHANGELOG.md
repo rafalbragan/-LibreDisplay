@@ -2,6 +2,52 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.7.0 - 2026-08-25
+
+### PL
+
+#### Added
+- **Monitorowanie w tle (usługa pierwszoplanowa)**: LibreCare może teraz pobierać dane stale w tle ze stałym powiadomieniem, co ~30 s–5 min (wg ustawionej częstotliwości), odpornie na tryb Doze — także gdy ekran jest zamknięty. Domyślnie włączone; uruchamiane, gdy monitorowanie jest skonfigurowane.
+- **Pionowy pasek nawigacji po prawej** w orientacji poziomej (Główna / Historia / Ustawienia) zamiast dolnego menu.
+
+#### Changed
+- W orientacji poziomej ukryto górny i dolny pasek — więcej miejsca na treść. Nagłówek „LibreCare" i „Ostatnia aktualizacja" przeniesione do kompaktowego nagłówka w lewej kolumnie.
+- Uprawnienia `FOREGROUND_SERVICE` i `FOREGROUND_SERVICE_DATA_SYNC` dodane pod usługę monitorowania (Android 14+ przekazuje typ `dataSync`).
+
+#### Fixed
+- Wcześniej usługa monitorowania (`MonitoringService`) była zaimplementowana, ale **nigdy nie uruchamiana** — w tle działał tylko WorkManager (co 15–60 min, usypiany przez Doze). Teraz usługa jest realnie startowana z widocznej aktywności i po restarcie telefonu.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- `./gradlew lint` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.7.0-debug.apk`
+- `release-artifacts/LibreCare-2.7.0-release.apk`
+- `release-artifacts/LibreCare-2.7.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Added
+- **Always-on background monitoring (foreground service)**: LibreCare can now fetch data continuously in the background with a persistent notification, every ~30 s–5 min (per the configured interval), Doze-resistant — even when the screen is closed. Enabled by default; started once monitoring is configured.
+- **Vertical navigation rail on the right** in landscape (Home / History / Settings) instead of the bottom bar.
+
+#### Changed
+- Landscape now hides the top and bottom bars for more content space. The "LibreCare" title and "last update" moved into a compact header in the left column.
+- Added `FOREGROUND_SERVICE` and `FOREGROUND_SERVICE_DATA_SYNC` permissions for the monitoring service (Android 14+ passes the `dataSync` type).
+
+#### Fixed
+- Previously the monitoring service (`MonitoringService`) was implemented but **never started** — only WorkManager ran in the background (every 15–60 min, deferred by Doze). It is now actually started from a visible activity and after device reboot.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- `./gradlew lint` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.7.0-debug.apk`
+- `release-artifacts/LibreCare-2.7.0-release.apk`
+- `release-artifacts/LibreCare-2.7.0-release.aab` (Google Play upload file)
+
 ## 2.6.0 - 2026-08-25
 
 ### PL
