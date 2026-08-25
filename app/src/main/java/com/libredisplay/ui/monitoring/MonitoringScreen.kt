@@ -127,6 +127,11 @@ fun MonitoringScreen(
     // Metric tiles computed by the chart card, lifted so landscape can render them full-width below
     // the [glucose | chart] row instead of inside the narrower chart column.
     var landscapeMetricTiles by remember(state.selectedPatientId) { mutableStateOf<List<QuickMetricTileUi>?>(null) }
+    // Lifted range selector, so landscape can show the range chips in the left column.
+    var landscapeRangeSelector by remember(state.selectedPatientId) { mutableStateOf<RangeSelectorState?>(null) }
+    // Home content scroll, hoisted so landscape can auto-scroll to the chart ("Historia glikemii").
+    val homeScrollState = rememberScrollState()
+    var landscapeChartAnchorPx by remember { mutableStateOf(0) }
 
     // Local ticker: refreshes time-sensitive UI every 30 s without any network request.
     // Covers: "chwilę temu", "Sensor: X dni", coverage countdown, reading age.
@@ -173,6 +178,16 @@ fun MonitoringScreen(
     val configuration = LocalConfiguration.current
     val isLandscapeHome = configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
 
+    // On entering landscape, scroll a little so the chart section ("Historia glikemii") starts at the
+    // top; on returning to portrait, reset to the top.
+    LaunchedEffect(isLandscapeHome, landscapeChartAnchorPx) {
+        if (isLandscapeHome && landscapeChartAnchorPx > 0) {
+            homeScrollState.animateScrollTo(landscapeChartAnchorPx)
+        } else if (!isLandscapeHome) {
+            homeScrollState.scrollTo(0)
+        }
+    }
+
          Scaffold(
          containerColor = DashboardBackground,
          topBar = {
@@ -212,7 +227,7 @@ fun MonitoringScreen(
                     val reading = state.reading
                     val contentModifier = Modifier
                         .fillMaxSize()
-                        .verticalScroll(rememberScrollState())
+                        .verticalScroll(homeScrollState)
                         .padding(horizontal = 8.dp, vertical = 4.dp)
                     Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (state.isDemoMode) {
@@ -231,7 +246,11 @@ fun MonitoringScreen(
                         if (reading != null) {
                             if (isLandscapeHome) {
                                 Row(
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .onGloballyPositioned {
+                                            landscapeChartAnchorPx = it.boundsInParent().top.roundToInt()
+                                        },
                                     horizontalArrangement = Arrangement.spacedBy(10.dp),
                                     verticalAlignment = Alignment.Top
                                 ) {
@@ -279,6 +298,16 @@ fun MonitoringScreen(
                                             targetHigh = state.settings.targetHigh,
                                             now = currentTime
                                         )
+                                        // Range chips moved under the glucose card (above NFZ) so the
+                                        // user can change the range here and see the chart + metrics
+                                        // update immediately.
+                                        landscapeRangeSelector?.let { rs ->
+                                            HomeChartRangeSelector(
+                                                options = rs.options,
+                                                selectedRange = rs.selectedRange,
+                                                onRangeSelected = rs.onRangeSelected
+                                            )
+                                        }
                                         NfzStatusCompactCard(
                                             state = state,
                                             reading = reading,
@@ -312,6 +341,8 @@ fun MonitoringScreen(
                                             chartHeight = 220.dp,
                                             showInlineMetrics = false,
                                             onMetricsComputed = { landscapeMetricTiles = it },
+                                            showInlineRangeSelector = false,
+                                            onRangeSelectorState = { landscapeRangeSelector = it },
                                             onQuickMetricsOrderChanged = viewModel::saveQuickMetricsOrder,
                                             onEditMetricsClick = onNavigateToMetricSettings
                                         )
@@ -799,6 +830,16 @@ private fun CriterionCard(criterion: NfzCriterionEvaluation) {
     }
 }
 
+/**
+ * Lifted state of the home chart range selector, so landscape can render the range chips outside the
+ * chart card (in the left column) while the card keeps owning the range state.
+ */
+internal data class RangeSelectorState(
+    val options: List<HomeChartRangeOption>,
+    val selectedRange: HomeChartRange,
+    val onRangeSelected: (HomeChartRange) -> Unit
+)
+
 @Composable
 private fun GlucoseChartCard(
     state: MonitoringUiState,
@@ -811,6 +852,8 @@ private fun GlucoseChartCard(
     chartHeight: Dp = 260.dp,
     showInlineMetrics: Boolean = true,
     onMetricsComputed: ((List<QuickMetricTileUi>) -> Unit)? = null,
+    showInlineRangeSelector: Boolean = true,
+    onRangeSelectorState: ((RangeSelectorState) -> Unit)? = null,
     onQuickMetricsOrderChanged: (List<QuickMetricId>) -> Unit,
     onEditMetricsClick: () -> Unit
 ) {
@@ -968,14 +1011,21 @@ private fun GlucoseChartCard(
             }
         }
 
-        HomeChartRangeSelector(
-            options = rangeOptions,
-            selectedRange = selectedRange,
-            onRangeSelected = {
-                userSelectedRange = true
-                homeChartRangeName = it.name
-            }
-        )
+        val onRangeSelected: (HomeChartRange) -> Unit = { range ->
+            userSelectedRange = true
+            homeChartRangeName = range.name
+        }
+        // Lift the range selector state so a caller (landscape) can render the chips elsewhere.
+        LaunchedEffect(rangeOptions, selectedRange) {
+            onRangeSelectorState?.invoke(RangeSelectorState(rangeOptions, selectedRange, onRangeSelected))
+        }
+        if (showInlineRangeSelector) {
+            HomeChartRangeSelector(
+                options = rangeOptions,
+                selectedRange = selectedRange,
+                onRangeSelected = onRangeSelected
+            )
+        }
 
         HomeDataAvailabilityRow(summary = dataSummary)
 

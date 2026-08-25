@@ -2,6 +2,46 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.9.0 - 2026-08-25
+
+### PL
+
+#### Changed
+- Metryki na ekranie głównym i w Ustawieniach przestawiasz teraz **przeciąganiem** (przytrzymaj i przesuń): kafelek/wiersz się „unosi" (skala + cień), a upuszczenie zmienia kolejność. Usunięto przyciski strzałek w Ustawieniach.
+- Widok poziomy: **selektor zakresu (chipy 1g/3g/…) przeniesiony do lewej kolumny** — pod wartość glikemii i zalecenia, nad kartą NFZ. Zmiana zakresu od razu odświeża wykres i metryki.
+- Po obróceniu do orientacji poziomej ekran **automatycznie przewija się** tak, aby zaczynać od sekcji „Historia glikemii".
+
+#### Fixed
+- **Po wczytaniu danych z kopii aplikacja nie wymusza już ponownego logowania.** Ekran logowania pojawia się tylko wtedy, gdy naprawdę brak i zapisanej sesji, i danych logowania (`AppLaunchResolver` ujednolicony z `shouldShowLoginForm`).
+
+#### Tests
+- `AppLaunchResolverTest` — zaktualizowany (LIVE z danymi logowania → MONITORING; bez sesji i bez danych → LOGIN).
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.9.0-debug.apk`
+- `release-artifacts/LibreCare-2.9.0-release.apk`
+- `release-artifacts/LibreCare-2.9.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Changed
+- Home-screen and Settings metrics now reorder via **drag & drop** (long-press and move): the tile/row lifts (scale + shadow) and dropping changes the order. Arrow buttons removed from Settings.
+- Landscape: the **range selector (1h/3h/… chips) moved into the left column** — under the glucose value/recommendations, above the NFZ card. Changing the range updates the chart and metrics immediately.
+- On rotating to landscape the screen **auto-scrolls** to start at the "Historia glikemii" section.
+
+#### Fixed
+- **Restoring a backup no longer forces re-login.** The login screen only appears when there is genuinely no saved session AND no stored credentials (`AppLaunchResolver` aligned with `shouldShowLoginForm`).
+
+#### Tests
+- `AppLaunchResolverTest` — updated (LIVE with credentials → MONITORING; no session and no credentials → LOGIN).
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.9.0-debug.apk`
+- `release-artifacts/LibreCare-2.9.0-release.apk`
+- `release-artifacts/LibreCare-2.9.0-release.aab` (Google Play upload file)
+
 ## 2.8.0 - 2026-08-25
 
 ### PL

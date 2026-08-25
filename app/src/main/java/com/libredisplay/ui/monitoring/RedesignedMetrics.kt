@@ -5,6 +5,9 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,12 +35,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.ui.theme.LibreCareColors
 import java.time.Duration
@@ -196,6 +201,8 @@ internal fun ImprovedQuickMetricsPanel(
     val scrollState = rememberScrollState()
     val canScrollRight = scrollState.value < scrollState.maxValue
     val canScrollLeft = scrollState.value > 0
+    var draggingId by remember { mutableStateOf<QuickMetricId?>(null) }
+    var dragDx by remember { mutableFloatStateOf(0f) }
 
     Column(
         modifier = modifier.fillMaxWidth(),
@@ -262,46 +269,59 @@ internal fun ImprovedQuickMetricsPanel(
                         .horizontalScroll(scrollState),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    orderedTiles.forEach { tile ->
-                        var dragAccumulatorX by remember(tile.id) { mutableFloatStateOf(0f) }
+                    // Long-press lifts the tile (scale + shadow, pops out slightly); dragging past a
+                    // threshold reorders. All tiles stay composed for accessibility.
+                    orderedVisibleIds.forEach { id ->
+                        val tile = tileById[id] ?: return@forEach
+                        val lifted = draggingId == id
                         QuickMetricTile(
                             tile = tile,
                             reorderMode = true,
-                            isDragging = false,
+                            isDragging = lifted,
                             modifier = Modifier
+                                .zIndex(if (lifted) 1f else 0f)
+                                .graphicsLayer {
+                                    if (lifted) {
+                                        translationX = dragDx
+                                        translationY = -10f
+                                        scaleX = 1.06f
+                                        scaleY = 1.06f
+                                        shadowElevation = 12f
+                                        alpha = 0.96f
+                                    }
+                                }
                                 .widthIn(min = 96.dp)
                                 .width(112.dp)
                                 .pointerInput(orderedVisibleIds) {
                                     detectDragGesturesAfterLongPress(
-                                        onDragEnd = { dragAccumulatorX = 0f },
-                                        onDragCancel = { dragAccumulatorX = 0f }
+                                        onDragStart = { draggingId = id; dragDx = 0f },
+                                        onDragEnd = { draggingId = null; dragDx = 0f },
+                                        onDragCancel = { draggingId = null; dragDx = 0f }
                                     ) { change, dragAmount ->
-                                        dragAccumulatorX += dragAmount.x
-                                        val threshold = 52f
-                                        val currentIndex = orderedVisibleIds.indexOf(tile.id)
+                                        change.consume()
+                                        dragDx += dragAmount.x
+                                        val threshold = 60f
+                                        val currentIndex = orderedVisibleIds.indexOf(id)
                                         when {
-                                            dragAccumulatorX > threshold && currentIndex < orderedVisibleIds.lastIndex -> {
+                                            dragDx > threshold && currentIndex < orderedVisibleIds.lastIndex -> {
                                                 val updated = orderedVisibleIds.toMutableList().also {
-                                                    val item = it.removeAt(currentIndex)
-                                                    it.add(currentIndex + 1, item)
+                                                    it.add(currentIndex + 1, it.removeAt(currentIndex))
                                                 }
                                                 orderedVisibleIds = updated
                                                 val hidden = orderedIds.filterNot { it in updated }
                                                 onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
-                                                dragAccumulatorX = 0f
+                                                dragDx -= threshold
                                             }
-                                            dragAccumulatorX < -threshold && currentIndex > 0 -> {
+                                            dragDx < -threshold && currentIndex > 0 -> {
                                                 val updated = orderedVisibleIds.toMutableList().also {
-                                                    val item = it.removeAt(currentIndex)
-                                                    it.add(currentIndex - 1, item)
+                                                    it.add(currentIndex - 1, it.removeAt(currentIndex))
                                                 }
                                                 orderedVisibleIds = updated
                                                 val hidden = orderedIds.filterNot { it in updated }
                                                 onOrderChanged(QuickMetricId.normalizeOrder(updated + hidden))
-                                                dragAccumulatorX = 0f
+                                                dragDx += threshold
                                             }
                                         }
-                                        change.consume()
                                     }
                                 }
                         )

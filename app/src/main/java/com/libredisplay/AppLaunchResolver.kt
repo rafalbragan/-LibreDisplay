@@ -13,7 +13,11 @@ object AppLaunchResolver {
     fun resolve(settings: AppSettings, hasPersistedSession: Boolean): AppLaunchTarget {
         return when (settings.appMode) {
             AppMode.DEMO -> AppLaunchTarget.MONITORING
-            AppMode.LIVE -> if (hasPersistedSession) {
+            // Only force the login screen when there is genuinely nothing to log in with: no saved
+            // session AND no stored credentials. After restoring a backup that contains credentials
+            // the app must go straight to monitoring (it can reconnect on its own) instead of asking
+            // the user to sign in again. This mirrors SettingsRepository.shouldShowLoginForm().
+            AppMode.LIVE -> if (hasPersistedSession || settings.hasCredentials()) {
                 AppLaunchTarget.MONITORING
             } else {
                 AppLaunchTarget.LOGIN

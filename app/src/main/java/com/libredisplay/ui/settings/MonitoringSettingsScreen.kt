@@ -1,5 +1,6 @@
 package com.libredisplay.ui.settings
 
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -30,21 +31,26 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.libredisplay.R
 import com.libredisplay.data.model.HbA1cSettings
 import com.libredisplay.data.model.QuickMetricId
+import com.libredisplay.ui.theme.LibreCareColors
 
 enum class MonitoringSettingsSection {
     TARGET_RANGE,
@@ -129,35 +135,62 @@ fun MonitoringSettingsScreen(
 
                 MonitoringSettingsSection.HOME_METRICS -> {
                     Text(
-                        text = "Ustaw kolejność i widoczność metryk na ekranie głównym.",
+                        text = "Przytrzymaj uchwyt i przeciągnij, aby zmienić kolejność metryk. Przełącznikiem ustaw widoczność.",
                         fontSize = 12.sp,
                         color = Color(0xFF94A3B8)
                     )
+                    var draggingMetric by remember { mutableStateOf<QuickMetricId?>(null) }
+                    var dragDy by remember { mutableFloatStateOf(0f) }
                     quickMetricsOrder.forEachIndexed { index, metricId ->
+                        val lifted = draggingMetric == metricId
                         Row(
                             modifier = Modifier
                                 .fillMaxWidth()
+                                .zIndex(if (lifted) 1f else 0f)
+                                .graphicsLayer {
+                                    if (lifted) {
+                                        translationY = dragDy
+                                        scaleX = 1.03f
+                                        scaleY = 1.03f
+                                        shadowElevation = 12f
+                                        alpha = 0.97f
+                                    }
+                                }
                                 .padding(vertical = 2.dp),
                             horizontalArrangement = Arrangement.spacedBy(6.dp),
                             verticalAlignment = Alignment.CenterVertically
                         ) {
                             Icon(
                                 imageVector = Icons.Default.DragIndicator,
-                                contentDescription = null,
-                                tint = Color(0xFF94A3B8),
-                                modifier = Modifier.size(20.dp)
+                                contentDescription = "Przeciągnij, aby zmienić kolejność",
+                                tint = if (lifted) LibreCareColors.AccentTeal else Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .pointerInput(quickMetricsOrder) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { draggingMetric = metricId; dragDy = 0f },
+                                            onDragEnd = { draggingMetric = null; dragDy = 0f },
+                                            onDragCancel = { draggingMetric = null; dragDy = 0f }
+                                        ) { change, dragAmount ->
+                                            change.consume()
+                                            dragDy += dragAmount.y
+                                            val rowThreshold = 130f
+                                            val cur = quickMetricsOrder.indexOf(metricId)
+                                            if (dragDy < -rowThreshold && cur > 0) {
+                                                viewModel.moveQuickMetricUp(metricId)
+                                                dragDy += rowThreshold
+                                            } else if (dragDy > rowThreshold && cur < quickMetricsOrder.lastIndex) {
+                                                viewModel.moveQuickMetricDown(metricId)
+                                                dragDy -= rowThreshold
+                                            }
+                                        }
+                                    }
                             )
                             Text(text = metricLabel(metricId), modifier = Modifier.weight(1f), fontSize = 15.sp)
                             Switch(
                                 checked = quickMetricsVisibility[metricId] ?: true,
                                 onCheckedChange = { visible -> viewModel.setQuickMetricVisible(metricId, visible) }
                             )
-                            IconButton(onClick = { viewModel.moveQuickMetricUp(metricId) }) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Przenies wyzej")
-                            }
-                            IconButton(onClick = { viewModel.moveQuickMetricDown(metricId) }) {
-                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Przenies nizej")
-                            }
                         }
                         if (index < quickMetricsOrder.lastIndex) {
                             HorizontalDivider()

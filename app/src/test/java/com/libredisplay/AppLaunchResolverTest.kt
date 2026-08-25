@@ -18,13 +18,23 @@ class AppLaunchResolverTest {
     }
 
     @Test
-    fun liveMode_withoutSessionOpensLoginEvenWhenCredentialsExist() {
+    fun liveMode_withCredentialsOpensMonitoringWithoutSession() {
         val target = AppLaunchResolver.resolve(
             settings = AppSettings(
                 appMode = AppMode.LIVE,
                 email = "user@example.com",
                 password = "secret"
             ),
+            hasPersistedSession = false
+        )
+
+        assertEquals(AppLaunchTarget.MONITORING, target)
+    }
+
+    @Test
+    fun liveMode_withoutSessionAndWithoutCredentialsOpensLogin() {
+        val target = AppLaunchResolver.resolve(
+            settings = AppSettings(appMode = AppMode.LIVE),
             hasPersistedSession = false
         )
 

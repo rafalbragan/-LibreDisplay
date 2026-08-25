@@ -4,17 +4,20 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.DragIndicator
 import androidx.compose.material.icons.filled.Visibility
 import androidx.compose.material.icons.filled.VisibilityOff
 import androidx.compose.material.icons.filled.KeyboardArrowUp
@@ -34,22 +37,28 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.zIndex
 import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.compose.ui.res.stringResource
 import com.libredisplay.R
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.diagnostics.DiagnosticLogger
+import com.libredisplay.ui.theme.LibreCareColors
 import androidx.compose.ui.graphics.Color
 
 enum class SettingsFocusSection {
@@ -300,25 +309,60 @@ fun SettingsScreen(
                 Column(modifier = Modifier.padding(16.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Text("Kolejność szybkich metryk", fontSize = 20.sp)
                     Text(
-                        "Dla dostępności możesz zmienić kolejność metryk przyciskami góra/dół.",
+                        "Przytrzymaj uchwyt i przeciągnij metrykę, aby zmienić kolejność.",
                         fontSize = 13.sp,
                         color = Color(0xFF94A3B8)
                     )
+                    var draggingMetric by remember { mutableStateOf<QuickMetricId?>(null) }
+                    var dragDy by remember { mutableFloatStateOf(0f) }
                     quickMetricsOrder.forEach { metricId ->
+                        val lifted = draggingMetric == metricId
                         Row(
-                            modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .zIndex(if (lifted) 1f else 0f)
+                                .graphicsLayer {
+                                    if (lifted) {
+                                        translationY = dragDy
+                                        scaleX = 1.03f
+                                        scaleY = 1.03f
+                                        shadowElevation = 12f
+                                        alpha = 0.97f
+                                    }
+                                },
+                            horizontalArrangement = Arrangement.spacedBy(8.dp),
+                            verticalAlignment = Alignment.CenterVertically
                         ) {
+                            Icon(
+                                imageVector = Icons.Default.DragIndicator,
+                                contentDescription = "Przeciągnij, aby zmienić kolejność",
+                                tint = if (lifted) LibreCareColors.AccentTeal else Color(0xFF94A3B8),
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .pointerInput(quickMetricsOrder) {
+                                        detectDragGesturesAfterLongPress(
+                                            onDragStart = { draggingMetric = metricId; dragDy = 0f },
+                                            onDragEnd = { draggingMetric = null; dragDy = 0f },
+                                            onDragCancel = { draggingMetric = null; dragDy = 0f }
+                                        ) { change, dragAmount ->
+                                            change.consume()
+                                            dragDy += dragAmount.y
+                                            val rowThreshold = 130f
+                                            val cur = quickMetricsOrder.indexOf(metricId)
+                                            if (dragDy < -rowThreshold && cur > 0) {
+                                                viewModel.moveQuickMetricUp(metricId)
+                                                dragDy += rowThreshold
+                                            } else if (dragDy > rowThreshold && cur < quickMetricsOrder.lastIndex) {
+                                                viewModel.moveQuickMetricDown(metricId)
+                                                dragDy -= rowThreshold
+                                            }
+                                        }
+                                    }
+                            )
                             Text(
                                 text = metricLabel(metricId),
                                 modifier = Modifier.weight(1f)
                             )
-                            IconButton(onClick = { viewModel.moveQuickMetricUp(metricId) }) {
-                                Icon(Icons.Default.KeyboardArrowUp, contentDescription = "Przesuń w górę")
-                            }
-                            IconButton(onClick = { viewModel.moveQuickMetricDown(metricId) }) {
-                                Icon(Icons.Default.KeyboardArrowDown, contentDescription = "Przesuń w dół")
-                            }
                         }
                     }
                 }
