@@ -1,0 +1,50 @@
+{
+  "_example": true,
+  "_note": "EXAMPLE ONLY — a candidate requirement, not an approved or implemented feature. human_decision is PENDING.",
+  "id": "REQ-EXAMPLE-0001",
+  "status": "CANDIDATE",
+  "problem": "Context behind a glucose change is often missing for seniors who cannot recall meals/insulin.",
+  "target_personas": ["senior"],
+  "target_modes": ["senior"],
+  "target_modules": ["Home / Monitoring"],
+  "linked_observations": ["OBS-EXAMPLE-0001"],
+  "user_outcome": "A senior can optionally record simple context (meal / drink / insulin) with a one-tap YES / NO / I DON'T REMEMBER, without pressure to remember.",
+  "solution_options": [
+    {
+      "id": "opt-a",
+      "summary": "Optional, dismissible contextual question card after a notable change, answerable YES / NO / I DON'T REMEMBER.",
+      "pros": ["Low cognitive load", "Tolerates missing memory", "Non-blocking"],
+      "cons": ["May be ignored", "Needs careful timing to avoid nagging"]
+    },
+    {
+      "id": "opt-b",
+      "summary": "Always-visible quick 'log context' buttons on the Senior home.",
+      "pros": ["Always available"],
+      "cons": ["Adds persistent UI weight", "Higher cognitive load for seniors"]
+    }
+  ],
+  "recommended_option": "opt-a",
+  "counterargument": "Any context prompt risks nagging or implying the app expects an action; must be strictly optional and never coercive.",
+  "scores": {
+    "safety": 8,
+    "caregiver_value": 5,
+    "senior_value": 8,
+    "clinician_value": 7,
+    "frequency": 7,
+    "confidence": 5,
+    "complexity": 6,
+    "strategy_alignment": 8
+  },
+  "safety_implications": "Must obey SAFETY_GUARDRAILS.md G1 (no dose recommendation), G3 (provenance: user-entered fact), and G5 (tolerate 'I DON'T REMEMBER'). The card may only capture context; it must never suggest a specific insulin dose.",
+  "acceptance_criteria": [
+    "Given a notable change, when a context card appears, then it offers YES / NO / I DON'T REMEMBER and can be dismissed.",
+    "Given the user selects 'I DON'T REMEMBER', when saved, then the event is stored as user-entered with unknown value and no dose is ever suggested."
+  ],
+  "test_plan": [
+    "Unit-test that the card model exposes exactly YES / NO / I DON'T REMEMBER and a dismiss action.",
+    "Static safety check: no dose-recommendation string is produced by the context feature."
+  ],
+  "human_decision": "PENDING",
+  "related_decisions": ["DEC-EXAMPLE-0001"]
+}
+

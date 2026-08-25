@@ -1,0 +1,36 @@
+# OBSERVATION TEMPLATE (human-friendly)
+# Copy this into product/research/observations/OBS-YYYYMMDD-nn.(json|yaml) and fill it in.
+# An observation records the PROBLEM, not a solution. Keep `proposed_solution` empty if possible.
+# Validate with: python scripts/product/product_cli.py validate
+#
+# NOTE: This TEMPLATE file is a scaffold and is intentionally NOT validated as a record.
+#       Real records go under product/research/observations/.
+
+id: "OBS-XXXX"                      # unique, e.g. OBS-20260826-01
+created_at: "2026-08-26"           # ISO-8601 date or date-time
+
+# where it came from
+source_type: "exploratory_test"    # manual | exploratory_test | firebase | user_review | community |
+                                   # competitor | caregiver_feedback | senior_feedback | clinician_feedback
+source_reference: "note / URL / run id / screenshot path"
+
+# who / where
+persona: "caregiver"               # caregiver | senior | clinician | cross_mode | unknown
+mode: "caregiver"                  # caregiver | senior | clinician | cross_mode | unknown
+module: "Home / Monitoring"        # reference a module from MODULE_INVENTORY.md when known
+
+# what kind of thing
+type: "usability"                  # bug | usability | accessibility | confusion | missing_capability | safety | idea
+severity: "medium"                 # low | medium | high | critical
+frequency: "occasional"            # rare | occasional | frequent | constant | unknown
+confidence: "medium"               # low | medium | high
+
+# the problem
+problem_statement: "Describe the problem the user actually experiences."
+evidence:
+  - "Concrete evidence: steps, a quote, a screenshot path, a metric."
+proposed_solution: ""              # OPTIONAL — usually leave empty; solutions belong to requirements
+
+status: "new"                      # new | triaged | linked | closed | duplicate
+linked_requirements: []            # filled once a REQ links this observation
+

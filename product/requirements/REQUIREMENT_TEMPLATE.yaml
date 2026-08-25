@@ -1,0 +1,52 @@
+# REQUIREMENT TEMPLATE (human-friendly)
+# Copy into product/requirements/REQ-XXXX.(json|yaml) and fill it in.
+# Keep the individual score dimensions — do NOT collapse into one opaque number.
+# Validate with: python scripts/product/product_cli.py validate
+#
+# NOTE: This TEMPLATE file is a scaffold and is intentionally NOT validated as a record.
+
+id: "REQ-XXXX"
+status: "CANDIDATE"                # CANDIDATE | ACCEPTED | HOLD | REJECTED | DESIGNED | IMPLEMENTING | DONE
+
+problem: "The problem this requirement addresses."
+target_personas: ["caregiver"]    # caregiver | senior | clinician | cross_mode | unknown
+target_modes: ["caregiver"]       # caregiver | senior | clinician | cross_mode | unknown
+target_modules: ["Home / Monitoring"]
+
+linked_observations: ["OBS-XXXX"] # observations this requirement resolves
+
+user_outcome: "The benefit the user gets, phrased as an outcome (not an implementation)."
+
+solution_options:
+  - id: "opt-a"
+    summary: "Option A summary."
+    pros: ["..."]
+    cons: ["..."]
+  - id: "opt-b"
+    summary: "Option B summary."
+    pros: ["..."]
+    cons: ["..."]
+recommended_option: "opt-a"
+counterargument: "The strongest reason NOT to do this."
+
+# Multi-dimensional scores (keep every dimension visible).
+scores:
+  safety: 0
+  caregiver_value: 0
+  senior_value: 0
+  clinician_value: 0
+  frequency: 0
+  confidence: 0
+  complexity: 0
+  strategy_alignment: 0
+
+safety_implications: "Safety analysis; reference SAFETY_GUARDRAILS.md (G1..G7) where relevant."
+
+acceptance_criteria:
+  - "Given/When/Then style criteria."
+test_plan:
+  - "How this will be verified."
+
+human_decision: "PENDING"          # PENDING | ACCEPT | HOLD | REJECT
+related_decisions: []
+

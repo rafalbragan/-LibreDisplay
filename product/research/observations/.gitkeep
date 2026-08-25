@@ -1,0 +1,4 @@
+# Real observation records go here, one file per observation.
+# Format: OBS-YYYYMMDD-nn.json (preferred) or .yaml. See ../README.md and ../OBSERVATION_TEMPLATE.yaml.
+# This placeholder keeps the directory tracked until the first real observation is added.
+

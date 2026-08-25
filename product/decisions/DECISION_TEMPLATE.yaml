@@ -1,0 +1,20 @@
+# DECISION TEMPLATE (human-friendly)
+# Copy into product/decisions/DEC-XXXX.(json|yaml) and fill it in.
+# Decisions are kept so rejected/postponed ideas are not re-proposed as "new".
+# Validate with: python scripts/product/product_cli.py validate
+#
+# NOTE: This TEMPLATE file is a scaffold and is intentionally NOT validated as a record.
+
+id: "DEC-XXXX"
+date: "2026-08-26"
+subject: "Short subject of the decision."
+status: "ACCEPTED"                 # ACCEPTED | HOLD | REJECTED | SUPERSEDED
+
+decision: "What was decided."
+reason: "Why."
+evidence:
+  - "Supporting evidence."
+counterargument: "The strongest opposing view considered."
+revisit_condition: "Under what future condition to revisit this."
+related_requirements: []           # e.g. ["REQ-XXXX"]
+

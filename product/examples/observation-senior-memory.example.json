@@ -1,0 +1,24 @@
+{
+  "_example": true,
+  "_note": "EXAMPLE ONLY — not an implemented feature. Illustrates the Senior missing-memory case.",
+  "id": "OBS-EXAMPLE-0001",
+  "created_at": "2026-08-25",
+  "source_type": "senior_feedback",
+  "source_reference": "example/senior-memory-note",
+  "persona": "senior",
+  "mode": "senior",
+  "module": "Home / Monitoring",
+  "type": "missing_capability",
+  "severity": "medium",
+  "frequency": "frequent",
+  "confidence": "medium",
+  "evidence": [
+    "A senior user often cannot recall whether a meal or insulin happened in the last hour.",
+    "Without that context, a rising trend is ambiguous."
+  ],
+  "problem_statement": "A senior may not remember whether a meal or insulin was taken, so context behind a glucose change is missing.",
+  "proposed_solution": "",
+  "status": "new",
+  "linked_requirements": ["REQ-EXAMPLE-0001"]
+}
+

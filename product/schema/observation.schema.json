@@ -1,0 +1,111 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/observation.schema.json",
+  "title": "LibreCare Observation",
+  "description": "An observation records a PROBLEM (not a solution). It is the raw input of the Requirements Collector.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "created_at",
+    "source_type",
+    "source_reference",
+    "persona",
+    "mode",
+    "module",
+    "type",
+    "severity",
+    "frequency",
+    "confidence",
+    "evidence",
+    "problem_statement",
+    "status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "description": "Unique id, e.g. OBS-0001.",
+      "pattern": "^OBS-[0-9A-Za-z._-]+$"
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO-8601 date or date-time."
+    },
+    "source_type": {
+      "type": "string",
+      "enum": [
+        "manual",
+        "exploratory_test",
+        "firebase",
+        "user_review",
+        "community",
+        "competitor",
+        "caregiver_feedback",
+        "senior_feedback",
+        "clinician_feedback"
+      ]
+    },
+    "source_reference": {
+      "type": "string",
+      "description": "Where this came from (URL, run id, note, screenshot path, etc.)."
+    },
+    "persona": {
+      "type": "string",
+      "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"]
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"]
+    },
+    "module": {
+      "type": "string",
+      "description": "Affected module. Should reference a module from MODULE_INVENTORY.md when known."
+    },
+    "type": {
+      "type": "string",
+      "enum": [
+        "bug",
+        "usability",
+        "accessibility",
+        "confusion",
+        "missing_capability",
+        "safety",
+        "idea"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["low", "medium", "high", "critical"]
+    },
+    "frequency": {
+      "type": "string",
+      "enum": ["rare", "occasional", "frequent", "constant", "unknown"]
+    },
+    "confidence": {
+      "type": "string",
+      "enum": ["low", "medium", "high"]
+    },
+    "evidence": {
+      "type": "array",
+      "description": "Supporting evidence items (quotes, steps, links, screenshots).",
+      "items": { "type": "string" }
+    },
+    "problem_statement": {
+      "type": "string",
+      "description": "The PROBLEM being observed. Not a proposed solution."
+    },
+    "proposed_solution": {
+      "type": "string",
+      "description": "OPTIONAL. An observation should describe the problem; solutions belong to requirements."
+    },
+    "status": {
+      "type": "string",
+      "enum": ["new", "triaged", "linked", "closed", "duplicate"]
+    },
+    "linked_requirements": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+

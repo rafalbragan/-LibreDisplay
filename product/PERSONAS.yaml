@@ -1,0 +1,86 @@
+# Machine-readable persona definitions for LibreCare.
+# Personas map 1:1 to the three application modes plus cross_mode/unknown for records.
+
+version: 1
+updated: "2026-08-25"
+
+personas:
+  caregiver:
+    label: "Caregiver"
+    is_primary: true
+    core_question: "Is something happening now that I should pay attention to?"
+    priorities:
+      - current_glucose
+      - trend_and_speed_direction
+      - freshness_of_cgm_data
+      - important_risks
+      - recent_relevant_events
+      - easy_monitored_person_switching
+      - what_changed_since_last_check
+      - actionable_context_without_overload
+    cognitive_load: medium
+    density: comfortable
+
+  senior:
+    label: "Senior"
+    is_primary: false
+    core_question: "Is everything OK now, and is there anything I need to do according to my plan?"
+    priorities:
+      - very_large_current_glucose
+      - very_clear_trend
+      - simple_status
+      - very_low_cognitive_load
+      - large_touch_targets
+      - minimal_steps
+      - future_glanceable_widgets
+      - simple_contextual_questions
+    contextual_questions_future:
+      - "Did you eat during the last hour?"
+      - "Did you drink something sweet?"
+      - "Did you take insulin?"
+      - "How many units should I record?"
+    contextual_answer_options:
+      - YES
+      - NO
+      - I_DONT_REMEMBER
+    tolerate_missing_memory: true
+    cognitive_load: minimal
+    density: large
+
+  clinician:
+    label: "Clinician"
+    is_primary: false
+    core_question: "What happened between visits, what patterns matter, and what evidence supports them?"
+    priorities:
+      - time_in_range_below_above
+      - cv_and_standard_cgm_metrics
+      - episodes
+      - data_completeness
+      - timeline
+      - meal_drink_insulin_symptom_context
+      - period_comparison
+      - reports
+      - provenance_distinction
+    provenance_distinction:
+      - measured_data
+      - user_entered_facts
+      - app_generated_observations
+    cognitive_load: high
+    density: dense
+
+# Values usable in observation.persona / requirement.target_personas records.
+persona_values_for_records:
+  - caregiver
+  - senior
+  - clinician
+  - cross_mode
+  - unknown
+
+# Values usable in observation.mode / requirement.target_modes records.
+mode_values_for_records:
+  - caregiver
+  - senior
+  - clinician
+  - cross_mode
+  - unknown
+

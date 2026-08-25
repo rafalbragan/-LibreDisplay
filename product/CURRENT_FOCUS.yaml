@@ -1,0 +1,71 @@
+# Machine-readable statement of current product focus for LibreCare.
+# Consumed by scripts/product/product_cli.py and future AI product research.
+# This file declares priorities, active modes, and the human-approval rules.
+
+version: 1
+updated: "2026-08-25"
+phase: "phase-1-foundation"
+primary_mode: caregiver
+
+# Relative priority weights (higher = more important). These are steering weights,
+# NOT an automatic decision function. A human still decides.
+priority_weights:
+  safety: 10
+  data_reliability: 10
+  caregiver_speed: 10
+  readability: 10
+  senior_simplicity: 9
+  clinician_value: 8
+  context_capture: 8
+  analytics: 7
+  customization: 4
+  novelty: 2
+
+# The three perspectives ("modes") of the single application.
+modes:
+  - caregiver
+  - senior
+  - clinician
+
+# Human approval is mandatory. AI never approves or implements autonomously.
+human_approval:
+  required: true
+  ai_may:
+    - collect_observations
+    - classify
+    - deduplicate
+    - cluster
+    - find_patterns
+    - propose_candidate_requirements
+    - propose_options
+    - score_candidates
+    - provide_counterarguments
+  ai_must_not:
+    - change_product_strategy
+    - approve_requirements
+    - approve_ux
+    - start_implementation
+  decision_values:
+    - ACCEPT
+    - HOLD
+    - REJECT
+  keep_rejected_and_hold_recorded: true
+
+# Binding safety boundary (see SAFETY_GUARDRAILS.md for the full text).
+safety_boundary:
+  autonomous_insulin_dose_recommendation: forbidden
+  correction_plan_source: clinician_approved_plan_only
+  correction_plan_status: separate_safety_regulatory_project
+
+# Required product flow.
+flow:
+  - OBSERVATION
+  - PROBLEM
+  - CANDIDATE_REQUIREMENT
+  - AI_ANALYSIS
+  - HUMAN_DECISION
+  - DESIGN_PROPOSAL
+  - HUMAN_DECISION
+  - IMPLEMENTATION
+  - TEST
+

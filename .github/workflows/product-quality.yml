@@ -1,0 +1,41 @@
+name: Product Quality
+
+# Runs ONLY when product infrastructure files change. It does not touch Android CI or the
+# Firebase Test Lab workflow. Pure Python standard library — no external dependencies.
+
+on:
+  push:
+    paths:
+      - "product/**"
+      - "scripts/product/**"
+      - ".github/workflows/product-quality.yml"
+  pull_request:
+    paths:
+      - "product/**"
+      - "scripts/product/**"
+      - ".github/workflows/product-quality.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  product-validate:
+    name: Validate product records
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate product records (deterministic, stdlib only)
+        run: python scripts/product/product_cli.py validate
+
+      - name: Product summary
+        run: python scripts/product/product_cli.py summary
+

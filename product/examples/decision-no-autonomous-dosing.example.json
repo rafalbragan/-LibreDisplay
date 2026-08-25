@@ -1,0 +1,18 @@
+{
+  "_example": true,
+  "_note": "EXAMPLE ONLY — mirrors the standing safety prohibition as a structured decision record.",
+  "id": "DEC-EXAMPLE-0001",
+  "date": "2026-08-25",
+  "subject": "No autonomous insulin-dose recommendation",
+  "status": "REJECTED",
+  "decision": "LibreCare will not autonomously calculate or recommend an individual insulin dose from AI, CGM trend, or incomplete context.",
+  "reason": "Patient safety and regulatory boundary; a wrong dose suggestion can cause harm. Acceptable messages guide the user to check recorded context and follow an established care plan.",
+  "evidence": [
+    "SAFETY_GUARDRAILS.md G1 (hard prohibition).",
+    "Forbidden example: 'Glucose is rising rapidly. Take 3 units.'"
+  ],
+  "counterargument": "Trend-based dose nudges could theoretically help experienced users, but dose specificity crosses into clinical decision-making without a clinician-approved plan.",
+  "revisit_condition": "Only within a separate, clinician-approved correction-plan safety/regulatory project (SAFETY_GUARDRAILS.md G4).",
+  "related_requirements": ["REQ-EXAMPLE-0001"]
+}
+

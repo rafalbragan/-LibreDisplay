@@ -1,0 +1,142 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/requirement.schema.json",
+  "title": "LibreCare Candidate Requirement",
+  "description": "A candidate requirement links observations to a proposed user outcome, options, multi-dimensional scores, and an explicit human decision.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "status",
+    "problem",
+    "target_personas",
+    "target_modes",
+    "target_modules",
+    "linked_observations",
+    "user_outcome",
+    "solution_options",
+    "recommended_option",
+    "counterargument",
+    "scores",
+    "safety_implications",
+    "acceptance_criteria",
+    "test_plan",
+    "human_decision"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^REQ-[0-9A-Za-z._-]+$"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "CANDIDATE",
+        "ACCEPTED",
+        "HOLD",
+        "REJECTED",
+        "DESIGNED",
+        "IMPLEMENTING",
+        "DONE"
+      ]
+    },
+    "problem": {
+      "type": "string",
+      "description": "The problem this requirement addresses."
+    },
+    "target_personas": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"]
+      }
+    },
+    "target_modes": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"]
+      }
+    },
+    "target_modules": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "linked_observations": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^OBS-[0-9A-Za-z._-]+$" }
+    },
+    "user_outcome": {
+      "type": "string",
+      "description": "The outcome for the user, phrased as a benefit, not an implementation."
+    },
+    "solution_options": {
+      "type": "array",
+      "description": "Two or more options. Do not collapse into one opaque idea.",
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["id", "summary"],
+        "properties": {
+          "id": { "type": "string" },
+          "summary": { "type": "string" },
+          "pros": { "type": "array", "items": { "type": "string" } },
+          "cons": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "recommended_option": {
+      "type": "string",
+      "description": "id of the recommended option (or a short justification)."
+    },
+    "counterargument": {
+      "type": "string",
+      "description": "The strongest reason NOT to do this."
+    },
+    "scores": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "safety",
+        "caregiver_value",
+        "senior_value",
+        "clinician_value",
+        "frequency",
+        "confidence",
+        "complexity",
+        "strategy_alignment"
+      ],
+      "properties": {
+        "safety": { "type": "number" },
+        "caregiver_value": { "type": "number" },
+        "senior_value": { "type": "number" },
+        "clinician_value": { "type": "number" },
+        "frequency": { "type": "number" },
+        "confidence": { "type": "number" },
+        "complexity": { "type": "number" },
+        "strategy_alignment": { "type": "number" }
+      }
+    },
+    "safety_implications": {
+      "type": "string",
+      "description": "Safety analysis. Must reference SAFETY_GUARDRAILS.md (G1..G7) where relevant."
+    },
+    "acceptance_criteria": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "test_plan": {
+      "type": "array",
+      "items": { "type": "string" }
+    },
+    "human_decision": {
+      "type": "string",
+      "enum": ["PENDING", "ACCEPT", "HOLD", "REJECT"]
+    },
+    "related_decisions": {
+      "type": "array",
+      "items": { "type": "string" }
+    }
+  }
+}
+
