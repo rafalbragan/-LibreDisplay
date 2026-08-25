@@ -14,12 +14,16 @@ import com.libredisplay.analytics.PeriodMetrics
 import com.libredisplay.analytics.RawDataExcelExporter
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.LibreConnectionPerson
+import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.ui.monitoring.PolishDateTimeFormatter
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.time.Duration
 import java.time.Instant
 import java.time.ZoneOffset
@@ -87,17 +91,39 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
     private val _exportEvent = MutableStateFlow<DataAnalysisExportEvent?>(null)
     val exportEvent: StateFlow<DataAnalysisExportEvent?> = _exportEvent.asStateFlow()
 
+    /**
+     * Prevents a failure while switching person / recomputing charts from reaching the process-wide
+     * crash handler (which would close the app). Instead it is logged and surfaced as an info message.
+     */
+    private val exceptionHandler = CoroutineExceptionHandler { _, throwable ->
+        DiagnosticLogger.logException("DataAnalysisViewModel", throwable, "Analiza – nieobsłużony błąd")
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                infoMessage = "Nie udało się wczytać danych analizy. Spróbuj ponownie."
+            )
+        }
+    }
+
     /** In-memory buffer (last ~400 days) so scrolling/zooming the bars never re-hits the DB. */
     private var analysisBuffer: List<GlucoseHistoryPoint> = emptyList()
     private var barOffsetDays: Int = 0
     private var barOffsetMonths: Int = 0
+
+    private data class ChartsResult(
+        val mode: BarChartMode,
+        val monthlyAvailable: Boolean,
+        val window: BarChartWindow,
+        val overlay: FourteenDayOverlay,
+        val trends: List<String>
+    )
 
     init {
         reload()
     }
 
     fun reload() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, infoMessage = null) }
             val settings = settingsRepository.loadSettings()
             val snapshot = app.glucoseSyncRepository.loadLatestLocalSnapshot(settings.selectedPatientId)
@@ -127,7 +153,8 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
     }
 
     fun onPersonSelected(patientId: String) {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
+            _uiState.update { it.copy(isLoading = true) }
             val selected = _uiState.value.persons.firstOrNull { it.patientId == patientId }
             val storedRange = localRepository.loadStoredRange(patientId)
             barOffsetDays = 0
@@ -145,19 +172,20 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             loadBuffer(patientId)
             recalculate()
             recomputeCharts()
+            _uiState.update { it.copy(isLoading = false) }
         }
     }
 
     fun onNightOnlyChanged(enabled: Boolean) {
         _uiState.update { it.copy(nightOnlyEnabled = enabled, selectedBarIndex = -1) }
-        recomputeCharts()
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
     }
 
     fun onBarModeChanged(mode: BarChartMode) {
         barOffsetDays = 0
         barOffsetMonths = 0
         _uiState.update { it.copy(barMode = mode, selectedBarIndex = -1) }
-        recomputeCharts()
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
     }
 
     /** Positive = older, negative = newer. Unit is days (DAILY) or months (MONTHLY). */
@@ -171,7 +199,7 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             barOffsetMonths = (barOffsetMonths + deltaUnits).coerceIn(0, max)
         }
         _uiState.update { it.copy(selectedBarIndex = -1) }
-        recomputeCharts()
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
     }
 
     fun onBarSelected(index: Int) {
@@ -193,11 +221,11 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                 infoMessage = null
             )
         }
-        recalculate()
+        viewModelScope.launch(exceptionHandler) { recalculate() }
     }
 
     fun exportRawDataToExcel() {
-        viewModelScope.launch {
+        viewModelScope.launch(exceptionHandler) {
             val state = _uiState.value
             val patientId = state.selectedPatientId
             if (patientId.isNullOrBlank()) {
@@ -258,14 +286,25 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         analysisBuffer = if (patientId == null) {
             emptyList()
         } else {
-            val now = Instant.now()
-            localRepository.loadHistory(patientId, now.minus(400, ChronoUnit.DAYS), now)
+            runCatching {
+                val now = Instant.now()
+                localRepository.loadHistory(patientId, now.minus(400, ChronoUnit.DAYS), now)
+            }.getOrElse { throwable ->
+                DiagnosticLogger.logException(
+                    "DataAnalysisViewModel",
+                    throwable,
+                    "loadBuffer failed for ${patientId.take(6)}"
+                )
+                _uiState.update { it.copy(infoMessage = "Nie udało się wczytać pełnej historii do analizy.") }
+                emptyList()
+            }
         }
     }
 
-    private fun recomputeCharts() {
+    private suspend fun recomputeCharts() {
         val state = _uiState.value
-        if (state.selectedPatientId == null) {
+        val patientId = state.selectedPatientId
+        if (patientId == null) {
             _uiState.update {
                 it.copy(
                     barWindow = null,
@@ -276,35 +315,43 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             }
             return
         }
-        val now = Instant.now()
         val settings = settingsRepository.loadSettings()
-        val monthlyAvailable = AnalysisChartFactory.hasMonthlyData(analysisBuffer, now)
-        val effectiveMode = if (state.barMode == BarChartMode.MONTHLY && !monthlyAvailable) BarChartMode.DAILY else state.barMode
-        val window = if (effectiveMode == BarChartMode.MONTHLY) {
-            AnalysisChartFactory.monthlyWindow(
-                analysisBuffer, now, barOffsetMonths, 12,
-                settings.targetLow, settings.targetHigh, 54, 250, state.nightOnlyEnabled
-            )
-        } else {
-            AnalysisChartFactory.dailyWindow(
-                analysisBuffer, now, barOffsetDays, 14,
-                settings.targetLow, settings.targetHigh, 54, 250, state.nightOnlyEnabled
-            )
+        val buffer = analysisBuffer
+        val nightOnly = state.nightOnlyEnabled
+        val requestedMode = state.barMode
+        val offsetDays = barOffsetDays
+        val offsetMonths = barOffsetMonths
+        val result = withContext(Dispatchers.Default) {
+            val now = Instant.now()
+            val monthlyAvailable = AnalysisChartFactory.hasMonthlyData(buffer, now)
+            val effectiveMode = if (requestedMode == BarChartMode.MONTHLY && !monthlyAvailable) BarChartMode.DAILY else requestedMode
+            val window = if (effectiveMode == BarChartMode.MONTHLY) {
+                AnalysisChartFactory.monthlyWindow(
+                    buffer, now, offsetMonths, 12,
+                    settings.targetLow, settings.targetHigh, 54, 250, nightOnly
+                )
+            } else {
+                AnalysisChartFactory.dailyWindow(
+                    buffer, now, offsetDays, 14,
+                    settings.targetLow, settings.targetHigh, 54, 250, nightOnly
+                )
+            }
+            val overlay = AnalysisChartFactory.overlayForWindow(buffer, window.windowStart, window.windowEnd, maxDays = 14)
+            val trends = AnalysisTrendInterpreter.interpret(overlay, settings.targetLow, settings.targetHigh)
+            ChartsResult(effectiveMode, monthlyAvailable, window, overlay, trends)
         }
-        val overlay = AnalysisChartFactory.overlayForWindow(analysisBuffer, window.windowStart, window.windowEnd, maxDays = 14)
-        val trends = AnalysisTrendInterpreter.interpret(overlay, settings.targetLow, settings.targetHigh)
         _uiState.update {
             it.copy(
-                barMode = effectiveMode,
-                monthlyAvailable = monthlyAvailable,
-                barWindow = window,
-                overlay = overlay,
-                trendObservations = trends
+                barMode = result.mode,
+                monthlyAvailable = result.monthlyAvailable,
+                barWindow = result.window,
+                overlay = result.overlay,
+                trendObservations = result.trends
             )
         }
     }
 
-    private fun recalculate() {
+    private suspend fun recalculate() {
         val state = _uiState.value
         val patientId = state.selectedPatientId ?: run {
             _uiState.update {
@@ -315,20 +362,22 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             }
             return
         }
-        val now = Instant.now()
         val settings = settingsRepository.loadSettings()
         val buffer = analysisBuffer
         val customStart = state.customStart
         val customEnd = state.customEnd
-        val matrix = AnalysisPeriod.entries.associateWith { period ->
-            val (periodStart, periodEnd) =
-                if (period == AnalysisPeriod.CUSTOM && customStart != null && customEnd != null) {
-                    customStart to customEnd
-                } else {
-                    now.minus(period.duration ?: Duration.ofDays(30)) to now
-                }
-            val scoped = buffer.filter { !it.timestamp.isBefore(periodStart) && !it.timestamp.isAfter(periodEnd) }
-            AnalysisMetricsFactory.calculate(scoped, periodStart, periodEnd, settings.targetLow, settings.targetHigh, 54, 250)
+        val matrix = withContext(Dispatchers.Default) {
+            val now = Instant.now()
+            AnalysisPeriod.entries.associateWith { period ->
+                val (periodStart, periodEnd) =
+                    if (period == AnalysisPeriod.CUSTOM && customStart != null && customEnd != null) {
+                        customStart to customEnd
+                    } else {
+                        now.minus(period.duration ?: Duration.ofDays(30)) to now
+                    }
+                val scoped = buffer.filter { !it.timestamp.isBefore(periodStart) && !it.timestamp.isAfter(periodEnd) }
+                AnalysisMetricsFactory.calculate(scoped, periodStart, periodEnd, settings.targetLow, settings.targetHigh, 54, 250)
+            }
         }
         _uiState.update {
             it.copy(

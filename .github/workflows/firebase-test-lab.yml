@@ -161,11 +161,12 @@ jobs:
           version: '>= 417.0.0'
 
       # ------------------------------------------------------------------
-      # DEVICE SELECTION: resolve THREE distinct virtual phones (small,
-      # standard, large). Each model+API is validated against the live Test
-      # Lab catalog; non-phones (TV/tablet/wear/auto) are excluded.
+      # DEVICE SELECTION (DYNAMIC): resolve THREE distinct virtual phones
+      # (SMALL, STANDARD, LARGE) purely from the live Test Lab catalog.
+      # Classification is by REAL screen width in dp computed from
+      # screenX/screenY/screenDensity — never from a marketing model name.
       # ------------------------------------------------------------------
-      - name: Select and validate 3-device matrix
+      - name: Select and validate 3-device matrix (dynamic)
         id: device
         if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
         shell: bash
@@ -173,106 +174,184 @@ jobs:
           set -euo pipefail
           gcloud config set project "$GCP_PROJECT_ID" >/dev/null
 
-          # Official virtual-device listing. stderr is intentionally NOT suppressed so that
-          # permission / API-enablement problems surface directly in the logs.
-          AVAILABLE_MODELS=$(gcloud firebase test android models list --filter=virtual --format="value(id)")
-          echo "Available virtual models:"
-          echo "${AVAILABLE_MODELS:-<none>}"
+          # 1) Pull the live VIRTUAL model catalog as JSON.
+          CATALOG_JSON=$(gcloud firebase test android models list --filter=virtual --format=json)
 
-          model_available() { echo "$AVAILABLE_MODELS" | grep -qx "$1"; }
+          # Phones only: form==VIRTUAL, formFactor==PHONE (an EMPTY formFactor is NOT a phone),
+          # exclude deprecated, require positive screen geometry. widthDp is computed for portrait:
+          #   shortSidePx = min(screenX, screenY)
+          #   widthDp     = shortSidePx * 160 / screenDensity
+          PHONES_TSV=$(echo "$CATALOG_JSON" | jq -r '
+            .[]
+            | select((.form // "") == "VIRTUAL")
+            | select((.formFactor // "") == "PHONE")
+            | select( ( [ .tags[]? | ascii_downcase ] | any(test("deprecated")) ) | not )
+            | select((.screenX // 0) > 0 and (.screenY // 0) > 0 and (.screenDensity // 0) > 0)
+            | [ .id,
+                ( [ .screenX, .screenY ] | min ),
+                .screenDensity,
+                ( ( ( [ .screenX, .screenY ] | min ) * 160 / .screenDensity ) | floor ),
+                ( [ .supportedVersionIds[]? ] | join(",") )
+              ] | @tsv
+          ')
 
-          # Best-effort form factor (PHONE/TABLET/WEARABLE/TV/AUTOMOTIVE) for a model.
-          form_factor_for() {
-            gcloud firebase test android models describe "$1" --format="value(formFactor)" 2>/dev/null | tr -d '[:space:]'
-          }
-          # Accept only phones: require PHONE, or empty (older catalog entries) as a permissive fallback.
-          is_phone() {
-            local ff; ff=$(form_factor_for "$1")
-            [ -z "$ff" ] || [ "$ff" = "PHONE" ]
-          }
+          if [ -z "$PHONES_TSV" ]; then
+            echo "::error::No VIRTUAL PHONE models with usable screen geometry were returned by the catalog."
+            exit 1
+          fi
 
-          supported_versions_for() {
-            gcloud firebase test android models describe "$1" \
-              --format="value(supportedVersionIds)" | tr ';,' '  ' | tr -s ' '
-          }
-          version_supported_by_model() {
-            local list; list=$(supported_versions_for "$1"); echo " $list " | grep -q " $2 "
-          }
-          # API preference: 35 -> 34 -> 33 -> 32 -> highest supported by THIS model.
-          pick_version_for_model() {
-            local list v; list=$(supported_versions_for "$1")
+          echo "Phone catalog (id / shortPx / density / widthDp / supportedVersions):"
+          echo "$PHONES_TSV"
+
+          TAB=$(printf '\t')
+
+          # --- helpers -------------------------------------------------------
+          record_for() { echo "$PHONES_TSV" | awk -F "$TAB" -v id="$1" '$1==id {print; exit}'; }
+          supports() { echo ",$1," | grep -q ",$2,"; }         # supports "<csv>" "<api>"
+          # Per-model API preference: 35 -> 34 -> 33 -> 32 -> highest stable supported by THIS model.
+          pick_version() {
+            local csv="$1" v
             for v in 35 34 33 32; do
-              if echo " $list " | grep -q " $v "; then echo "$v"; return 0; fi
+              if supports "$csv" "$v"; then echo "$v"; return 0; fi
             done
-            echo "$list" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
+            echo "$csv" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
           }
 
-          USED_MODELS=""
-          mark_used() { USED_MODELS="${USED_MODELS} $1 "; }
-          is_used() { echo "$USED_MODELS" | grep -q " $1 "; }
+          USED=""
+          is_used() { echo " $USED " | grep -q " $1 "; }
+          mark_used() { USED="$USED $1"; }
 
-          # resolve_profile PROFILE OVERRIDE_MODEL OVERRIDE_VERSION CANDIDATE...
-          resolve_profile() {
-            local profile="$1" ovm="$2" ovv="$3"; shift 3
-            local model="" version="" source="" key
-            key=$(echo "$profile" | tr '[:upper:]' '[:lower:]')
+          SORTED_ASC=$(echo "$PHONES_TSV" | sort -t "$TAB" -k4,4n)
 
-            # 1) Repository variables accepted ONLY if that exact model+version is an available phone.
-            if [ -n "$ovm" ] && [ -n "$ovv" ]; then
-              if model_available "$ovm" && is_phone "$ovm" && version_supported_by_model "$ovm" "$ovv" && ! is_used "$ovm"; then
-                model="$ovm"; version="$ovv"; source="repository-variables"
-              else
-                echo "::warning::${profile}: repo variables are not a supported/available phone combination; using fallback."
-              fi
-            fi
+          declare -A SEL_MODEL SEL_PX SEL_DENS SEL_WDP SEL_VER SEL_SRC
 
-            # 2) Fallback: first available, distinct virtual phone from the preference list.
-            if [ -z "$model" ]; then
-              for c in "$@"; do
-                if model_available "$c" && ! is_used "$c" && is_phone "$c"; then
-                  local v; v=$(pick_version_for_model "$c")
-                  if [ -n "$v" ] && version_supported_by_model "$c" "$v"; then
-                    model="$c"; version="$v"; source="fallback-auto"; break
-                  fi
-                fi
-              done
-            fi
-
-            if [ -z "$model" ] || [ -z "$version" ]; then
-              echo "::error::${profile}: could not resolve an available virtual phone with a supported API."
-              return 1
-            fi
-
-            mark_used "$model"
-            echo "${profile} device: model=$model version=$version (source=$source)"
-            {
-              echo "${key}_model=$model"
-              echo "${key}_version=$version"
-              echo "${key}_source=$source"
-            } >> "$GITHUB_OUTPUT"
+          set_profile() {
+            local p="$1" rec="$2" ver="$3" src="$4"
+            SEL_MODEL[$p]=$(echo "$rec" | cut -f1)
+            SEL_PX[$p]=$(echo "$rec" | cut -f2)
+            SEL_DENS[$p]=$(echo "$rec" | cut -f3)
+            SEL_WDP[$p]=$(echo "$rec" | cut -f4)
+            SEL_VER[$p]="$ver"
+            SEL_SRC[$p]="$src"
+            mark_used "${SEL_MODEL[$p]}"
           }
 
-          # Candidate preference lists (each candidate is validated for availability + supported API
-          # before use, so no unverified model is ever hard-coded into the matrix). Ordered by size.
-          resolve_profile SMALL    "${FTL_SMALL_MODEL:-}"    "${FTL_SMALL_VERSION:-}"    \
-            SmallPhone.arm Nexus4 NexusLowRes Nexus5 Pixel2
-          resolve_profile STANDARD "${FTL_STANDARD_MODEL:-}" "${FTL_STANDARD_VERSION:-}" \
-            MediumPhone.arm Pixel3 Pixel4 Pixel5 Pixel6
-          resolve_profile LARGE    "${FTL_LARGE_MODEL:-}"    "${FTL_LARGE_VERSION:-}"    \
-            Pixel7 Pixel6Pro Pixel4XL Pixel8 Pixel3XL
+          # Repository-variable override: accepted ONLY if the model is an available VIRTUAL phone
+          # whose supportedVersionIds include the requested API. Otherwise a warning + fallback.
+          apply_override() {
+            local p="$1" model="$2" version="$3" rec csv
+            [ -n "$model" ] && [ -n "$version" ] || return 0
+            rec=$(record_for "$model")
+            if [ -z "$rec" ]; then
+              echo "::warning::${p}: override model '$model' is not an available VIRTUAL phone; using fallback."
+              return 0
+            fi
+            csv=$(echo "$rec" | cut -f5)
+            if ! supports "$csv" "$version"; then
+              echo "::warning::${p}: override model '$model' does not support API '$version'; using fallback."
+              return 0
+            fi
+            if is_used "$model"; then
+              echo "::warning::${p}: override model '$model' already used by another profile; using fallback."
+              return 0
+            fi
+            set_profile "$p" "$rec" "$version" "repository-variables"
+          }
+
+          # SMALL: smallest sensible widthDp (>=200 preferred), else smallest overall.
+          auto_small() {
+            local line
+            line=$(echo "$SORTED_ASC" | awk -F "$TAB" -v u="$USED" '
+              BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1}
+              $1 in used {next} $4>=200 {print; exit}')
+            [ -n "$line" ] || line=$(echo "$SORTED_ASC" | awk -F "$TAB" -v u="$USED" '
+              BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1} $1 in used{next}{print; exit}')
+            [ -n "$line" ] || { echo "::error::SMALL: no available phone."; exit 1; }
+            set_profile SMALL "$line" "$(pick_version "$(echo "$line" | cut -f5)")" "fallback-auto"
+          }
+
+          # LARGE: largest widthDp phone still classified as PHONE, distinct from the others.
+          auto_large() {
+            local line
+            line=$(echo "$SORTED_ASC" | awk -F "$TAB" -v u="$USED" '
+              BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1}
+              $1 in used{next}{last=$0} END{if(last!="")print last}')
+            [ -n "$line" ] || { echo "::error::LARGE: no available phone distinct from the others."; exit 1; }
+            set_profile LARGE "$line" "$(pick_version "$(echo "$line" | cut -f5)")" "fallback-auto"
+          }
+
+          # STANDARD: widthDp closest to 384; tie-break prefers API 35 then 34.
+          auto_standard() {
+            local line
+            line=$(echo "$PHONES_TSV" | awk -F "$TAB" -v u="$USED" '
+              BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1}
+              $1 in used {next}
+              { d=$4-384; if(d<0)d=-d; sc=2; v=","$5","; if(index(v,",35,")>0)sc=0; else if(index(v,",34,")>0)sc=1;
+                printf "%d\t%d\t%s\n", d, sc, $0 }' \
+              | sort -t "$TAB" -k1,1n -k2,2n | head -n 1 | cut -f3-)
+            [ -n "$line" ] || { echo "::error::STANDARD: no available phone distinct from the others."; exit 1; }
+            set_profile STANDARD "$line" "$(pick_version "$(echo "$line" | cut -f5)")" "fallback-auto"
+          }
+
+          # Overrides first (so their ids are reserved), then automatic fill for the rest.
+          apply_override SMALL    "${FTL_SMALL_MODEL:-}"    "${FTL_SMALL_VERSION:-}"
+          apply_override STANDARD "${FTL_STANDARD_MODEL:-}" "${FTL_STANDARD_VERSION:-}"
+          apply_override LARGE    "${FTL_LARGE_MODEL:-}"    "${FTL_LARGE_VERSION:-}"
+
+          [ -n "${SEL_MODEL[SMALL]:-}" ]    || auto_small
+          [ -n "${SEL_MODEL[LARGE]:-}" ]    || auto_large
+          [ -n "${SEL_MODEL[STANDARD]:-}" ] || auto_standard
+
+          # --- distinctness + per-model API validity guard ------------------
+          if [ "${SEL_MODEL[SMALL]}" = "${SEL_MODEL[STANDARD]}" ] || \
+             [ "${SEL_MODEL[SMALL]}" = "${SEL_MODEL[LARGE]}" ] || \
+             [ "${SEL_MODEL[STANDARD]}" = "${SEL_MODEL[LARGE]}" ]; then
+            echo "::error::device selection produced non-distinct models: ${SEL_MODEL[SMALL]}, ${SEL_MODEL[STANDARD]}, ${SEL_MODEL[LARGE]}"
+            exit 1
+          fi
+          for p in SMALL STANDARD LARGE; do
+            csv=$(record_for "${SEL_MODEL[$p]}" | cut -f5)
+            if ! supports "$csv" "${SEL_VER[$p]}"; then
+              echo "::error::${p}: model ${SEL_MODEL[$p]} does not support API ${SEL_VER[$p]}"
+              exit 1
+            fi
+          done
 
           # Locale validation against the live Test Lab locale catalog.
           if ! gcloud firebase test android locales list --format="value(id)" | grep -qx "$LOCALE"; then
             echo "::error::Locale '$LOCALE' is not supported by Firebase Test Lab."
             exit 1
           fi
-
           # Orientation must be one of the Test Lab supported values.
           case "$ORIENTATION" in
             portrait|landscape|default) ;;
             *) echo "::error::Orientation '$ORIENTATION' is invalid (allowed: portrait|landscape|default)."; exit 1 ;;
           esac
 
+          # --- outputs (model/version + geometry for the diagnostic table) --
+          {
+            echo "small_model=${SEL_MODEL[SMALL]}";       echo "small_version=${SEL_VER[SMALL]}"
+            echo "small_px=${SEL_PX[SMALL]}";             echo "small_density=${SEL_DENS[SMALL]}"
+            echo "small_widthdp=${SEL_WDP[SMALL]}";       echo "small_source=${SEL_SRC[SMALL]}"
+            echo "standard_model=${SEL_MODEL[STANDARD]}"; echo "standard_version=${SEL_VER[STANDARD]}"
+            echo "standard_px=${SEL_PX[STANDARD]}";       echo "standard_density=${SEL_DENS[STANDARD]}"
+            echo "standard_widthdp=${SEL_WDP[STANDARD]}"; echo "standard_source=${SEL_SRC[STANDARD]}"
+            echo "large_model=${SEL_MODEL[LARGE]}";       echo "large_version=${SEL_VER[LARGE]}"
+            echo "large_px=${SEL_PX[LARGE]}";             echo "large_density=${SEL_DENS[LARGE]}"
+            echo "large_widthdp=${SEL_WDP[LARGE]}";       echo "large_source=${SEL_SRC[LARGE]}"
+          } >> "$GITHUB_OUTPUT"
+
+          # --- diagnostic table (log) ---------------------------------------
+          echo "Dobor urzadzen (dynamiczny, wg widthDp):"
+          printf '| %-8s | %-18s | %-6s | %-7s | %-7s | %-3s | %-18s |\n' "Profil" "Model" "px" "density" "widthDp" "API" "Zrodlo"
+          printf '| %-8s | %-18s | %-6s | %-7s | %-7s | %-3s | %-18s |\n' \
+            "SMALL" "${SEL_MODEL[SMALL]}" "${SEL_PX[SMALL]}" "${SEL_DENS[SMALL]}" "${SEL_WDP[SMALL]}" "${SEL_VER[SMALL]}" "${SEL_SRC[SMALL]}"
+          printf '| %-8s | %-18s | %-6s | %-7s | %-7s | %-3s | %-18s |\n' \
+            "STANDARD" "${SEL_MODEL[STANDARD]}" "${SEL_PX[STANDARD]}" "${SEL_DENS[STANDARD]}" "${SEL_WDP[STANDARD]}" "${SEL_VER[STANDARD]}" "${SEL_SRC[STANDARD]}"
+          printf '| %-8s | %-18s | %-6s | %-7s | %-7s | %-3s | %-18s |\n' \
+            "LARGE" "${SEL_MODEL[LARGE]}" "${SEL_PX[LARGE]}" "${SEL_DENS[LARGE]}" "${SEL_WDP[LARGE]}" "${SEL_VER[LARGE]}" "${SEL_SRC[LARGE]}"
+
+          echo "READY_FOR_DYNAMIC_3_DEVICE_MATRIX: YES"
 
       # ------------------------------------------------------------------
       # RUN: instrumentation tests on Firebase Test Lab as ONE matrix that
@@ -342,24 +421,42 @@ jobs:
           MISSING="${{ steps.firebase-config.outputs.missing_vars }}"
 
           AUTH_OUTCOME="${{ steps.auth.outcome }}"
+          DEVICE_OUTCOME="${{ steps.device.outcome }}"
           APP_BUILD="${{ steps.build-app.outcome }}"
           TEST_BUILD="${{ steps.build-androidtest.outcome }}"
           FTL_OUTCOME="${{ steps.ftl.outcome }}"
 
           SMALL_MODEL="${{ steps.device.outputs.small_model }}"
           SMALL_VER="${{ steps.device.outputs.small_version }}"
+          SMALL_PX="${{ steps.device.outputs.small_px }}"
+          SMALL_DENS="${{ steps.device.outputs.small_density }}"
+          SMALL_WDP="${{ steps.device.outputs.small_widthdp }}"
           STD_MODEL="${{ steps.device.outputs.standard_model }}"
           STD_VER="${{ steps.device.outputs.standard_version }}"
+          STD_PX="${{ steps.device.outputs.standard_px }}"
+          STD_DENS="${{ steps.device.outputs.standard_density }}"
+          STD_WDP="${{ steps.device.outputs.standard_widthdp }}"
           LARGE_MODEL="${{ steps.device.outputs.large_model }}"
           LARGE_VER="${{ steps.device.outputs.large_version }}"
+          LARGE_PX="${{ steps.device.outputs.large_px }}"
+          LARGE_DENS="${{ steps.device.outputs.large_density }}"
+          LARGE_WDP="${{ steps.device.outputs.large_widthdp }}"
           RESULTS_URL="${{ steps.ftl.outputs.results_url }}"
           GCS_URL="${{ steps.ftl.outputs.gcs_url }}"
 
-          # Firebase Test Lab status line
+          # Precise Firebase Test Lab status: config vs auth vs device-selection vs real run.
           if [ "$ENABLED" != "true" ]; then
             FTL_LINE="SKIPPED_EXTERNAL_CONFIGURATION"
+          elif [ "$AUTH_OUTCOME" = "failure" ]; then
+            FTL_LINE="NOT_RUN_AUTH_FAILED ❌"
+          elif [ "$DEVICE_OUTCOME" = "failure" ]; then
+            FTL_LINE="NOT_RUN_DEVICE_SELECTION_FAILED ❌"
+          elif [ "$FTL_OUTCOME" = "success" ]; then
+            FTL_LINE="PASS ✅"
+          elif [ "$FTL_OUTCOME" = "failure" ]; then
+            FTL_LINE="FAIL ❌"
           else
-            FTL_LINE="$(status "$FTL_OUTCOME")"
+            FTL_LINE="NOT_RUN ❌"
           fi
 
           {
@@ -367,19 +464,19 @@ jobs:
             echo ""
             echo "| Krok | Wynik |"
             echo "|------|-------|"
-            echo "| Authentication (Workload Identity) | $( [ "$ENABLED" = "true" ] && status "$AUTH_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
             echo "| App APK build | $(status "$APP_BUILD") |"
             echo "| androidTest APK build | $(status "$TEST_BUILD") |"
+            echo "| Authentication (Workload Identity) | $( [ "$ENABLED" = "true" ] && status "$AUTH_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
+            echo "| Device selection | $( [ "$ENABLED" = "true" ] && status "$DEVICE_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
             echo "| Firebase Test Lab matrix | $FTL_LINE |"
-            echo "| Instrumentation tests | $( [ "$ENABLED" = "true" ] && status "$FTL_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
             echo ""
-            echo "### Macierz urządzeń"
+            echo "### Macierz urządzeń (widthDp policzone z screenX/screenY/screenDensity)"
             echo ""
-            echo "| Profil | Model | API | Locale | Orientation |"
-            echo "|--------|-------|-----|--------|-------------|"
-            echo "| SMALL | ${SMALL_MODEL:-n/d} | ${SMALL_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
-            echo "| STANDARD | ${STD_MODEL:-n/d} | ${STD_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
-            echo "| LARGE | ${LARGE_MODEL:-n/d} | ${LARGE_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
+            echo "| Profil | Model | px | density | widthDp | API | Locale | Orientation |"
+            echo "|--------|-------|----|---------|---------|-----|--------|-------------|"
+            echo "| SMALL | ${SMALL_MODEL:-n/d} | ${SMALL_PX:-n/d} | ${SMALL_DENS:-n/d} | ${SMALL_WDP:-n/d} | ${SMALL_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
+            echo "| STANDARD | ${STD_MODEL:-n/d} | ${STD_PX:-n/d} | ${STD_DENS:-n/d} | ${STD_WDP:-n/d} | ${STD_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
+            echo "| LARGE | ${LARGE_MODEL:-n/d} | ${LARGE_PX:-n/d} | ${LARGE_DENS:-n/d} | ${LARGE_WDP:-n/d} | ${LARGE_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
             echo ""
             echo "### Artefakty APK"
             echo ""
@@ -399,6 +496,14 @@ jobs:
               echo "> **Firebase Test Lab: SKIPPED_EXTERNAL_CONFIGURATION**"
               echo "> Brakujące Repository Variables: \`${MISSING}\`"
               echo "> Dodaj: GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT"
+            elif [ "$AUTH_OUTCOME" = "failure" ]; then
+              echo ""
+              echo "> **Firebase Test Lab: NOT_RUN_AUTH_FAILED ❌**"
+              echo "> Uwierzytelnianie Workload Identity Federation nie powiodło się."
+            elif [ "$DEVICE_OUTCOME" = "failure" ]; then
+              echo ""
+              echo "> **Firebase Test Lab: NOT_RUN_DEVICE_SELECTION_FAILED ❌**"
+              echo "> Dynamiczny dobór urządzeń nie powiódł się — sprawdź krok „Select and validate 3-device matrix (dynamic)”."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 

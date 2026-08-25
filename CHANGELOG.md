@@ -2,6 +2,32 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.11.1 - 2026-08-25
+
+### PL
+
+#### Fixed
+- **Aplikacja nie zamyka się już po przełączeniu monitorowanej osoby na ekranie `Analiza`.** `DataAnalysisViewModel` nie miał żadnej obsługi wyjątków — awaria podczas wczytywania bufora (do 400 dni jednym zapytaniem) lub przeliczania wykresów trafiała do globalnego handlera awarii i zamykała aplikację. Dodano `CoroutineExceptionHandler`, zabezpieczono wczytywanie bufora (`runCatching`) i przeniesiono ciężkie obliczenia wykresów/metryk na `Dispatchers.Default`.
+
+#### Changed (CI)
+- `.github/workflows/firebase-test-lab.yml`: **dynamiczny dobór 3 urządzeń** z żywego katalogu Test Lab (JSON + `jq`). Profile SMALL/STANDARD/LARGE są wybierane wg realnej szerokości ekranu w dp liczonej z `screenX/screenY/screenDensity`, a nie po nazwach modeli. Usunięto zależność od ręcznych list `Pixel*`. API dobierane per‑model z `supportedVersionIds` (35→34→33→32→najwyższe). Override'y `FTL_*` walidowane (VIRTUAL + PHONE + API). Dodano tabelę diagnostyczną (log + Job Summary) i rozróżnienie statusów: `SKIPPED_EXTERNAL_CONFIGURATION`, `NOT_RUN_DEVICE_SELECTION_FAILED ❌`, `NOT_RUN_AUTH_FAILED ❌`, `PASS ✅`, `FAIL ❌`.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- Statyczna walidacja workflow (21 asercji) — PASS; `READY_FOR_DYNAMIC_3_DEVICE_MATRIX: YES`.
+
+### EN
+
+#### Fixed
+- **The app no longer closes after switching the monitored person on the `Analiza` screen.** `DataAnalysisViewModel` had no exception handling — a failure while loading the buffer (up to 400 days in one query) or recomputing charts reached the global crash handler and killed the app. Added a `CoroutineExceptionHandler`, guarded the buffer load (`runCatching`), and moved heavy chart/metric computation to `Dispatchers.Default`.
+
+#### Changed (CI)
+- `.github/workflows/firebase-test-lab.yml`: **dynamic 3-device selection** from the live Test Lab catalog (JSON + `jq`). SMALL/STANDARD/LARGE are chosen by real screen width in dp computed from `screenX/screenY/screenDensity`, not by model name. Removed the hardcoded `Pixel*` dependency. Per-model API from `supportedVersionIds` (35→34→33→32→highest). `FTL_*` overrides validated (VIRTUAL + PHONE + API). Added a diagnostic table (log + Job Summary) and distinct statuses: `SKIPPED_EXTERNAL_CONFIGURATION`, `NOT_RUN_DEVICE_SELECTION_FAILED ❌`, `NOT_RUN_AUTH_FAILED ❌`, `PASS ✅`, `FAIL ❌`.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- Static workflow validation (21 assertions) — PASS; `READY_FOR_DYNAMIC_3_DEVICE_MATRIX: YES`.
+
 ## 2.11.0 - 2026-08-25
 
 ### PL
