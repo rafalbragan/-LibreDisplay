@@ -31,8 +31,12 @@ jobs:
       GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
       GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
       GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      FTL_SMALL_MODEL: ${{ vars.FTL_SMALL_MODEL }}
+      FTL_SMALL_VERSION: ${{ vars.FTL_SMALL_VERSION }}
       FTL_STANDARD_MODEL: ${{ vars.FTL_STANDARD_MODEL }}
       FTL_STANDARD_VERSION: ${{ vars.FTL_STANDARD_VERSION }}
+      FTL_LARGE_MODEL: ${{ vars.FTL_LARGE_MODEL }}
+      FTL_LARGE_VERSION: ${{ vars.FTL_LARGE_VERSION }}
       LOCALE: ${{ github.event.inputs.locale || 'pl' }}
       ORIENTATION: ${{ github.event.inputs.orientation || 'portrait' }}
 
@@ -157,21 +161,17 @@ jobs:
           version: '>= 417.0.0'
 
       # ------------------------------------------------------------------
-      # DEVICE SELECTION: pick a virtual phone and an OS version that this
-      # specific model actually supports (model + API validated together).
-      # Also validates locale and orientation against Test Lab.
+      # DEVICE SELECTION: resolve THREE distinct virtual phones (small,
+      # standard, large). Each model+API is validated against the live Test
+      # Lab catalog; non-phones (TV/tablet/wear/auto) are excluded.
       # ------------------------------------------------------------------
-      - name: Select and validate Firebase device
+      - name: Select and validate 3-device matrix
         id: device
         if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
         shell: bash
         run: |
           set -euo pipefail
           gcloud config set project "$GCP_PROJECT_ID" >/dev/null
-
-          MODEL=""
-          VERSION=""
-          SOURCE=""
 
           # Official virtual-device listing. stderr is intentionally NOT suppressed so that
           # permission / API-enablement problems surface directly in the logs.
@@ -181,71 +181,85 @@ jobs:
 
           model_available() { echo "$AVAILABLE_MODELS" | grep -qx "$1"; }
 
-          # OS version ids supported by ONE specific model (space separated).
+          # Best-effort form factor (PHONE/TABLET/WEARABLE/TV/AUTOMOTIVE) for a model.
+          form_factor_for() {
+            gcloud firebase test android models describe "$1" --format="value(formFactor)" 2>/dev/null | tr -d '[:space:]'
+          }
+          # Accept only phones: require PHONE, or empty (older catalog entries) as a permissive fallback.
+          is_phone() {
+            local ff; ff=$(form_factor_for "$1")
+            [ -z "$ff" ] || [ "$ff" = "PHONE" ]
+          }
+
           supported_versions_for() {
             gcloud firebase test android models describe "$1" \
               --format="value(supportedVersionIds)" | tr ';,' '  ' | tr -s ' '
           }
-
           version_supported_by_model() {
-            local list
-            list=$(supported_versions_for "$1")
-            echo " $list " | grep -q " $2 "
+            local list; list=$(supported_versions_for "$1"); echo " $list " | grep -q " $2 "
           }
-
           # API preference: 35 -> 34 -> 33 -> 32 -> highest supported by THIS model.
           pick_version_for_model() {
-            local list v
-            list=$(supported_versions_for "$1")
+            local list v; list=$(supported_versions_for "$1")
             for v in 35 34 33 32; do
               if echo " $list " | grep -q " $v "; then echo "$v"; return 0; fi
             done
             echo "$list" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
           }
 
-          # 1) Repository variables accepted ONLY if that exact model+version combo is supported.
-          if [ -n "${FTL_STANDARD_MODEL}" ] && [ -n "${FTL_STANDARD_VERSION}" ]; then
-            if model_available "$FTL_STANDARD_MODEL" && version_supported_by_model "$FTL_STANDARD_MODEL" "$FTL_STANDARD_VERSION"; then
-              MODEL="$FTL_STANDARD_MODEL"
-              VERSION="$FTL_STANDARD_VERSION"
-              SOURCE="repository-variables"
-            else
-              echo "::warning::FTL_STANDARD_MODEL/FTL_STANDARD_VERSION is not a supported model+API combination; using fallback."
-            fi
-          fi
+          USED_MODELS=""
+          mark_used() { USED_MODELS="${USED_MODELS} $1 "; }
+          is_used() { echo "$USED_MODELS" | grep -q " $1 "; }
 
-          # 2) Fallback: first available standard virtual phone from a preference list.
-          if [ -z "$MODEL" ]; then
-            for candidate in MediumPhone.arm Pixel7 Pixel6 Pixel3 SmallPhone.arm; do
-              if model_available "$candidate"; then
-                MODEL="$candidate"
-                SOURCE="fallback-auto"
-                break
+          # resolve_profile PROFILE OVERRIDE_MODEL OVERRIDE_VERSION CANDIDATE...
+          resolve_profile() {
+            local profile="$1" ovm="$2" ovv="$3"; shift 3
+            local model="" version="" source="" key
+            key=$(echo "$profile" | tr '[:upper:]' '[:lower:]')
+
+            # 1) Repository variables accepted ONLY if that exact model+version is an available phone.
+            if [ -n "$ovm" ] && [ -n "$ovv" ]; then
+              if model_available "$ovm" && is_phone "$ovm" && version_supported_by_model "$ovm" "$ovv" && ! is_used "$ovm"; then
+                model="$ovm"; version="$ovv"; source="repository-variables"
+              else
+                echo "::warning::${profile}: repo variables are not a supported/available phone combination; using fallback."
               fi
-            done
-          fi
+            fi
 
-          # 3) Last resort: first virtual model in the catalog.
-          if [ -z "$MODEL" ]; then
-            MODEL=$(echo "$AVAILABLE_MODELS" | head -n 1)
-            SOURCE="fallback-first"
-          fi
+            # 2) Fallback: first available, distinct virtual phone from the preference list.
+            if [ -z "$model" ]; then
+              for c in "$@"; do
+                if model_available "$c" && ! is_used "$c" && is_phone "$c"; then
+                  local v; v=$(pick_version_for_model "$c")
+                  if [ -n "$v" ] && version_supported_by_model "$c" "$v"; then
+                    model="$c"; version="$v"; source="fallback-auto"; break
+                  fi
+                fi
+              done
+            fi
 
-          if [ -z "$MODEL" ]; then
-            echo "::error::No virtual device models available from Firebase Test Lab."
-            exit 1
-          fi
+            if [ -z "$model" ] || [ -z "$version" ]; then
+              echo "::error::${profile}: could not resolve an available virtual phone with a supported API."
+              return 1
+            fi
 
-          # Choose an API level actually supported by the chosen model.
-          if [ -z "$VERSION" ]; then
-            VERSION=$(pick_version_for_model "$MODEL")
-          fi
+            mark_used "$model"
+            echo "${profile} device: model=$model version=$version (source=$source)"
+            {
+              echo "${key}_model=$model"
+              echo "${key}_version=$version"
+              echo "${key}_source=$source"
+            } >> "$GITHUB_OUTPUT"
+          }
 
-          if [ -z "$VERSION" ] || ! version_supported_by_model "$MODEL" "$VERSION"; then
-            echo "::error::Could not resolve a supported OS version for model '$MODEL'."
-            echo "Supported versions for $MODEL: $(supported_versions_for "$MODEL")"
-            exit 1
-          fi
+          # Candidate preference lists (each candidate is validated for availability + supported API
+          # before use, so no unverified model is ever hard-coded into the matrix). Ordered by size.
+          resolve_profile SMALL    "${FTL_SMALL_MODEL:-}"    "${FTL_SMALL_VERSION:-}"    \
+            SmallPhone.arm Nexus4 NexusLowRes Nexus5 Pixel2
+          resolve_profile STANDARD "${FTL_STANDARD_MODEL:-}" "${FTL_STANDARD_VERSION:-}" \
+            MediumPhone.arm Pixel3 Pixel4 Pixel5 Pixel6
+          resolve_profile LARGE    "${FTL_LARGE_MODEL:-}"    "${FTL_LARGE_VERSION:-}"    \
+            Pixel7 Pixel6Pro Pixel4XL Pixel8 Pixel3XL
 
           # Locale validation against the live Test Lab locale catalog.
           if ! gcloud firebase test android locales list --format="value(id)" | grep -qx "$LOCALE"; then
@@ -259,16 +273,13 @@ jobs:
             *) echo "::error::Orientation '$ORIENTATION' is invalid (allowed: portrait|landscape|default)."; exit 1 ;;
           esac
 
-          echo "Selected device: model=$MODEL version=$VERSION locale=$LOCALE orientation=$ORIENTATION (source=$SOURCE)"
-          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
-          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
-          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
 
       # ------------------------------------------------------------------
-      # RUN: instrumentation tests on Firebase Test Lab.
-      # Captures the Test Lab results URL for the Job Summary.
+      # RUN: instrumentation tests on Firebase Test Lab as ONE matrix that
+      # contains all three device executions (small/standard/large).
+      # A failure on ANY device fails the whole step (propagated exit code).
       # ------------------------------------------------------------------
-      - name: Run Firebase Test Lab
+      - name: Run Firebase Test Lab matrix
         id: ftl
         if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
         shell: bash
@@ -283,7 +294,9 @@ jobs:
             --type=instrumentation \
             --app="${{ steps.apks.outputs.debug_apk }}" \
             --test="${{ steps.apks.outputs.test_apk }}" \
-            --device="model=${{ steps.device.outputs.model }},version=${{ steps.device.outputs.version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --device="model=${{ steps.device.outputs.small_model }},version=${{ steps.device.outputs.small_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --device="model=${{ steps.device.outputs.standard_model }},version=${{ steps.device.outputs.standard_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --device="model=${{ steps.device.outputs.large_model }},version=${{ steps.device.outputs.large_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --results-dir="$RESULTS_DIR" \
             --timeout=15m 2>&1 | tee ftl-output.log
           FTL_EXIT=${PIPESTATUS[0]}
@@ -333,9 +346,12 @@ jobs:
           TEST_BUILD="${{ steps.build-androidtest.outcome }}"
           FTL_OUTCOME="${{ steps.ftl.outcome }}"
 
-          DEVICE_MODEL="${{ steps.device.outputs.model }}"
-          DEVICE_VERSION="${{ steps.device.outputs.version }}"
-          DEVICE_SOURCE="${{ steps.device.outputs.source }}"
+          SMALL_MODEL="${{ steps.device.outputs.small_model }}"
+          SMALL_VER="${{ steps.device.outputs.small_version }}"
+          STD_MODEL="${{ steps.device.outputs.standard_model }}"
+          STD_VER="${{ steps.device.outputs.standard_version }}"
+          LARGE_MODEL="${{ steps.device.outputs.large_model }}"
+          LARGE_VER="${{ steps.device.outputs.large_version }}"
           RESULTS_URL="${{ steps.ftl.outputs.results_url }}"
           GCS_URL="${{ steps.ftl.outputs.gcs_url }}"
 
@@ -347,25 +363,23 @@ jobs:
           fi
 
           {
-            echo "## LibreCare — Firebase Test Lab"
+            echo "## LibreCare — Firebase Test Lab (3-device matrix)"
             echo ""
             echo "| Krok | Wynik |"
             echo "|------|-------|"
             echo "| Authentication (Workload Identity) | $( [ "$ENABLED" = "true" ] && status "$AUTH_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
             echo "| App APK build | $(status "$APP_BUILD") |"
             echo "| androidTest APK build | $(status "$TEST_BUILD") |"
-            echo "| Firebase Test Lab | $FTL_LINE |"
+            echo "| Firebase Test Lab matrix | $FTL_LINE |"
             echo "| Instrumentation tests | $( [ "$ENABLED" = "true" ] && status "$FTL_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
             echo ""
-            echo "### Konfiguracja urządzenia"
+            echo "### Macierz urządzeń"
             echo ""
-            echo "| Pole | Wartość |"
-            echo "|------|---------|"
-            echo "| Device model | ${DEVICE_MODEL:-n/d} |"
-            echo "| Android API | ${DEVICE_VERSION:-n/d} |"
-            echo "| Locale | ${LOCALE} |"
-            echo "| Orientation | ${ORIENTATION} |"
-            echo "| Źródło wyboru urządzenia | ${DEVICE_SOURCE:-n/d} |"
+            echo "| Profil | Model | API | Locale | Orientation |"
+            echo "|--------|-------|-----|--------|-------------|"
+            echo "| SMALL | ${SMALL_MODEL:-n/d} | ${SMALL_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
+            echo "| STANDARD | ${STD_MODEL:-n/d} | ${STD_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
+            echo "| LARGE | ${LARGE_MODEL:-n/d} | ${LARGE_VER:-n/d} | ${LOCALE} | ${ORIENTATION} |"
             echo ""
             echo "### Artefakty APK"
             echo ""
@@ -375,7 +389,7 @@ jobs:
             echo "### Wyniki Test Lab"
             echo ""
             if [ -n "$RESULTS_URL" ]; then
-              echo "- Konsola: [$RESULTS_URL]($RESULTS_URL)"
+              echo "- Konsola / result matrix: [$RESULTS_URL]($RESULTS_URL)"
             fi
             if [ -n "$GCS_URL" ]; then
               echo "- Bucket: \`$GCS_URL\`"

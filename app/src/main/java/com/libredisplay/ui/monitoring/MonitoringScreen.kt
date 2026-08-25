@@ -124,6 +124,9 @@ fun MonitoringScreen(
     var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
     var recentPersonIds by rememberSaveable { mutableStateOf(listOf<String>()) }
+    // Metric tiles computed by the chart card, lifted so landscape can render them full-width below
+    // the [glucose | chart] row instead of inside the narrower chart column.
+    var landscapeMetricTiles by remember(state.selectedPatientId) { mutableStateOf<List<QuickMetricTileUi>?>(null) }
 
     // Local ticker: refreshes time-sensitive UI every 30 s without any network request.
     // Covers: "chwilę temu", "Sensor: X dni", coverage countdown, reading age.
@@ -307,10 +310,23 @@ fun MonitoringScreen(
                                             onOpenHistory = openFullScreenHistory,
                                             now = currentTime,
                                             chartHeight = 220.dp,
+                                            showInlineMetrics = false,
+                                            onMetricsComputed = { landscapeMetricTiles = it },
                                             onQuickMetricsOrderChanged = viewModel::saveQuickMetricsOrder,
                                             onEditMetricsClick = onNavigateToMetricSettings
                                         )
                                     }
+                                }
+                                // Landscape: metrics span the FULL screen width (left-to-right) below
+                                // the glucose/chart row, where there is plenty of horizontal space.
+                                landscapeMetricTiles?.let { tiles ->
+                                    ImprovedQuickMetricsPanel(
+                                        tiles = tiles,
+                                        orderedIds = state.quickMetricsOrder,
+                                        visibility = state.quickMetricsVisibility,
+                                        onOrderChanged = viewModel::saveQuickMetricsOrder,
+                                        onEditClick = onNavigateToMetricSettings
+                                    )
                                 }
                             } else {
                                 RedesignedCurrentGlucoseCard(
@@ -793,6 +809,8 @@ private fun GlucoseChartCard(
     onOpenHistory: () -> Unit,
     now: Instant = Instant.now(),
     chartHeight: Dp = 260.dp,
+    showInlineMetrics: Boolean = true,
+    onMetricsComputed: ((List<QuickMetricTileUi>) -> Unit)? = null,
     onQuickMetricsOrderChanged: (List<QuickMetricId>) -> Unit,
     onEditMetricsClick: () -> Unit
 ) {
@@ -819,10 +837,10 @@ private fun GlucoseChartCard(
     val availableEnd = chartPoints.maxOfOrNull { it.timestamp }
 
     var homeChartRangeName by rememberSaveable(state.selectedPatientId) {
-        mutableStateOf(HomeChartRange.homeScreenDefault.name)
+        mutableStateOf(HomeChartRange.default.name)
     }
-    // True once the user manually taps a range chip. Until then the dashboard mirrors the
-    // full-screen history and shows ALL collected data by defaulting to the largest available range.
+    // True once the user manually taps a range chip. Until then the dashboard shows the default
+    // window (12h portrait / 24h landscape); after a tap the choice is kept for the session.
     var userSelectedRange by rememberSaveable(state.selectedPatientId) { mutableStateOf(false) }
     val selectedRange = remember(homeChartRangeName) {
         runCatching { HomeChartRange.valueOf(homeChartRangeName) }.getOrDefault(HomeChartRange.default)
@@ -842,15 +860,20 @@ private fun GlucoseChartCard(
     }
 
     // Range selection policy:
-    // - Default (no manual choice yet): follow the largest range the collected data can fill, so the
-    //   dashboard shows every day that is available - exactly like the full-screen history.
-    // - After a manual choice: keep the user's range, only correcting it if it is no longer valid.
-    LaunchedEffect(rangeOptions, userSelectedRange) {
+    // - Default (no manual choice yet): show 12h in portrait and 24h in landscape when the collected
+    //   data can fill it; otherwise fall back to the largest range the data currently supports.
+    // - After a manual choice: keep the user's range for the whole session, only correcting it if it
+    //   is no longer valid for the available data.
+    val chartConfiguration = LocalConfiguration.current
+    val isChartLandscape = chartConfiguration.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val preferredDefaultRange = if (isChartLandscape) HomeChartRange.LAST_24_HOURS else HomeChartRange.LAST_12_HOURS
+    LaunchedEffect(rangeOptions, userSelectedRange, preferredDefaultRange) {
         val enabled = rangeOptions.filter { it.enabled }.map { it.range }
         if (enabled.isEmpty()) return@LaunchedEffect
         val largest = enabled.last()
         if (!userSelectedRange) {
-            if (selectedRange != largest) homeChartRangeName = largest.name
+            val target = if (preferredDefaultRange in enabled) preferredDefaultRange else largest
+            if (selectedRange != target) homeChartRangeName = target.name
         } else if (selectedRange !in enabled) {
             homeChartRangeName = largest.name
         }
@@ -1077,13 +1100,18 @@ private fun GlucoseChartCard(
                 dataCoveragePercent = dataCoverageStats.coveragePercent,
                 dataMissingDescription = dataCoverageStats.missingDescription
             )
-            ImprovedQuickMetricsPanel(
-                tiles = metricTiles,
-                orderedIds = state.quickMetricsOrder,
-                visibility = state.quickMetricsVisibility,
-                onOrderChanged = onQuickMetricsOrderChanged,
-                onEditClick = onEditMetricsClick
-            )
+            // Lift the computed tiles so a caller (landscape) can render them full-width. List uses
+            // structural equality, so this only fires when the tiles actually change.
+            LaunchedEffect(metricTiles) { onMetricsComputed?.invoke(metricTiles) }
+            if (showInlineMetrics) {
+                ImprovedQuickMetricsPanel(
+                    tiles = metricTiles,
+                    orderedIds = state.quickMetricsOrder,
+                    visibility = state.quickMetricsVisibility,
+                    onOrderChanged = onQuickMetricsOrderChanged,
+                    onEditClick = onEditMetricsClick
+                )
+            }
         }
 
     }

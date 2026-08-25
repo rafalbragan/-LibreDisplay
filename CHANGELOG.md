@@ -2,6 +2,46 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.8.0 - 2026-08-25
+
+### PL
+
+#### Added
+- Widok poziomy: **metryki zajmują teraz całą szerokość ekranu** (od lewej do prawej) pod wierszem glukoza/wykres — więcej miejsca i lepsza czytelność.
+
+#### Changed
+- **Domyślny zakres wykresu na ekranie głównym**: 12 godz. w pionie i 24 godz. w poziomie (o ile zebrano wystarczająco danych; w przeciwnym razie największy dostępny zakres).
+- **Wybór zakresu jest zapamiętywany w obrębie sesji**: po ręcznym wybraniu zakresu aplikacja go utrzymuje (także po obrocie ekranu), zamiast wracać do domyślnego.
+- CI: workflow Firebase Test Lab uruchamia instrumentation tests na **macierzy 3 telefonów wirtualnych** (SMALL/STANDARD/LARGE) w jednym przebiegu, z walidacją model+API.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- `./gradlew lint` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.8.0-debug.apk`
+- `release-artifacts/LibreCare-2.8.0-release.apk`
+- `release-artifacts/LibreCare-2.8.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Added
+- Landscape: **metrics now span the full screen width** (left-to-right) below the glucose/chart row — more space and better readability.
+
+#### Changed
+- **Default home chart range**: 12h in portrait and 24h in landscape (when enough data has been collected; otherwise the largest available range).
+- **Range choice persists within the session**: once the user picks a range it is kept (including across rotation) instead of reverting to the default.
+- CI: the Firebase Test Lab workflow runs instrumentation tests on a **3 virtual-phone matrix** (SMALL/STANDARD/LARGE) in one run, with model+API validation.
+
+#### Tests
+- `./gradlew testDebugUnitTest` — PASS.
+- `./gradlew lint` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.8.0-debug.apk`
+- `release-artifacts/LibreCare-2.8.0-release.apk`
+- `release-artifacts/LibreCare-2.8.0-release.aab` (Google Play upload file)
+
 ## 2.7.0 - 2026-08-25
 
 ### PL
