@@ -65,9 +65,13 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInParent
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
@@ -114,6 +118,7 @@ fun MonitoringScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     val homeHistory by viewModel.homeHistory.collectAsState()
+    val homeDataSpan by viewModel.homeDataSpan.collectAsState()
     var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
     var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
@@ -255,6 +260,7 @@ fun MonitoringScreen(
                                             state = state,
                                             reading = reading,
                                             historyPoints = homeHistory,
+                                            storedDataSpan = homeDataSpan,
                                             onRangeDurationChanged = viewModel::loadHomeHistory,
                                             onOpenHistory = openFullScreenHistory,
                                             now = currentTime,
@@ -275,6 +281,7 @@ fun MonitoringScreen(
                                     state = state,
                                     reading = reading,
                                     historyPoints = homeHistory,
+                                    storedDataSpan = homeDataSpan,
                                     onRangeDurationChanged = viewModel::loadHomeHistory,
                                     onOpenHistory = openFullScreenHistory,
                                     now = currentTime,
@@ -362,7 +369,7 @@ private fun DemoModeBanner(onSwitchToLiveMode: () -> Unit) {
 
 
 @Composable
-private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
+internal fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targetHigh: Int) {
     val now = Instant.now()
     val duration = Duration.between(reading.timestamp, now)
     val presentation = buildGlucoseStatusPresentation(
@@ -384,7 +391,11 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
         shape = RoundedCornerShape(24.dp),
         modifier = Modifier
             .fillMaxWidth()
-            .semantics { contentDescription = "Aktualna glikemia ${reading.value} mg na decylitr, ${trendContentDescription(reading.trend)}" }
+            .testTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_CARD)
+            .semantics {
+                contentDescription = "Aktualna glikemia ${reading.value} mg na decylitr, ${trendContentDescription(reading.trend)}"
+                stateDescription = glucoseRangeStatus(reading.value, targetLow, targetHigh)
+            }
     ) {
         BoxWithConstraints(modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp, vertical = 16.dp)) {
             val type = glucoseCardTypographyForWidth(maxWidth.value.toInt())
@@ -398,6 +409,7 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                     ) {
                         Text(
                             text = reading.value.toString(),
+                            modifier = Modifier.testTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_VALUE),
                             color = glucoseColor,
                             fontSize = type.glucoseValueSp.sp,
                             fontWeight = FontWeight.Bold,
@@ -409,7 +421,9 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                             color = DashboardPrimaryText,
                             fontSize = type.glucoseUnitSp.sp,
                             fontWeight = FontWeight.SemiBold,
-                            modifier = Modifier.padding(bottom = 8.dp),
+                            modifier = Modifier
+                                .padding(bottom = 8.dp)
+                                .testTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_UNIT),
                             maxLines = 1,
                             softWrap = false
                         )
@@ -417,6 +431,14 @@ private fun CurrentGlucoseHeroCard(reading: GlucoseReading, targetLow: Int, targ
                     TrendBlock(trend.arrow, trend.label, trend.color, type)
                 }
                 Row(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalAlignment = Alignment.CenterVertically) {
+                    Box(
+                        modifier = Modifier
+                            .size(1.dp)
+                            .testTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_SEVERITY)
+                            .semantics {
+                                contentDescription = glucoseRangeStatus(reading.value, targetLow, targetHigh)
+                            }
+                    )
                     Text(
                         text = PolishDateTimeFormatter.formatUserFacing(reading.timestamp),
                         color = DashboardSecondaryText,
@@ -470,10 +492,12 @@ private fun CurrentGlucoseWarningCard(reading: GlucoseReading, targetLow: Int, t
 }
 
 @Composable
-private fun TrendBlock(arrow: String, label: String, color: Color, typography: DashboardTypography) {
+internal fun TrendBlock(arrow: String, label: String, color: Color, typography: DashboardTypography) {
     Column(
         horizontalAlignment = Alignment.End,
-        modifier = Modifier.semantics { contentDescription = "Trend: $label" }
+        modifier = Modifier
+            .testTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_TREND)
+            .semantics { contentDescription = "Trend: $label" }
     ) {
         Text(arrow, color = color, fontSize = typography.trendArrowSp.sp, fontWeight = FontWeight.Bold)
         Text(label, color = color, fontSize = typography.trendDescriptionSp.sp, maxLines = 1)
@@ -712,6 +736,7 @@ private fun GlucoseChartCard(
     state: MonitoringUiState,
     reading: GlucoseReading?,
     historyPoints: List<GlucoseHistoryPoint>,
+    storedDataSpan: Duration,
     onRangeDurationChanged: (Duration) -> Unit,
     onOpenHistory: () -> Unit,
     now: Instant = Instant.now(),
@@ -731,15 +756,22 @@ private fun GlucoseChartCard(
             .sortedBy { it.timestamp }
     }
     val zoneId = DateTimeFormatterProvider.deviceZoneId()
-    val dataSpan = remember(chartPoints) { homeChartDataSpan(chartPoints) }
-    val dataSummary = remember(chartPoints) { buildHomeDataSummary(chartPoints) }
+    // Range availability is driven by the full stored span (from the database), not only by the
+    // window currently loaded into the chart. This mirrors the full-screen history: as soon as the
+    // collected data is longer than a scale, the next scale unlocks - even with gaps in the data.
+    val loadedSpan = remember(chartPoints) { homeChartDataSpan(chartPoints) }
+    val dataSpan = remember(loadedSpan, storedDataSpan) { maxOf(loadedSpan, storedDataSpan) }
+    val dataSummary = remember(dataSpan) { buildHomeDataSummary(dataSpan) }
     val rangeOptions = remember(dataSpan) { homeChartRangeOptions(dataSpan) }
     val availableStart = chartPoints.minOfOrNull { it.timestamp }
     val availableEnd = chartPoints.maxOfOrNull { it.timestamp }
 
     var homeChartRangeName by rememberSaveable(state.selectedPatientId) {
-        mutableStateOf(HomeChartRange.default.name)
+        mutableStateOf(HomeChartRange.homeScreenDefault.name)
     }
+    // True once the user manually taps a range chip. Until then the dashboard mirrors the
+    // full-screen history and shows ALL collected data by defaulting to the largest available range.
+    var userSelectedRange by rememberSaveable(state.selectedPatientId) { mutableStateOf(false) }
     val selectedRange = remember(homeChartRangeName) {
         runCatching { HomeChartRange.valueOf(homeChartRangeName) }.getOrDefault(HomeChartRange.default)
     }
@@ -757,16 +789,32 @@ private fun GlucoseChartCard(
         selectedRange.duration.toMillis().coerceAtMost(navigationDuration.toMillis().coerceAtLeast(1L))
     }
 
-    // Keep the selected range within what the collected data can actually show.
-    LaunchedEffect(rangeOptions) {
+    // Range selection policy:
+    // - Default (no manual choice yet): follow the largest range the collected data can fill, so the
+    //   dashboard shows every day that is available - exactly like the full-screen history.
+    // - After a manual choice: keep the user's range, only correcting it if it is no longer valid.
+    LaunchedEffect(rangeOptions, userSelectedRange) {
         val enabled = rangeOptions.filter { it.enabled }.map { it.range }
-        if (enabled.isNotEmpty() && selectedRange !in enabled) {
-            homeChartRangeName = enabled.last().name
+        if (enabled.isEmpty()) return@LaunchedEffect
+        val largest = enabled.last()
+        if (!userSelectedRange) {
+            if (selectedRange != largest) homeChartRangeName = largest.name
+        } else if (selectedRange !in enabled) {
+            homeChartRangeName = largest.name
         }
     }
 
+    // Load ALL available history (not only the selected range). The dashboard chart then keeps the
+    // whole collected span in memory, so the mini navigator under the chart can represent the largest
+    // available range and the viewport (the selected range, e.g. 24g) can be panned across it. The
+    // selected range only controls how wide the visible window is, never how much data is loaded.
+    LaunchedEffect(state.selectedPatientId, dataSpan) {
+        onRangeDurationChanged(largestSelectableHomeChartRange(dataSpan).duration)
+    }
+
+    // Changing the selected range only re-centres the visible window on the most recent data; it does
+    // not reload, because the full history is already available for panning.
     LaunchedEffect(selectedRange, state.selectedPatientId) {
-        onRangeDurationChanged(selectedRange.duration)
         followLatest = true
         hasNewerData = false
         viewportStartMillis = availableEnd?.toEpochMilli()?.minus(selectedRange.duration.toMillis())
@@ -848,7 +896,10 @@ private fun GlucoseChartCard(
         HomeChartRangeSelector(
             options = rangeOptions,
             selectedRange = selectedRange,
-            onRangeSelected = { homeChartRangeName = it.name }
+            onRangeSelected = {
+                userSelectedRange = true
+                homeChartRangeName = it.name
+            }
         )
 
         HomeDataAvailabilityRow(summary = dataSummary)
@@ -934,6 +985,7 @@ private fun GlucoseChartCard(
                 )
                 Text(
                     text = "${label.valueText}\n${label.dateTime}",
+                    modifier = Modifier.testTag(LibreCareTestTags.HOME_CHART_SELECTED_LABEL),
                     color = DashboardSecondaryText,
                     fontSize = 12.sp,
                     maxLines = 2,
@@ -946,6 +998,9 @@ private fun GlucoseChartCard(
             val visibleMax = viewportPoints.maxOfOrNull { it.value }
             val veryLowEpisodes = countEpisodes(viewportPoints) { it < 54 }
             val veryHighEpisodes = countEpisodes(viewportPoints) { it > 250 }
+
+            val dataCoverageStats = calculateDataCoverage(viewportPoints, selectedRange.duration)
+
             CompactTimeInRangeBar(
                 belowPercent = distribution.belowRangePercent,
                 inRangePercent = distribution.inRangePercent,
@@ -964,7 +1019,11 @@ private fun GlucoseChartCard(
                 gmiValue = visibleMetrics.first.second,
                 averageValueMgDl = visibleMetrics.first.third,
                 veryLowEpisodes = veryLowEpisodes,
-                veryHighEpisodes = veryHighEpisodes
+                veryHighEpisodes = veryHighEpisodes,
+                cvPercent = com.libredisplay.analytics.GlucoseMetricsCalculator
+                    .calculateCoefficientOfVariation(viewportPoints),
+                dataCoveragePercent = dataCoverageStats.coveragePercent,
+                dataMissingDescription = dataCoverageStats.missingDescription
             )
             ImprovedQuickMetricsPanel(
                 tiles = metricTiles,
@@ -978,7 +1037,7 @@ private fun GlucoseChartCard(
     }
 }
 
-private fun countEpisodes(
+internal fun countEpisodes(
     points: List<GlucoseHistoryPoint>,
     predicate: (Int) -> Boolean
 ): Int {
@@ -1093,7 +1152,7 @@ private fun HomeDataAvailabilityRow(summary: HomeDataSummary) {
 }
 
 @Composable
-private fun HomeChartRangeSelector(
+internal fun HomeChartRangeSelector(
     options: List<HomeChartRangeOption>,
     selectedRange: HomeChartRange,
     onRangeSelected: (HomeChartRange) -> Unit
@@ -1101,6 +1160,19 @@ private fun HomeChartRangeSelector(
     val scrollState = rememberScrollState()
     val canScrollRight = scrollState.value < scrollState.maxValue
     val canScrollLeft = scrollState.value > 0
+
+    // Stable (scroll-independent) right edge of the currently selected chip and the viewport width,
+    // used to auto-scroll the selected chip to the right when the list overflows the screen.
+    var selectedRightPx by remember { mutableStateOf(0) }
+    var viewportWidthPx by remember { mutableStateOf(0) }
+
+    // When the scale list is scrollable, keep the highlighted chip aligned to the right edge (so the
+    // largest available range stays in view). When it already fits on screen, do nothing.
+    LaunchedEffect(selectedRange, scrollState.maxValue, viewportWidthPx, selectedRightPx) {
+        if (scrollState.maxValue <= 0 || viewportWidthPx <= 0 || selectedRightPx <= 0) return@LaunchedEffect
+        val target = (selectedRightPx - viewportWidthPx).coerceIn(0, scrollState.maxValue)
+        scrollState.animateScrollTo(target)
+    }
 
     Row(
         modifier = Modifier.fillMaxWidth(),
@@ -1112,7 +1184,8 @@ private fun HomeChartRangeSelector(
         Row(
             modifier = Modifier
                 .weight(1f)
-                .horizontalScroll(scrollState),
+                .horizontalScroll(scrollState)
+                .onSizeChanged { viewportWidthPx = it.width },
             horizontalArrangement = Arrangement.spacedBy(6.dp)
         ) {
             options.forEach { option ->
@@ -1122,8 +1195,21 @@ private fun HomeChartRangeSelector(
                     onClick = { if (option.enabled) onRangeSelected(range) },
                     enabled = option.enabled,
                     modifier = Modifier
+                        .testTag(LibreCareTestTags.rangeChip(range))
                         .widthIn(min = 52.dp)
                         .heightIn(min = 48.dp)
+                        .then(
+                            if (isSelected) {
+                                Modifier.onGloballyPositioned { coords ->
+                                    // boundsInParent() is scroll-dependent; add the current scroll to
+                                    // recover a stable content offset that does not move while scrolling.
+                                    val stableRight = coords.boundsInParent().right + scrollState.value
+                                    selectedRightPx = stableRight.roundToInt()
+                                }
+                            } else {
+                                Modifier
+                            }
+                        )
                         .semantics {
                             contentDescription = if (option.enabled) {
                                 range.accessibilityLabel
@@ -1181,8 +1267,9 @@ private fun HomeChartNavigator(
 
     Canvas(
         modifier = Modifier
+            .testTag(LibreCareTestTags.HOME_CHART_NAVIGATOR)
             .fillMaxWidth()
-            .height(40.dp)
+            .height(20.dp)
             .pointerInput(canPan, windowFraction) {
                 if (!canPan) return@pointerInput
                 detectDragGestures(
@@ -1244,27 +1331,28 @@ private fun HomeChartNavigator(
             viewportFraction = fraction,
             windowFraction = windowFraction
         )
-        val trackTop = size.height / 2f - 3f
-        val trackHeight = 6f
-        val thumbTop = 4f
-        val thumbHeight = size.height - 8f
+        // Slim minimap: a thin track with a slightly taller thumb, both vertically centred.
+        val trackHeight = 3f
+        val trackTop = size.height / 2f - trackHeight / 2f
+        val thumbHeight = 11f
+        val thumbTop = size.height / 2f - thumbHeight / 2f
         drawRoundRect(
             color = LibreCareColors.SurfaceMuted,
             topLeft = androidx.compose.ui.geometry.Offset(geometry.trackLeft, trackTop),
             size = androidx.compose.ui.geometry.Size(geometry.trackWidth, trackHeight),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(6f, 6f)
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(trackHeight / 2f, trackHeight / 2f)
         )
         drawRoundRect(
             color = LibreCareColors.AccentTeal.copy(alpha = 0.28f),
             topLeft = androidx.compose.ui.geometry.Offset(geometry.viewportLeft, thumbTop),
             size = androidx.compose.ui.geometry.Size(geometry.viewportWidth, thumbHeight),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f)
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(thumbHeight / 2f, thumbHeight / 2f)
         )
         drawRoundRect(
             color = LibreCareColors.AccentTeal,
             topLeft = androidx.compose.ui.geometry.Offset(geometry.viewportLeft, thumbTop),
             size = androidx.compose.ui.geometry.Size(geometry.viewportWidth, thumbHeight),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(8f, 8f),
+            cornerRadius = androidx.compose.ui.geometry.CornerRadius(thumbHeight / 2f, thumbHeight / 2f),
             style = Stroke(width = 1.5f)
         )
     }

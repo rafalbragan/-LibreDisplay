@@ -40,6 +40,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private val glucoseSyncRepository = app.glucoseSyncRepository
     private val connectMutex = Mutex()
     private val fetchMutex = Mutex()
+    private var personSwitchJob: Job? = null
     private val attemptCounter = AtomicLong(0)
     private val backoffPolicy = PollingBackoffPolicy()
     private val connectivityProvider = AndroidConnectivityStatusProvider(application.applicationContext)
@@ -63,6 +64,14 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private val _homeHistory = MutableStateFlow<List<GlucoseHistoryPoint>>(emptyList())
     val homeHistory: StateFlow<List<GlucoseHistoryPoint>> = _homeHistory.asStateFlow()
+
+    /**
+     * Full stored data span (newest - oldest) for the selected patient, independent of the currently
+     * loaded chart window. The dashboard chart uses it to offer every range the collected data can
+     * already fill (even with gaps), instead of only what the small loaded window shows.
+     */
+    private val _homeDataSpan = MutableStateFlow(Duration.ZERO)
+    val homeDataSpan: StateFlow<Duration> = _homeDataSpan.asStateFlow()
 
     private var refreshController = RefreshController(intervalMs = settingsRepository.loadSettings().refreshInterval * 1000L)
     private var pollingJob: Job? = null
@@ -107,7 +116,30 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
      * History used by the dashboard chart. Kept separate from [detailedHistory] so that the full
      * screen chart and the dashboard never overwrite each other's window.
      */
-    internal fun loadHomeHistory(duration: Duration) = loadHistoryInto(_homeHistory, duration)
+    internal fun loadHomeHistory(duration: Duration) {
+        loadHistoryInto(_homeHistory, duration)
+        refreshHomeDataSpan()
+    }
+
+    /**
+     * Queries the database for the full stored span of the selected patient so the dashboard chart
+     * can unlock long ranges as soon as the collected data covers them (regardless of gaps or the
+     * smaller window currently rendered).
+     */
+    private fun refreshHomeDataSpan() {
+        val patientId = _uiState.value.selectedPatientId ?: run {
+            _homeDataSpan.value = Duration.ZERO
+            return
+        }
+        viewModelScope.launch(viewModelExceptionHandler) {
+            val range = glucoseSyncRepository.loadStoredRange(patientId)
+            _homeDataSpan.value = if (range == null) {
+                Duration.ZERO
+            } else {
+                Duration.between(range.oldest, range.newest).coerceAtLeast(Duration.ZERO)
+            }
+        }
+    }
 
     private fun loadHistoryInto(
         target: MutableStateFlow<List<GlucoseHistoryPoint>>,
@@ -346,18 +378,38 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 historyStatus = HistoryStatus.Loading
             )
         }
-        viewModelScope.launch(viewModelExceptionHandler) {
-            glucoseRepository.loadLatestMonitoringSnapshotFromLocal(normalized)?.let { localSnapshot ->
-                _uiState.update {
-                    it.applyDashboardSnapshot(localSnapshot).copy(
-                        isLoading = false,
-                        isDataStale = true,
-                        staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
-                    )
+        // Cancel any in-flight person switch so rapidly tapping between people cannot leave two
+        // coroutines racing to overwrite the dashboard state (previously a crash source).
+        personSwitchJob?.cancel()
+        personSwitchJob = viewModelScope.launch(viewModelExceptionHandler) {
+            try {
+                glucoseRepository.loadLatestMonitoringSnapshotFromLocal(normalized)?.let { localSnapshot ->
+                    // Ignore a stale result if the user switched again while we were loading.
+                    if (_uiState.value.selectedPatientId != normalized) return@launch
+                    _uiState.update {
+                        it.applyDashboardSnapshot(localSnapshot).copy(
+                            isLoading = false,
+                            isDataStale = true,
+                            staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
+                        )
+                    }
                 }
-            }
-            if (_uiState.value.connectionState == ConnectionState.Connected) {
-                pollOnce(force = true, source = "person-switch")
+                if (_uiState.value.selectedPatientId == normalized &&
+                    _uiState.value.connectionState == ConnectionState.Connected
+                ) {
+                    pollOnce(force = true, source = "person-switch")
+                }
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                DiagnosticLogger.logException(
+                    "MonitoringViewModel",
+                    error,
+                    "Person switch failed for ${normalized.take(6)}"
+                )
+                if (_uiState.value.selectedPatientId == normalized) {
+                    _uiState.update { it.copy(isLoading = false) }
+                }
             }
         }
     }

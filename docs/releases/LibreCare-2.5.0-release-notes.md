@@ -27,6 +27,9 @@ Poprzednia wersja: 2.4.0 (versionCode 26)
 - **Klucz dostępu (passkey).** Można utworzyć klucz przez systemowego menedżera poświadczeń i używać
   go do odblokowania aplikacji. Gdy klucz nie zadziała lub urządzenie go nie obsługuje, aplikacja
   wraca do odcisku palca / PIN-u i nigdy nie blokuje dostępu do własnych danych medycznych.
+- **Infrastruktura testowa chmurowa.** Repozytorium zawiera teraz Codespaces, szybki CI, scaffold
+  Firebase Test Lab i dokumentację `docs/testing/`. To warstwa techniczna — bez zmian w wyglądzie lub
+  zachowaniu aplikacji produkcyjnej.
 
 ### Zmiany
 

@@ -1,22 +1,23 @@
+import org.gradle.api.tasks.compile.AbstractCompile
+import java.util.Properties
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     alias(libs.plugins.kotlin.ksp)
+    id("io.github.takahirom.roborazzi")
 }
-
-import org.gradle.api.tasks.compile.AbstractCompile
-import java.util.Properties
 
 fun String.toBuildConfigString(): String = "\"" + this.replace("\\", "\\\\").replace("\"", "\\\"") + "\""
 
 val libreApiBaseUrl = (System.getenv("LIBRE_API_BASE_URL") ?: "https://api-eu.libreview.io").trim().ifBlank { "https://api-eu.libreview.io" }
 val libreLinkUpVersion = (System.getenv("LIBRE_LINKUP_VERSION") ?: "4.17.0").trim().ifBlank { "4.17.0" }
 val librePatientId = (System.getenv("LIBRE_PATIENT_ID") ?: "").trim()
-val localProperties = Properties().apply {
+val localProperties = Properties()
+run {
     val file = rootProject.file("local.properties")
     if (file.exists()) {
-        file.inputStream().use(::load)
+        file.inputStream().use { input -> localProperties.load(input) }
     }
 }
 
@@ -24,7 +25,7 @@ fun propertyOrEnv(name: String): String? {
     return providers.gradleProperty(name).orNull
         ?.trim()
         ?.takeIf { it.isNotEmpty() }
-        ?: localProperties.getProperty(name)
+        ?: (localProperties[name] as? String)
             ?.trim()
             ?.takeIf { it.isNotEmpty() }
         ?: System.getenv(name)
@@ -54,16 +55,12 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 27
-        versionName = "2.5.0"
+        versionCode = 28
+        versionName = "2.6.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
         buildConfigField("String", "LIBRE_PATIENT_ID", librePatientId.toBuildConfigString())
-
-        ksp {
-            arg("room.schemaLocation", "$projectDir/schemas")
-        }
     }
 
     signingConfigs {
@@ -114,12 +111,21 @@ android {
         buildConfig = true
     }
 
+    sourceSets {
+        getByName("test").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").java.srcDir("src/sharedTest/java")
+    }
+
 
     testOptions {
         unitTests.isReturnDefaultValues = true
         unitTests.isIncludeAndroidResources = true
         animationsDisabled = true
     }
+}
+
+ksp {
+    arg("room.schemaLocation", "$projectDir/schemas")
 }
 
 dependencies {
@@ -151,17 +157,27 @@ dependencies {
     ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime.ktx)
     testImplementation(libs.junit)
+    testImplementation(platform(libs.androidx.compose.bom))
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.androidx.room.testing)
+    testImplementation(libs.androidx.test.ext.junit)
     testImplementation(libs.androidx.test.core.ktx)
+    testImplementation("androidx.compose.ui:ui-test")
+    testImplementation(libs.androidx.ui.test.junit4)
+    testImplementation(libs.androidx.ui.test.manifest)
     testImplementation(libs.robolectric)
+    testImplementation("io.github.takahirom.roborazzi:roborazzi:1.42.0")
+    testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.42.0")
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
     androidTestImplementation(libs.androidx.test.core.ktx)
+    androidTestImplementation(platform(libs.androidx.compose.bom))
+    androidTestImplementation(libs.androidx.ui.test.junit4)
     androidTestImplementation(libs.androidx.room.testing)
     androidTestImplementation(libs.androidx.room.runtime)
     androidTestImplementation(libs.androidx.room.ktx)
+    debugImplementation(libs.androidx.ui.test.manifest)
     debugImplementation(libs.androidx.ui.tooling)
 }
 

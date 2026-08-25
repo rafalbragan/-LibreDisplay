@@ -93,6 +93,21 @@ z 2.4.0.
 
 ---
 
+## 8. Infrastruktura testowa
+
+Repozytorium zostało uzupełnione o warstwę techniczną dla automatycznego testowania w chmurze:
+
+- Codespaces: `.devcontainer/devcontainer.json`
+- walidacja środowiska: `scripts/verify-environment.sh`
+- szybki CI: `.github/workflows/android-ci.yml`
+- Firebase Test Lab: `.github/workflows/firebase-test-lab.yml`
+- dokumentacja operacyjna: `docs/testing/`
+
+Ta warstwa jest już zweryfikowana w aktualnym stanie repozytorium i nie wymaga zmian w logice
+produkcyjnej.
+
+Zmiana nie dotyka UI ani logiki produkcyjnej.
+
 ## 8. Pozostałe ryzyka
 
 1. Passkey wymaga zweryfikowanego powiązania domeny `librecare.app` (Digital Asset Links).

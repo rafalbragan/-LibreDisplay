@@ -149,6 +149,18 @@ class LocalGlucoseHistoryRepository(
             .map { it.toHistoryPoint() }
     }
 
+    /**
+     * Full time span actually stored for a patient (oldest .. newest timestamp), independent of the
+     * currently loaded chart window. Used so the dashboard chart can offer every range the collected
+     * data can already fill, even when only a smaller window is loaded and even when there are gaps.
+     */
+    suspend fun loadStoredRange(patientId: String): StoredHistoryRange? {
+        val oldest = glucoseReadingDao.oldestReadingTimestampForPatient(patientId) ?: return null
+        val newest = glucoseReadingDao.newestReadingTimestampForPatient(patientId) ?: return null
+        if (newest.isBefore(oldest)) return null
+        return StoredHistoryRange(oldest = oldest, newest = newest)
+    }
+
     private fun GlucoseReadingEntity.toHistoryPoint(): GlucoseHistoryPoint {
         return GlucoseHistoryPoint(
             value = valueMgDl,
@@ -176,5 +188,11 @@ class LocalGlucoseHistoryRepository(
 data class InsertSummary(
     val inserted: Int,
     val duplicates: Int
+)
+
+/** Oldest and newest stored timestamp for a patient (end-to-end span, ignoring internal gaps). */
+data class StoredHistoryRange(
+    val oldest: Instant,
+    val newest: Instant
 )
 

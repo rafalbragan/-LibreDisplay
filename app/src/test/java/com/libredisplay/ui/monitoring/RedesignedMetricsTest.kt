@@ -31,10 +31,12 @@ class RedesignedMetricsTest {
             gmiValue = 7.2,
             averageValueMgDl = 124,
             veryLowEpisodes = 2,
-            veryHighEpisodes = 3
+            veryHighEpisodes = 3,
+            dataCoveragePercent = 95,
+            dataMissingDescription = "Brak przerw"
         )
 
-        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "Średnia", "Minimum", "Maksimum", "GMI", "Epizody bardzo niskie", "Epizody bardzo wysokie"), tiles.map { it.label })
+        assertEquals(listOf("Poniżej", "W zakresie", "Powyżej", "Pokrycie danych", "Średnia", "Minimum", "Maksimum", "GMI", "CV", "Epizody bardzo niskie", "Epizody bardzo wysokie"), tiles.map { it.label })
         assertEquals("0m", tiles[0].primaryValue)
         assertEquals("50%", tiles[1].secondaryValue)
         assertEquals("1g 15m", tiles[1].primaryValue)
@@ -46,7 +48,7 @@ class RedesignedMetricsTest {
 
         assertEquals(2, rows.size)
         assertEquals(listOf("Poniżej", "W zakresie", "Powyżej"), rows.first().map { it.label })
-        assertEquals(listOf("Średnia", "Minimum"), rows.last().map { it.label })
+        assertEquals(listOf("Pokrycie danych", "Średnia"), rows.last().map { it.label })
     }
 
     @Test
@@ -54,7 +56,7 @@ class RedesignedMetricsTest {
         val rows = quickMetricsRows(maxWidthDp = 600f, orderedTiles = sampleTiles())
 
         assertEquals(1, rows.size)
-        assertEquals(9, rows.single().size)
+        assertEquals(11, rows.single().size)
     }
 
     @Test

@@ -62,6 +62,8 @@ enum class AppScreen {
 
 class MainActivity : androidx.fragment.app.FragmentActivity() {
 
+    private lateinit var appLock: com.libredisplay.auth.AppLockRepository
+
     override fun onCreate(savedInstanceState: Bundle?) {
         installSplashScreen()
         super.onCreate(savedInstanceState)
@@ -69,13 +71,18 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         enableEdgeToEdge()
 
         val app = application as LibreDisplayApp
-        val appLock = com.libredisplay.auth.AppLockRepository(applicationContext)
+        appLock = com.libredisplay.auth.AppLockRepository(applicationContext)
         setContent {
             LibreDisplayTheme {
-                var unlocked by remember { mutableStateOf(!appLock.isEnabled) }
+                var unlocked by remember {
+                    mutableStateOf(!appLock.isEnabled || appLock.isSessionUnlocked)
+                }
                 if (!unlocked) {
                     com.libredisplay.ui.security.AppLockScreen(
-                        onUnlocked = { unlocked = true },
+                        onUnlocked = {
+                            appLock.markUnlockedForSession()
+                            unlocked = true
+                        },
                         onExit = { finish() }
                     )
                     return@LibreDisplayTheme
@@ -501,6 +508,15 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     }
                 }
             }
+        }
+    }
+
+    override fun onStop() {
+        super.onStop()
+        // Keep the session unlocked across configuration changes (e.g. rotation), but require a
+        // fresh unlock when the app is genuinely sent to the background or closed.
+        if (!isChangingConfigurations && ::appLock.isInitialized) {
+            appLock.clearSession()
         }
     }
 }

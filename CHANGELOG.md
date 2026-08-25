@@ -2,6 +2,58 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.6.0 - 2026-08-25
+
+### PL
+
+#### Added
+- Nowa metryka **CV (współczynnik zmienności)** na ekranie głównym — pokazuje stabilność glikemii z progiem klinicznym „Stabilnie (≤36%)" / „Duża zmienność". Można ją włączać/wyłączać i przestawiać jak pozostałe metryki.
+
+#### Changed
+- Wykres historii: dane rysowane gęściej (ok. 1 punkt na 2 px, zgodnie z rekomendacją próbkowania CGM co 5 min), bez nadmiernego przerzedzania.
+- Wykres historii: więcej miejsca po prawej stronie, aby dało się dosunąć palec do wartości przy krawędzi.
+- Wykres historii: skrajne etykiety osi czasu przeniesione niżej, aby podczas przewijania nie nachodziły na etykiety pośrednie.
+
+#### Fixed
+- **Obrót ekranu** (pionowo ↔ poziomo) nie wymusza już ponownego logowania — sesja odblokowania przeżywa zmianę orientacji, a pełne zamknięcie aplikacji nadal wymaga uwierzytelnienia.
+- **Przełączanie monitorowanej osoby** nie zamyka już aplikacji — anulowanie poprzedniego zadania i odrzucanie nieaktualnych wyników eliminują wyścig korutyn.
+- Wykres historii: wyraźniejsze oznaczenie zmiany dnia — pogrubiona/większa data i pionowa linia w miejscu przejścia na kolejny dzień.
+
+#### Tests
+- `GlucoseMetricsCalculatorStatisticsTest` — 3 nowe testy CV (za mało danych → null, płaskie odczyty → 0%, znane odchylenie standardowe).
+- `QuickMetricConfigTest`, `RedesignedMetricsTest` — zaktualizowane o kafelek CV.
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.6.0-debug.apk`
+- `release-artifacts/LibreCare-2.6.0-release.apk`
+- `release-artifacts/LibreCare-2.6.0-release.aab` (plik do Google Play)
+
+### EN
+
+#### Added
+- New **CV (Coefficient of Variation)** metric on the home screen — a glucose stability marker with the clinical threshold "Stable (≤36%)" / "High variability". Toggleable and reorderable like the other metrics.
+
+#### Changed
+- History chart: denser rendering (~1 point per 2 px, aligned with the 5-minute CGM sampling recommendation) without over-decimation.
+- History chart: more room on the right so a finger can reach edge values.
+- History chart: the two edge time-axis labels sit on a lower baseline so they no longer collide with intermediate labels while scrolling.
+
+#### Fixed
+- **Screen rotation** (portrait ↔ landscape) no longer forces re-authentication — the unlocked session survives configuration changes, while a genuine app exit still requires unlocking.
+- **Switching the monitored person** no longer crashes the app — cancelling the previous job and discarding stale results removes the coroutine race.
+- History chart: clearer day-change indicator — bold/larger date and a vertical line at the day boundary.
+
+#### Tests
+- `GlucoseMetricsCalculatorStatisticsTest` — 3 new CV tests (not enough data → null, flat readings → 0%, known standard deviation).
+- `QuickMetricConfigTest`, `RedesignedMetricsTest` — updated for the CV tile.
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.6.0-debug.apk`
+- `release-artifacts/LibreCare-2.6.0-release.apk`
+- `release-artifacts/LibreCare-2.6.0-release.aab` (Google Play upload file)
+
 ## 2.5.0 - 2026-08-24
 
 ### PL
@@ -12,6 +64,7 @@ All notable changes to LibreCare will be documented in this file.
 - Pytanie o dodatkowy plik pojawia się dopiero po wczytaniu (lub pominięciu) danych z urządzenia, a okno wyboru pliku otwiera się wyłącznie po wyraźnej zgodzie użytkownika.
 - Logowanie odciskiem palca wymaga teraz faktycznego potwierdzenia odciskiem – dopiero po udanej weryfikacji metoda odblokowania zostaje przełączona.
 - Możliwość utworzenia klucza dostępu (passkey) przez systemowego menedżera poświadczeń i odblokowania nim aplikacji, z bezpiecznym powrotem do odcisku palca / PIN-u.
+- Dodano infrastrukturę testową dla chmurowego uruchamiania jakości: Codespaces, szybki CI, scaffold Firebase Test Lab i dokumentację `docs/testing/`.
 
 #### Changed
 - Logowanie jest jednym, bezobsługowym przepływem: sprawdzenie hasła → scalenie zapisanych danych → natychmiastowe pobranie ostatnich 12 godzin → dopisanie świeżych odczytów do pliku danych → ekran główny. Aplikacja nie pyta już, czy połączyć się z kontem LibreLinkUp.

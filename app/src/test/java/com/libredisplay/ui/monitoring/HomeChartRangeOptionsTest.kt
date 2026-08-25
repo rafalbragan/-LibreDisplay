@@ -28,21 +28,44 @@ class HomeChartRangeOptionsTest {
     fun exactlyOneGreyedOutRangeIsAlwaysOffered() {
         val options = homeChartRangeOptions(Duration.ofHours(13))
 
-        assertEquals(listOf("1g", "3g", "6g", "9g", "12g", "24g"), options.map { it.range.shortLabel })
-        assertEquals(5, options.count { it.enabled })
+        assertEquals(listOf("1g", "3g", "6g", "9g", "12g", "24g", "3d"), options.map { it.range.shortLabel })
+        assertEquals(6, options.count { it.enabled })
         assertEquals(1, options.count { !it.enabled })
-        assertEquals(HomeChartRange.LAST_24_HOURS, options.last().range)
+        assertEquals(HomeChartRange.LAST_3_DAYS, options.last().range)
+        assertFalse(options.last().enabled)
+    }
+
+    @Test
+    fun moreDataThanCurrentScale_unlocksNextScaleAndGreysTheFollowing() {
+        // Just over 12h of data: 24g must become selectable and 3d shown greyed-out as preview.
+        val options = homeChartRangeOptions(Duration.ofHours(12).plusMinutes(1))
+
+        val enabled = options.filter { it.enabled }.map { it.range }
+        val greyed = options.filterNot { it.enabled }.map { it.range }
+        assertTrue(HomeChartRange.LAST_24_HOURS in enabled)
+        assertEquals(listOf(HomeChartRange.LAST_3_DAYS), greyed)
+    }
+
+    @Test
+    fun fiveDaysOfData_makesSevenDaysClickableAndGreysFourteenDays() {
+        val options = homeChartRangeOptions(Duration.ofDays(5))
+
+        val enabled = options.filter { it.enabled }.map { it.range }
+        val greyed = options.filterNot { it.enabled }.map { it.range }
+        assertTrue(HomeChartRange.LAST_7_DAYS in enabled)
+        assertEquals(listOf(HomeChartRange.LAST_14_DAYS), greyed)
+        assertEquals(HomeChartRange.LAST_7_DAYS, largestSelectableHomeChartRange(Duration.ofDays(5)))
     }
 
     @Test
     fun longRangesBecomeAvailableAsHistoryGrows() {
-        assertEquals(HomeChartRange.LAST_24_HOURS, largestSelectableHomeChartRange(Duration.ofHours(30)))
-        assertEquals(HomeChartRange.LAST_3_DAYS, largestSelectableHomeChartRange(Duration.ofDays(4)))
-        assertEquals(HomeChartRange.LAST_7_DAYS, largestSelectableHomeChartRange(Duration.ofDays(10)))
-        assertEquals(HomeChartRange.LAST_14_DAYS, largestSelectableHomeChartRange(Duration.ofDays(20)))
-        assertEquals(HomeChartRange.LAST_1_MONTH, largestSelectableHomeChartRange(Duration.ofDays(60)))
-        assertEquals(HomeChartRange.LAST_3_MONTHS, largestSelectableHomeChartRange(Duration.ofDays(120)))
-        assertEquals(HomeChartRange.LAST_12_MONTHS, largestSelectableHomeChartRange(Duration.ofDays(400)))
+        assertEquals(HomeChartRange.LAST_3_DAYS, largestSelectableHomeChartRange(Duration.ofHours(30)))
+        assertEquals(HomeChartRange.LAST_7_DAYS, largestSelectableHomeChartRange(Duration.ofDays(4)))
+        assertEquals(HomeChartRange.LAST_14_DAYS, largestSelectableHomeChartRange(Duration.ofDays(10)))
+        assertEquals(HomeChartRange.LAST_1_MONTH, largestSelectableHomeChartRange(Duration.ofDays(20)))
+        assertEquals(HomeChartRange.LAST_3_MONTHS, largestSelectableHomeChartRange(Duration.ofDays(60)))
+        assertEquals(HomeChartRange.LAST_6_MONTHS, largestSelectableHomeChartRange(Duration.ofDays(120)))
+        assertEquals(HomeChartRange.ALL_AVAILABLE, largestSelectableHomeChartRange(Duration.ofDays(400)))
     }
 
     @Test
@@ -97,7 +120,7 @@ class HomeChartRangeOptionsTest {
     fun dataSummary_withFullYear_hasNoPendingRange() {
         val now = Instant.parse("2026-08-21T12:00:00Z")
         val points = listOf(
-            GlucoseHistoryPoint(100, now.minus(Duration.ofDays(400)), GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(100, now.minus(Duration.ofDays(730)), GlucoseTrend.FLAT),
             GlucoseHistoryPoint(100, now, GlucoseTrend.FLAT)
         )
 

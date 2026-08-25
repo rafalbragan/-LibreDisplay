@@ -245,30 +245,29 @@ class BackupCodecTest {
     }
 
     @Test
-    fun decode_tolerantAboutBrokenRows() {
-        val bundle = BackupCodec.decode(
-            """
-            {
-              "format": "librecare-backup",
-              "schemaVersion": 3,
-              "createdAt": "2026-08-20T10:00:00Z",
-              "appVersion": "2.4.0",
-              "persons": [ { "displayName": "no id" },
-                           { "patientId": "ok", "displayName": "OK",
-                             "lastSeenAtIso": "2026-08-20T10:00:00Z",
-                             "createdAtIso": "2026-08-20T10:00:00Z",
-                             "updatedAtIso": "2026-08-20T10:00:00Z" } ],
-              "readings": [ { "patientId": "ok" } ],
-              "patientSettings": []
-            }
-            """.trimIndent()
-        )
-
-        assertEquals(1, bundle.persons.size)
-        assertEquals("ok", bundle.persons.single().patientId)
-        assertTrue(bundle.readings.isEmpty())
-        assertNull(bundle.session)
-        assertNotNull(bundle)
+    fun decode_rowsWithMissingFields_failWithReadableMessage() {
+        try {
+            BackupCodec.decode(
+                """
+                {
+                  "format": "librecare-backup",
+                  "schemaVersion": 3,
+                  "createdAt": "2026-08-20T10:00:00Z",
+                  "appVersion": "2.4.0",
+                  "persons": [ { "displayName": "no id" },
+                               { "patientId": "ok", "displayName": "OK",
+                                 "lastSeenAtIso": "2026-08-20T10:00:00Z",
+                                 "createdAtIso": "2026-08-20T10:00:00Z",
+                                 "updatedAtIso": "2026-08-20T10:00:00Z" } ],
+                  "readings": [ { "patientId": "ok" } ],
+                  "patientSettings": []
+                }
+                """.trimIndent()
+            )
+            fail("Expected BackupFormatException")
+        } catch (error: BackupFormatException) {
+            assertTrue(error.message.orEmpty().contains("brakujące", ignoreCase = true) || error.message.orEmpty().contains("nieprawidłowe", ignoreCase = true))
+        }
     }
 }
 

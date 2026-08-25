@@ -126,6 +126,23 @@ więc test migracji Room pozostaje aktualny i przechodzi.
 
 ---
 
+## 8. Uwaga o infrastrukturze testowej
+
+W repozytorium dodano warstwę infrastruktury pod automatyczne testowanie w chmurze:
+
+- `.devcontainer/devcontainer.json`
+- `scripts/verify-environment.sh`
+- `scripts/test-fast.sh`
+- `scripts/test-all.sh`
+- `.github/workflows/android-ci.yml`
+- `.github/workflows/firebase-test-lab.yml`
+- `docs/testing/`
+
+Stan tej warstwy został już zweryfikowany w repozytorium: build i testy przechodzą w tym układzie,
+więc audyt testów i mapa nawigacji odzwierciedlają aktualny, działający zestaw.
+
+To zmiana techniczna bez wpływu na logikę produkcyjną aplikacji.
+
 ## 8. Branding
 
 Wszystkie nowe napisy użytkownika mówią „LibreCare”. Pozostałe wystąpienia `libredisplay` to

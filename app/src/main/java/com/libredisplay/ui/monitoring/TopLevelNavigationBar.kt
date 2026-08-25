@@ -18,6 +18,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -59,6 +62,8 @@ private fun RowScope.TopLevelNavItem(
         verticalArrangement = Arrangement.spacedBy(4.dp),
         modifier = Modifier
             .weight(1f)
+            .testTag(LibreCareTestTags.bottomNav(DashboardNavItem.entries.first { it.label == label }))
+            .semantics { this.selected = selected }
             .clickable(onClick = onClick)
             .padding(vertical = 10.dp)
     ) {

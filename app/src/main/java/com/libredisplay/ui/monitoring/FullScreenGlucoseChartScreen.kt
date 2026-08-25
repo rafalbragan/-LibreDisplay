@@ -251,6 +251,7 @@ internal fun FullScreenGlucoseChartScreen(
                             onPointSelectionCleared = { selectedPoint = null },
                             chartHeight = if (isLandscape) 300.dp else 380.dp,
                             maxVisiblePoints = 1_500,
+                            axisRightPaddingPx = 44f,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }

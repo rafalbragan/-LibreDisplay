@@ -160,6 +160,78 @@ class AppDataBackupRepositoryTest {
         assertTrue(result.report.contains("Przywracanie zakończone"))
     }
 
+    @Test
+    fun exportImport_roundTripsMultipleProfiles() = runBlocking {
+        db.observedPersonDao().upsertAll(
+            listOf(
+                ObservedPersonEntity(
+                    patientId = "real-person-b",
+                    firstName = "Bartek",
+                    lastName = "Kowalski",
+                    displayName = "Bartek Kowalski",
+                    lastSeenAt = now,
+                    createdAt = now,
+                    updatedAt = now
+                )
+            )
+        )
+        db.glucoseReadingDao().insertReplace(
+            listOf(
+                GlucoseReadingEntity(
+                    id = "real-person-b:${now.minusSeconds(300).toEpochMilli()}",
+                    patientId = "real-person-b",
+                    timestamp = now.minusSeconds(300),
+                    valueMgDl = 141,
+                    trendArrow = "→",
+                    trendLabel = "Stable",
+                    source = "LibreLinkUp",
+                    sourceAccountId = "acc-2",
+                    receivedAt = now,
+                    isValid = true,
+                    rawTrendCode = null,
+                    createdAt = now
+                )
+            )
+        )
+
+        backupRepository.exportAutomaticBackupTo(Uri.fromFile(tmpFile))
+        db.glucoseReadingDao().deleteAllReadings()
+        db.observedPersonDao().deleteAllPeople()
+
+        backupRepository.restoreFromUri(Uri.fromFile(tmpFile))
+
+        assertEquals(2, db.observedPersonDao().getAllLivePersons().size)
+        assertEquals(2, db.glucoseReadingDao().getAllLiveReadings().size)
+        assertNotNull(db.observedPersonDao().getByPatientId("real-person-a"))
+        assertNotNull(db.observedPersonDao().getByPatientId("real-person-b"))
+    }
+
+    @Test
+    fun restore_withSettingsExcluded_keepsExistingLocalSettings() = runBlocking {
+        backupRepository.exportAutomaticBackupTo(Uri.fromFile(tmpFile))
+        settingsRepository.saveSettings(
+            settingsRepository.loadSettings().copy(
+                email = "local-only@example.com",
+                refreshInterval = 300,
+                backgroundPollingMinutes = 15,
+                selectedPatientId = "real-person-a"
+            )
+        )
+
+        backupRepository.restoreFromUri(
+            uri = Uri.fromFile(tmpFile),
+            selection = AppDataBackupRepository.RestoreSelection(
+                people = listOf(AppDataBackupRepository.PersonRestoreSelection(patientId = "real-person-a")),
+                restoreSettings = false
+            )
+        )
+
+        val settings = settingsRepository.loadSettings()
+        assertEquals("local-only@example.com", settings.email)
+        assertEquals(300, settings.refreshInterval)
+        assertEquals(15, settings.backgroundPollingMinutes)
+    }
+
     // ------------------------------------------------------------------ merge behaviour
 
     @Test
@@ -291,6 +363,68 @@ class AppDataBackupRepositoryTest {
         }
 
         assertEquals(before, db.glucoseReadingDao().countLiveReadings())
+    }
+
+    @Test
+    fun restore_unsupportedFutureSchema_doesNotChangeExistingData() = runBlocking {
+        val snapshotBefore = snapshotState()
+        tmpFile.writeText(
+            """
+            {
+              "format": "librecare-backup",
+              "schemaVersion": 99,
+              "createdAt": "$now",
+              "appVersion": "9.9.9",
+              "persons": [
+                { "patientId": "future-person", "displayName": "Future Person", "isActive": true,
+                  "lastSeenAtIso": "$now", "createdAtIso": "$now", "updatedAtIso": "$now" }
+              ],
+              "readings": []
+            }
+            """.trimIndent(),
+            Charsets.UTF_8
+        )
+
+        try {
+            backupRepository.restoreFromUri(Uri.fromFile(tmpFile))
+            fail("Expected unsupported schema version to fail")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("nie jest obsługiwana", ignoreCase = true))
+        }
+
+        assertEquals(snapshotBefore, snapshotState())
+    }
+
+    @Test
+    fun restore_missingRequiredFields_doesNotChangeExistingData() = runBlocking {
+        val snapshotBefore = snapshotState()
+        tmpFile.writeText(
+            """
+            {
+              "format": "librecare-backup",
+              "schemaVersion": 3,
+              "createdAt": "$now",
+              "appVersion": "2.5.0",
+              "persons": [
+                { "displayName": "Broken Person", "isActive": true, "createdAtIso": "$now", "updatedAtIso": "$now" }
+              ],
+              "readings": [
+                { "patientId": "broken-person", "timestampIso": "$now", "valueMgDl": 123 }
+              ],
+              "patientSettings": []
+            }
+            """.trimIndent(),
+            Charsets.UTF_8
+        )
+
+        try {
+            backupRepository.restoreFromUri(Uri.fromFile(tmpFile))
+            fail("Expected missing required fields to fail")
+        } catch (error: IllegalArgumentException) {
+            assertTrue(error.message.orEmpty().contains("brakujące", ignoreCase = true) || error.message.orEmpty().contains("nieprawidłowe", ignoreCase = true))
+        }
+
+        assertEquals(snapshotBefore, snapshotState())
     }
 
     @Test
@@ -572,6 +706,18 @@ class AppDataBackupRepositoryTest {
                 backgroundPollingMinutes = 30
             )
         )
+    }
+
+    private fun snapshotState(): String = runBlocking {
+        buildString {
+            append(db.observedPersonDao().getAllLivePersons().sortedBy { it.patientId })
+            append('|')
+            append(db.glucoseReadingDao().getAllLiveReadings().sortedWith(compareBy({ it.patientId }, { it.timestamp })))
+            append('|')
+            append(db.patientSettingsDao().getAllLiveSettings().sortedBy { it.patientId })
+            append('|')
+            append(settingsRepository.loadSettings())
+        }
     }
 
     private companion object {

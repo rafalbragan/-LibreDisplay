@@ -195,10 +195,8 @@ internal fun historyStatsSection(
         lowCritical = 54,
         highCritical = 250
     )
-    val mean = average
-    val variance = history.map { (it.value - mean) * (it.value - mean) }.average()
-    val sd = kotlin.math.sqrt(variance)
-    val cv = if (mean > 0.0 && mean.isFinite()) (sd / mean) * 100.0 else Double.NaN
+    val cvValue = GlucoseMetricsCalculator.calculateCoefficientOfVariation(history)
+    val cv = cvValue ?: Double.NaN
 
      return HistoryStatsSectionUi(
          title = title,

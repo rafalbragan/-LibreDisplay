@@ -8,20 +8,24 @@ enum class QuickMetricId(val storageId: String) {
     MINIMUM("minimum"),
     MAXIMUM("maximum"),
     GMI("gmi"),
+    CV("cv"),
     VERY_LOW_EPISODES("very_low_episodes"),
     VERY_HIGH_EPISODES("very_high_episodes"),
     HBA1C("hba1c"),
-    SENSOR_ACTIVITY("sensor_activity");
+    SENSOR_ACTIVITY("sensor_activity"),
+    DATA_COVERAGE("data_coverage");
 
     companion object {
         val DEFAULT_ORDER: List<QuickMetricId> = listOf(
             BELOW,
             IN_RANGE,
             ABOVE,
+            DATA_COVERAGE,
             AVERAGE,
             MINIMUM,
             MAXIMUM,
             GMI,
+            CV,
             VERY_LOW_EPISODES,
             VERY_HIGH_EPISODES
         )
@@ -30,10 +34,12 @@ enum class QuickMetricId(val storageId: String) {
             BELOW,
             IN_RANGE,
             ABOVE,
+            DATA_COVERAGE,
             AVERAGE,
             MINIMUM,
             MAXIMUM,
             GMI,
+            CV,
             VERY_LOW_EPISODES,
             VERY_HIGH_EPISODES
         )

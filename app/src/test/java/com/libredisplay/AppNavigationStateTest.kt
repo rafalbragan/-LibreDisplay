@@ -75,5 +75,64 @@ class AppNavigationStateTest {
         state = state.navigateBack()
         assertEquals(AppScreen.Monitoring, state.current)
     }
+
+    @Test
+    fun allMaximumDepthRoutes_canBeTraversedForwardAndBackward() {
+        val routes = AppScreen.entries
+            .filter { it.isTopLevelDestination() || it == AppScreen.Start }
+            .flatMap { allMaxDepthRoutesFrom(it) }
+            .filter { route -> isAppendOnlyRoute(route) }
+            .distinct()
+
+        assertTrue(routes.isNotEmpty())
+
+        routes.forEach { route ->
+            var state = AppNavigationState(listOf(route.first()))
+            route.drop(1).forEach { destination ->
+                state = state.navigateTo(destination)
+                assertEquals(destination, state.current)
+            }
+            route.dropLast(1).asReversed().forEach { expected ->
+                state = state.navigateBack()
+                assertEquals(expected, state.current)
+            }
+        }
+    }
+
+    @Test
+    fun bottomNavigationSwitchingOrders_doNotCreateUnexpectedDuplicates() {
+        val sequences = listOf(
+            listOf(AppScreen.Analytics, AppScreen.Settings, AppScreen.Monitoring),
+            listOf(AppScreen.Settings, AppScreen.Analytics, AppScreen.Settings),
+            listOf(AppScreen.Analytics, AppScreen.Monitoring, AppScreen.Analytics, AppScreen.Settings)
+        )
+
+        sequences.forEach { sequence ->
+            var state = AppNavigationState(listOf(AppScreen.Monitoring))
+            sequence.forEach { destination ->
+                state = state.navigateTo(destination)
+                assertEquals(destination, state.current)
+                assertEquals(state.stack.distinct(), state.stack)
+                val topLevelCount = state.stack.count { it.isTopLevelDestination() }
+                assertTrue("stack=${state.stack}", topLevelCount <= 2)
+            }
+        }
+    }
+
+    /**
+     * A route can be traversed forward-and-backward with a strict "pop exactly one" invariant
+     * only when every forward navigation appends exactly one screen. Top-level switches that
+     * reset the back stack (e.g. Monitoring always resets to a single root) are excluded here
+     * because those transitions are covered by the dedicated top-level switching tests.
+     */
+    private fun isAppendOnlyRoute(route: List<AppScreen>): Boolean {
+        var state = AppNavigationState(listOf(route.first()))
+        route.drop(1).forEach { destination ->
+            val next = state.navigateTo(destination)
+            if (next.stack != state.stack + destination) return false
+            state = next
+        }
+        return true
+    }
 }
 

@@ -23,6 +23,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextMeasurer
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.Dp
@@ -487,19 +488,27 @@ fun GlucoseChart(
     maxXAxisLabels: Int = 5,
     axisLeftPaddingPx: Float = 54f,
     axisTopPaddingPx: Float = 16f,
-    axisRightPaddingPx: Float = 20f,
-    axisBottomPaddingPx: Float = 36f,
+    axisRightPaddingPx: Float = 28f,
+    axisBottomPaddingPx: Float = 46f,
     modifier: Modifier = Modifier
 ) {
     val textMeasurer = rememberTextMeasurer()
     val compactAxisLabels = maxYAxisLabels <= 4 || maxXAxisLabels <= 4
     val labelStyle = TextStyle(color = Color(0xFFCBD5E1), fontSize = if (compactAxisLabels) 12.sp else 13.sp)
+    // Bolder, slightly larger style used for the first label of a new day so date changes stand out.
+    val dateChangeLabelStyle = TextStyle(
+        color = Color.White,
+        fontSize = if (compactAxisLabels) 13.sp else 14.sp,
+        fontWeight = FontWeight.Bold
+    )
     val valueStyle = TextStyle(color = Color.White, fontSize = 13.sp)
     var canvasWidth by remember { mutableStateOf(0f) }
     var canvasHeight by remember { mutableStateOf(0f) }
     val dynamicPointBudget = remember(canvasWidth, maxVisiblePoints) {
         val drawableWidth = (canvasWidth - 80f).roundToInt().coerceAtLeast(160)
-        (drawableWidth / 3).coerceIn(80, maxVisiblePoints)
+        // ~1 rendered point per 2px keeps the line smooth and dense (aligned with the 5-minute CGM
+        // sampling recommendation) without exceeding the caller's hard cap.
+        (drawableWidth / 2).coerceIn(80, maxVisiblePoints)
     }
     val interactionPoints = remember(points, dynamicPointBudget) {
         downsampleHistoryPreservingExtremes(points, dynamicPointBudget)
@@ -852,25 +861,43 @@ fun GlucoseChart(
             val labelX = chartLeft + fraction * chartWidth
             val instant = Instant.ofEpochMilli(labelEpochMillis)
             val localDate = instant.atZone(zoneId).toLocalDate()
+            val isDateBoundary = previousTickDate != null && previousTickDate != localDate
             val showDate = visibleDuration >= Duration.ofHours(24) && crossesMidnight && (index == 0 || previousTickDate != localDate)
+
+            // Emphasise the exact moment the day changes with a distinct vertical line so the eye can
+            // immediately separate consecutive days on the chart.
+            if (isDateBoundary && fraction in 0f..1f) {
+                drawLine(
+                    color = LibreCareColors.AccentTeal.copy(alpha = 0.55f),
+                    start = Offset(labelX, chartTop),
+                    end = Offset(labelX, chartBottom),
+                    strokeWidth = 2.5f
+                )
+            }
+
             val labelText = if (showDate) {
                 "${DateTimeFormatterProvider.compactDateFormatter().withZone(zoneId).format(instant)}\n${PolishDateTimeFormatter.formatTime(instant, zoneId)}"
             } else {
                 PolishDateTimeFormatter.formatTime(instant, zoneId)
             }
             previousTickDate = localDate
+            val activeStyle = if (showDate) dateChangeLabelStyle else labelStyle
             val xLayout = textMeasurer.measure(
                 text = AnnotatedString(labelText),
-                style = labelStyle,
+                style = activeStyle,
                 softWrap = true,
                 maxLines = 2
             )
+            // Push the two edge labels onto a lower baseline so that, while the user scrolls the time
+            // axis, the moving intermediate labels never collide with the fixed start/end labels.
+            val isEdgeLabel = index == 0 || index == xTicks.lastIndex
+            val labelTop = if (isEdgeLabel) chartBottom + 22f else chartBottom + 10f
             val rendered = drawSafeTextLabel(
                 text = labelText,
-                style = labelStyle,
+                style = activeStyle,
                 preferredTopLeft = Offset(
                     clampXLabelLeft(labelX - xLayout.size.width / 2f, xLayout.size.width.toFloat(), chartLeft, chartRight),
-                    chartBottom + 10f
+                    labelTop
                 ),
                 boundsLeft = chartLeft,
                 boundsTop = chartBottom + 4f,

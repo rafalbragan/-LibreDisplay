@@ -1,0 +1,28 @@
+{
+  "name": "LibreCare Android",
+  "image": "ghcr.io/cirruslabs/android-sdk:35",
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.gradle-for-java",
+        "vscjava.vscode-java-pack",
+        "GitHub.copilot",
+        "GitHub.copilot-chat"
+      ],
+      "settings": {
+        "gradle.nestedProjects": true,
+        "[kotlin]": {
+          "editor.defaultFormatter": "fwcd.kotlin",
+          "editor.formatOnSave": true
+        }
+      }
+    }
+  },
+  "containerEnv": {
+    "ANDROID_HOME": "/opt/android-sdk",
+    "ANDROID_SDK_ROOT": "/opt/android-sdk"
+  },
+  "postCreateCommand": "bash ./scripts/verify-environment.sh || true",
+  "postStartCommand": "bash ./scripts/verify-environment.sh || true"
+}
+

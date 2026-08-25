@@ -425,10 +425,12 @@ private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
     QuickMetricId.MINIMUM -> "Minimum"
     QuickMetricId.MAXIMUM -> "Maksimum"
     QuickMetricId.GMI -> "GMI"
+    QuickMetricId.CV -> "CV (zmienność)"
     QuickMetricId.VERY_LOW_EPISODES -> "Epizody bardzo niskie"
     QuickMetricId.VERY_HIGH_EPISODES -> "Epizody bardzo wysokie"
     QuickMetricId.HBA1C -> "HbA1c"
     QuickMetricId.SENSOR_ACTIVITY -> "Aktywność sensora"
+    QuickMetricId.DATA_COVERAGE -> "Pokrycie danych"
 }
 
 private fun copyLog(context: Context) {

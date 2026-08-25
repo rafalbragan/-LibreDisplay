@@ -188,6 +188,9 @@ class GlucoseSyncRepository(
         fromInclusive: Instant,
         toInclusive: Instant
     ) = localRepository.loadHistory(patientId, fromInclusive, toInclusive)
+
+    /** Full stored span (oldest .. newest) for a patient, used to unlock long chart ranges. */
+    suspend fun loadStoredRange(patientId: String) = localRepository.loadStoredRange(patientId)
 }
 
 internal fun mergeBackfillWindowPoints(

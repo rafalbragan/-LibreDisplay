@@ -19,10 +19,12 @@ internal enum class HomeChartRange(val duration: Duration, val shortLabel: Strin
     LAST_1_MONTH(Duration.ofDays(30), "1m", "1 miesiąc"),
     LAST_3_MONTHS(Duration.ofDays(90), "3m", "3 miesiące"),
     LAST_6_MONTHS(Duration.ofDays(182), "6m", "6 miesięcy"),
-    LAST_12_MONTHS(Duration.ofDays(365), "12m", "12 miesięcy");
+    LAST_12_MONTHS(Duration.ofDays(365), "12m", "12 miesięcy"),
+    ALL_AVAILABLE(Duration.ofDays(730), "Max", "Wszystkie dostępne dane");
 
     companion object {
         val default = LAST_12_HOURS
+        val homeScreenDefault = ALL_AVAILABLE
     }
 }
 
@@ -38,13 +40,18 @@ internal data class HomeChartRangeOption(
 )
 
 /**
- * Builds the visible range chips: every range that already fits into the collected data plus
- * exactly ONE additional (greyed out) range.
+ * Builds the visible range chips.
+ *
+ * Rule: enable every range that is fully shorter than the collected span, plus the first range that
+ * already contains it. In other words, as soon as there is *more* data than the current scale, the
+ * next larger scale becomes selectable, and exactly ONE further range is shown greyed-out as a
+ * preview of what will unlock next. The span is measured end-to-end (oldest .. newest) so it behaves
+ * the same as the full-screen history even when there are gaps in the data.
  */
 internal fun homeChartRangeOptions(dataSpan: Duration): List<HomeChartRangeOption> {
     val ranges = homeChartRanges()
     val span = if (dataSpan.isNegative) Duration.ZERO else dataSpan
-    val enabledCount = ranges.count { it.duration <= span }.coerceAtLeast(1)
+    val enabledCount = (ranges.count { it.duration < span } + 1).coerceIn(1, ranges.size)
     val visibleCount = (enabledCount + 1).coerceAtMost(ranges.size)
     return ranges.take(visibleCount).mapIndexed { index, range ->
         HomeChartRangeOption(range = range, enabled = index < enabledCount)
@@ -70,6 +77,7 @@ internal fun homeChartAxisTickInterval(range: HomeChartRange): Duration = when (
     HomeChartRange.LAST_3_MONTHS -> Duration.ofDays(15)
     HomeChartRange.LAST_6_MONTHS -> Duration.ofDays(30)
     HomeChartRange.LAST_12_MONTHS -> Duration.ofDays(60)
+    HomeChartRange.ALL_AVAILABLE -> Duration.ofDays(60)
 }
 
 internal data class HomeChartViewport(
@@ -364,14 +372,17 @@ internal fun homeChartDataSpan(points: List<GlucoseHistoryPoint>): Duration {
     return Duration.between(oldest, newest).coerceAtLeast(Duration.ZERO)
 }
 
-internal fun buildHomeDataSummary(points: List<GlucoseHistoryPoint>): HomeDataSummary {
-    val span = homeChartDataSpan(points)
-    val options = homeChartRangeOptions(span)
+internal fun buildHomeDataSummary(points: List<GlucoseHistoryPoint>): HomeDataSummary =
+    buildHomeDataSummary(homeChartDataSpan(points))
+
+internal fun buildHomeDataSummary(span: Duration): HomeDataSummary {
+    val safeSpan = if (span.isNegative) Duration.ZERO else span
+    val options = homeChartRangeOptions(safeSpan)
     val pending = options.lastOrNull { !it.enabled }?.range
-    val missing = pending?.let { (it.duration - span).coerceAtLeast(Duration.ZERO) }
+    val missing = pending?.let { (it.duration - safeSpan).coerceAtLeast(Duration.ZERO) }
     return HomeDataSummary(
-        storedSpan = span,
-        storedSpanLabel = if (span.isZero) "brak" else PolishDateTimeFormatter.formatCompactDuration(span),
+        storedSpan = safeSpan,
+        storedSpanLabel = if (safeSpan.isZero) "brak" else PolishDateTimeFormatter.formatCompactDuration(safeSpan),
         nextRangeLabel = pending?.shortLabel,
         missingForNextRangeLabel = missing
             ?.takeIf { !it.isZero }

@@ -17,9 +17,11 @@ class QuickMetricConfigTest {
                 QuickMetricId.BELOW,
                 QuickMetricId.IN_RANGE,
                 QuickMetricId.ABOVE,
+                QuickMetricId.DATA_COVERAGE,
                 QuickMetricId.AVERAGE,
                 QuickMetricId.MINIMUM,
                 QuickMetricId.MAXIMUM,
+                QuickMetricId.CV,
                 QuickMetricId.VERY_LOW_EPISODES,
                 QuickMetricId.VERY_HIGH_EPISODES
             ),

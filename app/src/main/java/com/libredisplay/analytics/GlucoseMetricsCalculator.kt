@@ -40,6 +40,24 @@ data class DailyMetric(
 
 object GlucoseMetricsCalculator {
 
+    /**
+     * Coefficient of Variation (CV %) – the standard clinical stability marker.
+     *
+     * CV = (standard deviation / mean) × 100. A value below 36% is considered stable per the
+     * international CGM consensus. Returns null when there is not enough data or the mean is not a
+     * usable positive number.
+     */
+    fun calculateCoefficientOfVariation(readings: List<GlucoseHistoryPoint>): Double? {
+        val values = readings.map { it.value.toDouble() }.filter { it.isFinite() }
+        if (values.size < 2) return null
+        val mean = values.average()
+        if (mean <= 0.0 || !mean.isFinite()) return null
+        val variance = values.map { (it - mean) * (it - mean) }.average()
+        val sd = kotlin.math.sqrt(variance)
+        val cv = (sd / mean) * 100.0
+        return cv.takeIf { it.isFinite() }
+    }
+
     fun calculateRangeDistribution(
         readings: List<GlucoseHistoryPoint>,
         targetLow: Int,

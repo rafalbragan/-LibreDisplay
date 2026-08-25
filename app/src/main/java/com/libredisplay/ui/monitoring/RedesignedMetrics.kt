@@ -33,6 +33,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -58,10 +59,12 @@ internal fun quickMetricLabel(metricId: QuickMetricId): String = when (metricId)
     QuickMetricId.MINIMUM -> "Minimum"
     QuickMetricId.MAXIMUM -> "Maksimum"
     QuickMetricId.GMI -> "GMI"
+    QuickMetricId.CV -> "CV"
     QuickMetricId.VERY_LOW_EPISODES -> "Epizody bardzo niskie"
     QuickMetricId.VERY_HIGH_EPISODES -> "Epizody bardzo wysokie"
     QuickMetricId.HBA1C -> "HbA1c"
     QuickMetricId.SENSOR_ACTIVITY -> "Aktywność"
+    QuickMetricId.DATA_COVERAGE -> "Pokrycie danych"
 }
 
 internal fun buildQuickMetricTiles(
@@ -76,7 +79,10 @@ internal fun buildQuickMetricTiles(
     gmiValue: Double?,
     averageValueMgDl: Int?,
     veryLowEpisodes: Int?,
-    veryHighEpisodes: Int?
+    veryHighEpisodes: Int?,
+    cvPercent: Double? = null,
+    dataCoveragePercent: Int? = null,
+    dataMissingDescription: String? = null
 ): List<QuickMetricTileUi> {
     return listOf(
         QuickMetricTileUi(
@@ -100,6 +106,13 @@ internal fun buildQuickMetricTiles(
             primaryValue = formatDurationQuickly(aboveDuration),
             secondaryValue = abovePercent?.let { "$it%" } ?: "—",
             accent = LibreCareColors.AccentAmber
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.DATA_COVERAGE,
+            label = "Pokrycie danych",
+            primaryValue = dataCoveragePercent?.let { "$it%" } ?: "—",
+            secondaryValue = dataMissingDescription ?: "Brak przerw",
+            accent = LibreCareColors.AccentBlue
         ),
         QuickMetricTileUi(
             id = QuickMetricId.AVERAGE,
@@ -128,6 +141,17 @@ internal fun buildQuickMetricTiles(
             primaryValue = gmiValue?.let { "${"%.1f".format(it).replace('.', ',')}%" } ?: "—",
             secondaryValue = if (gmiValue == null) "Za mało danych" else "Szacunek",
             accent = LibreCareColors.AccentTeal
+        ),
+        QuickMetricTileUi(
+            id = QuickMetricId.CV,
+            label = "CV",
+            primaryValue = cvPercent?.let { "${"%.0f".format(it)}%" } ?: "—",
+            secondaryValue = when {
+                cvPercent == null -> "Za mało danych"
+                cvPercent <= 36.0 -> "Stabilnie (≤36%)"
+                else -> "Duża zmienność"
+            },
+            accent = LibreCareColors.AccentPurple
         ),
         QuickMetricTileUi(
             id = QuickMetricId.VERY_LOW_EPISODES,
@@ -181,7 +205,14 @@ internal fun ImprovedQuickMetricsPanel(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            Text("Metryki", color = LibreCareColors.TextPrimary, fontSize = 17.sp, lineHeight = 18.sp, fontWeight = FontWeight.SemiBold)
+            Text(
+                "Metryki",
+                color = LibreCareColors.TextPrimary,
+                fontSize = 17.sp,
+                lineHeight = 18.sp,
+                fontWeight = FontWeight.SemiBold,
+                modifier = Modifier.testTag(LibreCareTestTags.METRICS_HEADER)
+            )
             if (canScrollRight) {
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
@@ -204,6 +235,7 @@ internal fun ImprovedQuickMetricsPanel(
                     fontWeight = FontWeight.SemiBold,
                     maxLines = 1,
                     modifier = Modifier
+                        .testTag(LibreCareTestTags.METRICS_EDIT)
                         .clickable(onClick = it)
                         .padding(horizontal = 4.dp, vertical = 4.dp)
                 )
@@ -300,6 +332,7 @@ private fun QuickMetricTile(
     val isRangeTile = tile.id == QuickMetricId.BELOW || tile.id == QuickMetricId.IN_RANGE || tile.id == QuickMetricId.ABOVE
     Box(
         modifier = modifier
+            .testTag(LibreCareTestTags.metricTile(tile.id))
             .requiredHeightIn(min = 84.dp)
             .background(
                 if (isDragging) LibreCareColors.SurfaceElevated else Color.Transparent,
@@ -484,5 +517,92 @@ fun CompactNfzStatusCard(
     }
 }
 
+/**
+ * Calculates data coverage statistics based on available data points and time range.
+ * Detects gaps in data and returns coverage percentage and description.
+ */
+internal data class DataCoverageStats(
+    val coveragePercent: Int,
+    val missingDescription: String,
+    val gaps: List<DataGap>
+)
 
+internal data class DataGap(
+    val startTime: java.time.Instant,
+    val endTime: java.time.Instant,
+    val durationMinutes: Long
+)
 
+internal fun calculateDataCoverage(
+    points: List<com.libredisplay.data.model.GlucoseHistoryPoint>,
+    timeRange: java.time.Duration
+): DataCoverageStats {
+    if (points.isEmpty()) {
+        return DataCoverageStats(
+            coveragePercent = 0,
+            missingDescription = "Brak danych",
+            gaps = emptyList()
+        )
+    }
+
+    val sorted = points.sortedBy { it.timestamp }
+    val firstPoint = sorted.first().timestamp
+    val lastPoint = sorted.last().timestamp
+    val actualDuration = java.time.Duration.between(firstPoint, lastPoint)
+
+    // Maximum acceptable gap between readings (15 minutes)
+    val maxGapMillis = 15 * 60 * 1000L
+
+    val gaps = mutableListOf<DataGap>()
+    for (i in 0 until sorted.size - 1) {
+        val gap = java.time.Duration.between(sorted[i].timestamp, sorted[i + 1].timestamp)
+        if (gap.toMillis() > maxGapMillis) {
+            gaps.add(
+                DataGap(
+                    startTime = sorted[i].timestamp,
+                    endTime = sorted[i + 1].timestamp,
+                    durationMinutes = gap.toMinutes()
+                )
+            )
+        }
+    }
+
+    val totalGapMillis = gaps.fold(0L) { acc, gap ->
+        acc + java.time.Duration.between(gap.startTime, gap.endTime).toMillis()
+    }
+    val coverageMillis = actualDuration.toMillis() - totalGapMillis
+    val rangeMillis = timeRange.toMillis()
+
+    val coveragePercent = if (rangeMillis > 0) {
+        ((coverageMillis.toDouble() / rangeMillis.toDouble()) * 100).toInt().coerceIn(0, 100)
+    } else {
+        100
+    }
+
+    val missingDescription = when {
+        gaps.isEmpty() -> "Brak przerw"
+        gaps.size == 1 -> {
+            val gap = gaps.first()
+            val minutes = gap.durationMinutes
+            when {
+                minutes < 60 -> "Przerwa ${minutes}m"
+                minutes < 1440 -> "Przerwa ${minutes / 60}h"
+                else -> "Przerwa ${minutes / 1440}d"
+            }
+        }
+        else -> {
+            val totalMissing = gaps.sumOf { it.durationMinutes }
+            when {
+                totalMissing < 60 -> "${gaps.size} przerwy (${totalMissing}m)"
+                totalMissing < 1440 -> "${gaps.size} przerwy (${totalMissing / 60}h)"
+                else -> "${gaps.size} przerwy (${totalMissing / 1440}d)"
+            }
+        }
+    }
+
+    return DataCoverageStats(
+        coveragePercent = coveragePercent,
+        missingDescription = missingDescription,
+        gaps = gaps
+    )
+}

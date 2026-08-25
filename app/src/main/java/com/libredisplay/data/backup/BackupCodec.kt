@@ -197,11 +197,23 @@ object BackupCodec {
     }.getOrDefault(false)
 
     private fun decodeV3(obj: JsonObject): BackupBundle {
-        val persons = obj.optArray("persons").mapNotNull { it.asObjectOrNull()?.toPerson() }
-        val readings = obj.optArray("readings").mapNotNull { it.asObjectOrNull()?.toReading() }
-        val patientSettings = obj.optArray("patientSettings").mapNotNull { it.asObjectOrNull()?.toPatientSettings() }
+        val schemaVersion = obj.optInt("schemaVersion", BackupBundle.CURRENT_SCHEMA_VERSION)
+        if (schemaVersion > BackupBundle.CURRENT_SCHEMA_VERSION) {
+            throw BackupFormatException(
+                "Nie można odczytać kopii zapasowej. Wersja schematu $schemaVersion nie jest obsługiwana przez tę wersję LibreCare."
+            )
+        }
+        val rawPersons = obj.optArray("persons")
+        val rawReadings = obj.optArray("readings")
+        val rawPatientSettings = obj.optArray("patientSettings")
+        val persons = rawPersons.mapNotNull { it.asObjectOrNull()?.toPerson() }
+        val readings = rawReadings.mapNotNull { it.asObjectOrNull()?.toReading() }
+        val patientSettings = rawPatientSettings.mapNotNull { it.asObjectOrNull()?.toPatientSettings() }
+        validateDecodedCollection(section = "persons", rawSize = rawPersons.size, decodedSize = persons.size)
+        validateDecodedCollection(section = "readings", rawSize = rawReadings.size, decodedSize = readings.size)
+        validateDecodedCollection(section = "patientSettings", rawSize = rawPatientSettings.size, decodedSize = patientSettings.size)
         return BackupBundle(
-            schemaVersion = obj.optInt("schemaVersion", BackupBundle.CURRENT_SCHEMA_VERSION),
+            schemaVersion = schemaVersion,
             createdAtIso = obj.optStringOr("createdAt", ""),
             appVersion = obj.optStringOr("appVersion", "unknown"),
             deviceLabel = obj.optStringOr("deviceLabel", ""),
@@ -213,6 +225,14 @@ object BackupCodec {
             quickMetricVisibility = obj.optObject("quickMetricVisibility")?.toBooleanMap(),
             session = obj.optObject("session")?.toSession()
         )
+    }
+
+    private fun validateDecodedCollection(section: String, rawSize: Int, decodedSize: Int) {
+        if (rawSize > 0 && decodedSize != rawSize) {
+            throw BackupFormatException(
+                "Nie można odczytać kopii zapasowej. Sekcja \"$section\" zawiera brakujące lub nieprawidłowe pola."
+            )
+        }
     }
 
     private fun decodeV2Body(obj: JsonObject): BackupBundle {

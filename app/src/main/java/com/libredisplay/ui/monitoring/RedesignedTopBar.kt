@@ -22,6 +22,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -78,7 +79,7 @@ fun LibreTopBar(
                 .fillMaxWidth()
                 .padding(horizontal = 10.dp, vertical = 4.dp)
         ) {
-            val compactLayout = maxWidth < 392.dp
+            val compactLayout = this.maxWidth < 392.dp
             if (compactLayout) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Row(
@@ -93,6 +94,7 @@ fun LibreTopBar(
                         ) {
                             Text(
                                 text = stringResource(R.string.app_name),
+                                modifier = Modifier.testTag(LibreCareTestTags.TOP_BAR_TITLE),
                                 fontWeight = FontWeight.SemiBold,
                                 color = LibreCareColors.TextPrimary,
                                 fontSize = 25.sp,
@@ -101,11 +103,13 @@ fun LibreTopBar(
                             )
                             Text(
                                 text = "v$appVersionLabel",
+                                modifier = Modifier
+                                    .testTag(LibreCareTestTags.TOP_BAR_VERSION)
+                                    .padding(bottom = 2.dp),
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 13.sp,
                                 lineHeight = 16.sp,
-                                maxLines = 1,
-                                modifier = Modifier.padding(bottom = 2.dp)
+                                maxLines = 1
                             )
                         }
                         Column(
@@ -114,6 +118,7 @@ fun LibreTopBar(
                         ) {
                             Text(
                                 text = "Ostatnia aktualizacja: $topUpdateText",
+                                modifier = Modifier.testTag(LibreCareTestTags.TOP_BAR_LAST_UPDATE),
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 11.sp,
                                 lineHeight = 12.sp,
@@ -121,7 +126,7 @@ fun LibreTopBar(
                                 textAlign = TextAlign.End
                             )
                             if (onRunUiAudit != null && BuildConfig.DEBUG) {
-                                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(28.dp).height(28.dp)) {
+                                IconButton(onClick = onRunUiAudit, modifier = Modifier.width(28.dp).height(28.dp).testTag(LibreCareTestTags.TOP_BAR_UI_AUDIT)) {
                                     Icon(
                                         Icons.Default.PhotoCamera,
                                         contentDescription = "Raport UI",
@@ -146,6 +151,7 @@ fun LibreTopBar(
                     ) {
                         Text(
                             text = stringResource(R.string.app_name),
+                            modifier = Modifier.testTag(LibreCareTestTags.TOP_BAR_TITLE),
                             fontWeight = FontWeight.SemiBold,
                             color = LibreCareColors.TextPrimary,
                             fontSize = 27.sp,
@@ -154,11 +160,13 @@ fun LibreTopBar(
                         )
                         Text(
                             text = "v$appVersionLabel",
+                            modifier = Modifier
+                                .testTag(LibreCareTestTags.TOP_BAR_VERSION)
+                                .padding(bottom = 3.dp),
                             color = LibreCareColors.TextSecondary,
                             fontSize = 13.sp,
                             lineHeight = 16.sp,
-                            maxLines = 1,
-                            modifier = Modifier.padding(bottom = 3.dp)
+                            maxLines = 1
                         )
                     }
                     Column(
@@ -173,6 +181,7 @@ fun LibreTopBar(
                         ) {
                             Text(
                                 text = "Ostatnia aktualizacja: $topUpdateText",
+                                modifier = Modifier.testTag(LibreCareTestTags.TOP_BAR_LAST_UPDATE),
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 12.sp,
                                 lineHeight = 13.sp,
@@ -181,7 +190,7 @@ fun LibreTopBar(
                             )
                         }
                         if (onRunUiAudit != null && BuildConfig.DEBUG) {
-                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(36.dp).height(36.dp)) {
+                            IconButton(onClick = onRunUiAudit, modifier = Modifier.width(36.dp).height(36.dp).testTag(LibreCareTestTags.TOP_BAR_UI_AUDIT)) {
                                 Icon(
                                     Icons.Default.PhotoCamera,
                                     contentDescription = "Raport UI",
@@ -267,7 +276,7 @@ fun DataFreshnessAndSensorStatusBar(
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 2.dp)
         ) {
-            val stacked = maxWidth < 360.dp
+            val stacked = this.maxWidth < 360.dp
             if (stacked) {
                 Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
                     Text(

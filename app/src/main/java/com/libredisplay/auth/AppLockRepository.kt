@@ -33,6 +33,30 @@ class AppLockRepository(context: Context) {
         get() = storage.getBoolean(KEY_APP_LOCK_ENABLED, false)
         set(value) = storage.putBoolean(KEY_APP_LOCK_ENABLED, value)
 
+    /**
+     * Process-scoped flag that remembers the app was already unlocked during this app session.
+     *
+     * It intentionally lives in memory only: it survives Activity recreation (e.g. screen
+     * rotation) so the user is not asked to re-authenticate on every configuration change, but it
+     * is cleared on process death and when the app is truly sent to the background, preserving the
+     * security guarantee that a fresh app launch requires unlocking again.
+     */
+    var isSessionUnlocked: Boolean
+        get() = sessionUnlocked
+        set(value) {
+            sessionUnlocked = value
+        }
+
+    /** Marks the current app session as unlocked after a successful authentication. */
+    fun markUnlockedForSession() {
+        sessionUnlocked = true
+    }
+
+    /** Clears the session unlock so the next app launch requires authentication again. */
+    fun clearSession() {
+        sessionUnlocked = false
+    }
+
     /** Currently selected unlock method. */
     var method: UnlockMethod
         get() {
@@ -99,5 +123,12 @@ class AppLockRepository(context: Context) {
         const val KEY_APP_LOCK_ENABLED = "app_lock_enabled"
         const val KEY_APP_LOCK_METHOD = "app_lock_method"
         const val KEY_APP_LOCK_PASSKEY_ID = "app_lock_passkey_id"
+
+        /**
+         * In-memory unlock flag shared across [AppLockRepository] instances for the whole process.
+         * Survives Activity recreation (rotation) but not process death.
+         */
+        @Volatile
+        private var sessionUnlocked: Boolean = false
     }
 }

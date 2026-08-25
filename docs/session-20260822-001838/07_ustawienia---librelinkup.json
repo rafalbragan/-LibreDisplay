@@ -1,0 +1,45 @@
+{
+  "a": "2026-08-22T00:18:45.193852",
+  "b": "Ustawienia -\u003e LibreLinkUp",
+  "c": "Główny -\u003e Ustawienia -\u003e Konto i połączenie -\u003e LibreLinkUp",
+  "d": "SettingsAccount",
+  "e": [
+    "czy hasło nie jest stale pokazane",
+    "status konta",
+    "akcje zmiany konta"
+  ],
+  "f": {
+    "a": "07_ustawienia---librelinkup.png",
+    "b": "/storage/emulated/0/Android/data/com.libredisplay/files/ui-audit/session-20260822-001838/07_ustawienia---librelinkup.png",
+    "c": 1080,
+    "d": 2340,
+    "e": 61448,
+    "f": 2.8125,
+    "g": 450,
+    "h": 384,
+    "i": 832,
+    "j": 1.0,
+    "k": "portrait",
+    "l": true
+  },
+  "g": {
+    "a": "samsung",
+    "b": "samsung",
+    "c": "SM-S948B",
+    "d": "m3q",
+    "e": "m3qxeea",
+    "f": "qcom",
+    "g": 36,
+    "h": "16",
+    "i": "pl-PL"
+  },
+  "h": {
+    "a": "LIVE",
+    "b": "ae84c293-91e8-11ea-b235-0242ac11000c",
+    "c": 60,
+    "d": 60,
+    "e": 17280,
+    "f": 80,
+    "g": 180
+  }
+}

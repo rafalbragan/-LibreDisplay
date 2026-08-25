@@ -1,0 +1,398 @@
+name: Firebase Test Lab
+
+on:
+  workflow_dispatch:
+    inputs:
+      locale:
+        description: "Locale (validated against Test Lab locales)"
+        required: false
+        default: "pl"
+      orientation:
+        description: "Device orientation"
+        required: false
+        type: choice
+        default: "portrait"
+        options:
+          - portrait
+          - landscape
+          - default
+
+# Workload Identity Federation requires an OIDC token from GitHub.
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  firebase-test-lab:
+    name: Build and run Firebase Test Lab
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+      FTL_STANDARD_MODEL: ${{ vars.FTL_STANDARD_MODEL }}
+      FTL_STANDARD_VERSION: ${{ vars.FTL_STANDARD_VERSION }}
+      LOCALE: ${{ github.event.inputs.locale || 'pl' }}
+      ORIENTATION: ${{ github.event.inputs.orientation || 'portrait' }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v5
+        with:
+          distribution: temurin
+          java-version: "17"
+          cache: gradle
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+
+      - name: Set up Android SDK
+        uses: android-actions/setup-android@v3
+
+      - name: Install Android SDK 35 components
+        run: |
+          yes | sdkmanager --licenses >/dev/null
+          sdkmanager "platform-tools" "platforms;android-35" "build-tools;35.0.0"
+
+      - name: Grant execute permission for scripts
+        run: chmod +x gradlew scripts/*.sh
+
+      - name: Verify build environment
+        run: bash ./scripts/verify-environment.sh
+
+      # ------------------------------------------------------------------
+      # BUILD: fresh debug + androidTest APKs (never reuse release-artifacts)
+      # ------------------------------------------------------------------
+      - name: Build app debug APK
+        id: build-app
+        run: ./gradlew clean :app:assembleDebug --stacktrace
+
+      - name: Build androidTest APK
+        id: build-androidtest
+        run: ./gradlew :app:assembleDebugAndroidTest --stacktrace
+
+      - name: Detect APK paths
+        id: apks
+        shell: bash
+        run: |
+          DEBUG_APK="app/build/outputs/apk/debug/app-debug.apk"
+          TEST_APK="app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk"
+
+          if [ ! -f "$DEBUG_APK" ]; then
+            DEBUG_APK=$(find app/build/outputs/apk/debug -type f -name "*debug*.apk" | sort | head -n 1)
+          fi
+          if [ ! -f "$TEST_APK" ]; then
+            TEST_APK=$(find app/build/outputs/apk/androidTest -type f -name "*androidTest*.apk" | sort | head -n 1)
+          fi
+
+          if [ ! -f "$DEBUG_APK" ]; then
+            echo "::error::Debug APK not found"
+            exit 1
+          fi
+          if [ ! -f "$TEST_APK" ]; then
+            echo "::error::AndroidTest APK not found"
+            exit 1
+          fi
+
+          echo "debug_apk=$DEBUG_APK" >> "$GITHUB_OUTPUT"
+          echo "test_apk=$TEST_APK" >> "$GITHUB_OUTPUT"
+
+      - name: Upload built APKs
+        uses: actions/upload-artifact@v4
+        with:
+          name: librecare-firebase-build-artifacts
+          path: |
+            ${{ steps.apks.outputs.debug_apk }}
+            ${{ steps.apks.outputs.test_apk }}
+            app/build/reports/**
+          if-no-files-found: error
+          retention-days: 14
+
+      # ------------------------------------------------------------------
+      # CONFIG CHECK: verify the three required GCP repository variables.
+      # Missing variables => Firebase steps are natively skipped (not FAIL).
+      # ------------------------------------------------------------------
+      - name: Check Firebase configuration
+        id: firebase-config
+        shell: bash
+        run: |
+          missing=""
+          [ -z "$GCP_PROJECT_ID" ] && missing="${missing}GCP_PROJECT_ID "
+          [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] && missing="${missing}GCP_WORKLOAD_IDENTITY_PROVIDER "
+          [ -z "$GCP_SERVICE_ACCOUNT" ] && missing="${missing}GCP_SERVICE_ACCOUNT "
+
+          missing=$(echo "$missing" | sed 's/[[:space:]]*$//')
+
+          if [ -n "$missing" ]; then
+            echo "enabled=false" >> "$GITHUB_OUTPUT"
+            echo "missing_vars=${missing}" >> "$GITHUB_OUTPUT"
+            echo "Firebase Test Lab will be SKIPPED. Missing repository variables: ${missing}"
+          else
+            echo "enabled=true" >> "$GITHUB_OUTPUT"
+            echo "missing_vars=" >> "$GITHUB_OUTPUT"
+            echo "Firebase configuration present."
+          fi
+
+      # ------------------------------------------------------------------
+      # AUTH: Workload Identity Federation (no long-lived JSON key)
+      # ------------------------------------------------------------------
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
+        id: auth
+        if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
+        uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - name: Set up Cloud SDK
+        id: setup-gcloud
+        if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
+        uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: '>= 417.0.0'
+
+      # ------------------------------------------------------------------
+      # DEVICE SELECTION: pick a virtual phone and an OS version that this
+      # specific model actually supports (model + API validated together).
+      # Also validates locale and orientation against Test Lab.
+      # ------------------------------------------------------------------
+      - name: Select and validate Firebase device
+        id: device
+        if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gcloud config set project "$GCP_PROJECT_ID" >/dev/null
+
+          MODEL=""
+          VERSION=""
+          SOURCE=""
+
+          # Official virtual-device listing. stderr is intentionally NOT suppressed so that
+          # permission / API-enablement problems surface directly in the logs.
+          AVAILABLE_MODELS=$(gcloud firebase test android models list --filter=virtual --format="value(id)")
+          echo "Available virtual models:"
+          echo "${AVAILABLE_MODELS:-<none>}"
+
+          model_available() { echo "$AVAILABLE_MODELS" | grep -qx "$1"; }
+
+          # OS version ids supported by ONE specific model (space separated).
+          supported_versions_for() {
+            gcloud firebase test android models describe "$1" \
+              --format="value(supportedVersionIds)" | tr ';,' '  ' | tr -s ' '
+          }
+
+          version_supported_by_model() {
+            local list
+            list=$(supported_versions_for "$1")
+            echo " $list " | grep -q " $2 "
+          }
+
+          # API preference: 35 -> 34 -> 33 -> 32 -> highest supported by THIS model.
+          pick_version_for_model() {
+            local list v
+            list=$(supported_versions_for "$1")
+            for v in 35 34 33 32; do
+              if echo " $list " | grep -q " $v "; then echo "$v"; return 0; fi
+            done
+            echo "$list" | tr ' ' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
+          }
+
+          # 1) Repository variables accepted ONLY if that exact model+version combo is supported.
+          if [ -n "${FTL_STANDARD_MODEL}" ] && [ -n "${FTL_STANDARD_VERSION}" ]; then
+            if model_available "$FTL_STANDARD_MODEL" && version_supported_by_model "$FTL_STANDARD_MODEL" "$FTL_STANDARD_VERSION"; then
+              MODEL="$FTL_STANDARD_MODEL"
+              VERSION="$FTL_STANDARD_VERSION"
+              SOURCE="repository-variables"
+            else
+              echo "::warning::FTL_STANDARD_MODEL/FTL_STANDARD_VERSION is not a supported model+API combination; using fallback."
+            fi
+          fi
+
+          # 2) Fallback: first available standard virtual phone from a preference list.
+          if [ -z "$MODEL" ]; then
+            for candidate in MediumPhone.arm Pixel7 Pixel6 Pixel3 SmallPhone.arm; do
+              if model_available "$candidate"; then
+                MODEL="$candidate"
+                SOURCE="fallback-auto"
+                break
+              fi
+            done
+          fi
+
+          # 3) Last resort: first virtual model in the catalog.
+          if [ -z "$MODEL" ]; then
+            MODEL=$(echo "$AVAILABLE_MODELS" | head -n 1)
+            SOURCE="fallback-first"
+          fi
+
+          if [ -z "$MODEL" ]; then
+            echo "::error::No virtual device models available from Firebase Test Lab."
+            exit 1
+          fi
+
+          # Choose an API level actually supported by the chosen model.
+          if [ -z "$VERSION" ]; then
+            VERSION=$(pick_version_for_model "$MODEL")
+          fi
+
+          if [ -z "$VERSION" ] || ! version_supported_by_model "$MODEL" "$VERSION"; then
+            echo "::error::Could not resolve a supported OS version for model '$MODEL'."
+            echo "Supported versions for $MODEL: $(supported_versions_for "$MODEL")"
+            exit 1
+          fi
+
+          # Locale validation against the live Test Lab locale catalog.
+          if ! gcloud firebase test android locales list --format="value(id)" | grep -qx "$LOCALE"; then
+            echo "::error::Locale '$LOCALE' is not supported by Firebase Test Lab."
+            exit 1
+          fi
+
+          # Orientation must be one of the Test Lab supported values.
+          case "$ORIENTATION" in
+            portrait|landscape|default) ;;
+            *) echo "::error::Orientation '$ORIENTATION' is invalid (allowed: portrait|landscape|default)."; exit 1 ;;
+          esac
+
+          echo "Selected device: model=$MODEL version=$VERSION locale=$LOCALE orientation=$ORIENTATION (source=$SOURCE)"
+          echo "model=$MODEL" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "source=$SOURCE" >> "$GITHUB_OUTPUT"
+
+      # ------------------------------------------------------------------
+      # RUN: instrumentation tests on Firebase Test Lab.
+      # Captures the Test Lab results URL for the Job Summary.
+      # ------------------------------------------------------------------
+      - name: Run Firebase Test Lab
+        id: ftl
+        if: ${{ steps.firebase-config.outputs.enabled == 'true' }}
+        shell: bash
+        run: |
+          set -uo pipefail
+          RESULTS_DIR="librecare-$(date +%Y%m%d-%H%M%S)-${GITHUB_RUN_ID}"
+
+          # Do not let post-processing hide a Test Lab failure: capture gcloud's real exit code.
+          set +e
+          gcloud firebase test android run \
+            --project="$GCP_PROJECT_ID" \
+            --type=instrumentation \
+            --app="${{ steps.apks.outputs.debug_apk }}" \
+            --test="${{ steps.apks.outputs.test_apk }}" \
+            --device="model=${{ steps.device.outputs.model }},version=${{ steps.device.outputs.version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --results-dir="$RESULTS_DIR" \
+            --timeout=15m 2>&1 | tee ftl-output.log
+          FTL_EXIT=${PIPESTATUS[0]}
+          set -e
+
+          # Extract result links even when the run failed, so they still appear in the summary.
+          RESULTS_URL=$(grep -Eo 'https://console.firebase.google.com[^ ]*' ftl-output.log | head -n 1 || true)
+          GCS_URL=$(grep -Eo 'gs://[^ ]*' ftl-output.log | head -n 1 || true)
+          echo "results_url=${RESULTS_URL}" >> "$GITHUB_OUTPUT"
+          echo "gcs_url=${GCS_URL}" >> "$GITHUB_OUTPUT"
+
+          echo "Firebase Test Lab exit code: ${FTL_EXIT}"
+          # Propagate the exact Test Lab exit code so a failing instrumentation run fails the job.
+          exit "$FTL_EXIT"
+
+      - name: Upload Firebase Test Lab log
+        if: ${{ always() && steps.firebase-config.outputs.enabled == 'true' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: librecare-firebase-testlab-log
+          path: ftl-output.log
+          if-no-files-found: ignore
+          retention-days: 14
+
+      # ------------------------------------------------------------------
+      # JOB SUMMARY: reflects the ACTUAL outcome of each step.
+      # ------------------------------------------------------------------
+      - name: Job Summary
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          status() {
+            case "$1" in
+              success) echo "PASS ✅" ;;
+              failure) echo "FAIL ❌" ;;
+              skipped) echo "SKIPPED ⏭️" ;;
+              "") echo "SKIPPED ⏭️" ;;
+              *) echo "$1" ;;
+            esac
+          }
+
+          ENABLED="${{ steps.firebase-config.outputs.enabled }}"
+          MISSING="${{ steps.firebase-config.outputs.missing_vars }}"
+
+          AUTH_OUTCOME="${{ steps.auth.outcome }}"
+          APP_BUILD="${{ steps.build-app.outcome }}"
+          TEST_BUILD="${{ steps.build-androidtest.outcome }}"
+          FTL_OUTCOME="${{ steps.ftl.outcome }}"
+
+          DEVICE_MODEL="${{ steps.device.outputs.model }}"
+          DEVICE_VERSION="${{ steps.device.outputs.version }}"
+          DEVICE_SOURCE="${{ steps.device.outputs.source }}"
+          RESULTS_URL="${{ steps.ftl.outputs.results_url }}"
+          GCS_URL="${{ steps.ftl.outputs.gcs_url }}"
+
+          # Firebase Test Lab status line
+          if [ "$ENABLED" != "true" ]; then
+            FTL_LINE="SKIPPED_EXTERNAL_CONFIGURATION"
+          else
+            FTL_LINE="$(status "$FTL_OUTCOME")"
+          fi
+
+          {
+            echo "## LibreCare — Firebase Test Lab"
+            echo ""
+            echo "| Krok | Wynik |"
+            echo "|------|-------|"
+            echo "| Authentication (Workload Identity) | $( [ "$ENABLED" = "true" ] && status "$AUTH_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
+            echo "| App APK build | $(status "$APP_BUILD") |"
+            echo "| androidTest APK build | $(status "$TEST_BUILD") |"
+            echo "| Firebase Test Lab | $FTL_LINE |"
+            echo "| Instrumentation tests | $( [ "$ENABLED" = "true" ] && status "$FTL_OUTCOME" || echo 'SKIPPED ⏭️' ) |"
+            echo ""
+            echo "### Konfiguracja urządzenia"
+            echo ""
+            echo "| Pole | Wartość |"
+            echo "|------|---------|"
+            echo "| Device model | ${DEVICE_MODEL:-n/d} |"
+            echo "| Android API | ${DEVICE_VERSION:-n/d} |"
+            echo "| Locale | ${LOCALE} |"
+            echo "| Orientation | ${ORIENTATION} |"
+            echo "| Źródło wyboru urządzenia | ${DEVICE_SOURCE:-n/d} |"
+            echo ""
+            echo "### Artefakty APK"
+            echo ""
+            echo "- App APK: \`${{ steps.apks.outputs.debug_apk }}\`"
+            echo "- androidTest APK: \`${{ steps.apks.outputs.test_apk }}\`"
+            echo ""
+            echo "### Wyniki Test Lab"
+            echo ""
+            if [ -n "$RESULTS_URL" ]; then
+              echo "- Konsola: [$RESULTS_URL]($RESULTS_URL)"
+            fi
+            if [ -n "$GCS_URL" ]; then
+              echo "- Bucket: \`$GCS_URL\`"
+            fi
+            if [ "$ENABLED" != "true" ]; then
+              echo ""
+              echo "> **Firebase Test Lab: SKIPPED_EXTERNAL_CONFIGURATION**"
+              echo "> Brakujące Repository Variables: \`${MISSING}\`"
+              echo "> Dodaj: GCP_PROJECT_ID, GCP_WORKLOAD_IDENTITY_PROVIDER, GCP_SERVICE_ACCOUNT"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Report skipped Firebase execution
+        if: ${{ steps.firebase-config.outputs.enabled != 'true' }}
+        shell: bash
+        run: |
+          echo "Firebase Test Lab: SKIPPED_EXTERNAL_CONFIGURATION"
+          echo "Missing repository variables: ${{ steps.firebase-config.outputs.missing_vars }}"
+          echo "Build artifacts were produced; Test Lab execution was skipped (not a failure)."
+

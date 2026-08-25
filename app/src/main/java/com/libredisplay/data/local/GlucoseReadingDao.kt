@@ -63,6 +63,12 @@ interface GlucoseReadingDao {
     @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
     suspend fun newestLiveReadingTimestamp(): Instant?
 
+    @Query("SELECT MIN(timestamp) FROM glucose_readings WHERE patientId = :patientId")
+    suspend fun oldestReadingTimestampForPatient(patientId: String): Instant?
+
+    @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE patientId = :patientId")
+    suspend fun newestReadingTimestampForPatient(patientId: String): Instant?
+
     @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' AND timestamp >= :fromInclusive")
     suspend fun countLiveReadingsFrom(fromInclusive: Instant): Long
 
