@@ -87,6 +87,7 @@
     },
     "evidence": {
       "type": "array",
+      "minItems": 1,
       "description": "Supporting evidence items (quotes, steps, links, screenshots).",
       "items": { "type": "string" }
     },
@@ -104,7 +105,15 @@
     },
     "linked_requirements": {
       "type": "array",
-      "items": { "type": "string" }
+      "items": { "type": "string", "pattern": "^REQ-[0-9A-Za-z._-]+$" }
+    },
+    "linked_test_runs": {
+      "type": "array",
+      "description": "Array of TESTRUN IDs that produced evidence for this observation. Format: TESTRUN-YYYY-NNN.",
+      "items": {
+        "type": "string",
+        "pattern": "^TESTRUN-[0-9]{4}-[0-9]{3}$"
+      }
     }
   }
 }

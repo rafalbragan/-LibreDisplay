@@ -1,0 +1,210 @@
+# LibreCare — Firebase App Testing Agent: Test Cases
+#
+# Format: official Firebase App Testing Agent YAML
+# https://firebase.google.com/docs/app-distribution/app-testing-agent
+#
+# IMPORTANT ARCHITECTURE NOTES
+# ======================================================
+# These are EXPLORATORY tests. Do not translate goals into scripted navigation.
+# Hints are omitted unless the agent needs setup information.
+# prerequisiteTestCaseId is used ONLY for setup (selecting a scenario in the
+# TEST / DEMO SCENARIO selector that appears in Demo mode in debug builds).
+#
+# HOW SCENARIO SELECTION WORKS
+# ======================================================
+# 1. Launch the debug APK in Demo mode (the app starts in Demo mode when
+#    no LibreLinkUp credentials are configured, or after selecting Demo in
+#    the onboarding screen).
+# 2. On the Home screen, scroll to the "TEST / DEMO SCENARIO" card.
+# 3. Tap the expand button to reveal scenario options.
+# 4. Tap the desired scenario name.
+# 5. The app immediately refreshes and displays that scenario's data.
+#
+# SETUP TEST CASES (prerequisite for exploratory cases)
+# ======================================================
+
+tests:
+  # ------------------------------------------------------------------
+  # SETUP: STALE_DATA scenario
+  # ------------------------------------------------------------------
+  - displayName: "Setup — select STALE_DATA scenario"
+    id: setup-stale-data
+    steps:
+      - goal: >
+          You are setting up the LibreCare app for a subsequent exploratory test.
+          The app is in Demo mode.
+          Open the Home screen.
+          Find the "TEST / DEMO SCENARIO" card (it appears below the Demo mode banner).
+          Tap the expand/select button on the card to reveal the scenario list.
+          Tap "Stare dane" (STALE_DATA) in the list.
+          Confirm the app refreshes and the Home screen shows data with an old timestamp.
+          This is a setup step — you do not need to assess the UX quality.
+
+  # ------------------------------------------------------------------
+  # SETUP: MULTIPLE_PATIENTS_ONE_AT_RISK scenario
+  # ------------------------------------------------------------------
+  - displayName: "Setup — select MULTIPLE_PATIENTS_ONE_AT_RISK scenario"
+    id: setup-multi-patient-at-risk
+    steps:
+      - goal: >
+          You are setting up the LibreCare app for a subsequent exploratory test.
+          The app is in Demo mode.
+          Open the Home screen.
+          Find the "TEST / DEMO SCENARIO" card.
+          Tap its expand/select button.
+          Tap "Kilka osób – jedna w ryzyku" (MULTIPLE_PATIENTS_ONE_AT_RISK).
+          Confirm the app refreshes.
+          This is a setup step — you do not need to assess UX quality.
+
+  # ------------------------------------------------------------------
+  # SETUP: HYPO scenario
+  # ------------------------------------------------------------------
+  - displayName: "Setup — select HYPO scenario"
+    id: setup-hypo
+    steps:
+      - goal: >
+          You are setting up the LibreCare app for a subsequent exploratory test.
+          The app is in Demo mode.
+          Open the Home screen.
+          Find the "TEST / DEMO SCENARIO" card.
+          Tap its expand/select button.
+          Tap "Hipoglikemia" (HYPO).
+          Confirm the app refreshes and shows a low glucose reading.
+          This is a setup step.
+
+  # ------------------------------------------------------------------
+  # SETUP: RAPID_FALL scenario
+  # ------------------------------------------------------------------
+  - displayName: "Setup — select RAPID_FALL scenario"
+    id: setup-rapid-fall
+    steps:
+      - goal: >
+          You are setting up the LibreCare app for a subsequent exploratory test.
+          The app is in Demo mode.
+          Open the Home screen.
+          Find the "TEST / DEMO SCENARIO" card.
+          Tap its expand/select button.
+          Tap "Szybki spadek" (RAPID_FALL).
+          Confirm the app refreshes.
+          This is a setup step.
+
+  # ------------------------------------------------------------------
+  # SETUP: RAPID_RISE scenario
+  # ------------------------------------------------------------------
+  - displayName: "Setup — select RAPID_RISE scenario"
+    id: setup-rapid-rise
+    steps:
+      - goal: >
+          You are setting up the LibreCare app for a subsequent exploratory test.
+          The app is in Demo mode.
+          Open the Home screen.
+          Find the "TEST / DEMO SCENARIO" card.
+          Tap its expand/select button.
+          Tap "Szybki wzrost" (RAPID_RISE).
+          Confirm the app refreshes.
+          This is a setup step.
+
+  # ------------------------------------------------------------------
+  # EXPLORATORY: Caregiver — stale data reliability assessment
+  # ------------------------------------------------------------------
+  - displayName: "Caregiver — assess reliability of current data (STALE_DATA)"
+    id: caregiver-detect-stale-data
+    prerequisiteTestCaseId: setup-stale-data
+    steps:
+      - goal: >
+          You are a caregiver responsible for monitoring the glucose of a person with diabetes
+          using the LibreCare app.
+          Your task: determine whether the glucose data currently displayed in the app
+          can be trusted as an accurate representation of the person's current glucose status.
+          Use the app naturally. Do not look for specific elements — form your own assessment.
+          After completing your review, report:
+          1. Whether you consider the data current and reliable.
+          2. What specific information led you to that conclusion.
+          3. Whether the app made it easy or difficult to assess data freshness.
+        finalScreenAssertion: >
+          The agent has reported a conclusion about data freshness/reliability.
+          The assessment should reference something related to the timestamp,
+          data age, or "last update" information visible in the app.
+
+  # ------------------------------------------------------------------
+  # EXPLORATORY: Caregiver — multi-patient at-risk identification
+  # ------------------------------------------------------------------
+  - displayName: "Caregiver — identify which monitored person needs attention"
+    id: caregiver-multi-patient-identify-risk
+    prerequisiteTestCaseId: setup-multi-patient-at-risk
+    steps:
+      - goal: >
+          You are a caregiver monitoring multiple people with diabetes using LibreCare.
+          Your task: determine whether any monitored person currently requires attention,
+          and if so, identify which person and explain why.
+          Use the app naturally — navigate freely. Do not wait for instructions about where
+          to look or how to switch between monitored persons.
+          After completing your review, report:
+          1. Whether any person requires attention.
+          2. Which person and why (glucose value, trend, or another visible indicator).
+          3. How easy or difficult it was to review all available persons.
+        finalScreenAssertion: >
+          The agent has identified at least one person and provided a reason for their
+          assessment (glucose level, trend, or other clinical indicator).
+
+  # ------------------------------------------------------------------
+  # EXPLORATORY: Senior — hypo recognition and self-assessment
+  # ------------------------------------------------------------------
+  - displayName: "Senior — recognize and act on low glucose (HYPO)"
+    id: senior-hypo-recognition
+    prerequisiteTestCaseId: setup-hypo
+    steps:
+      - goal: >
+          You are using LibreCare to monitor your own glucose as a person with diabetes.
+          Your task: look at your current glucose situation and decide whether you need
+          to take any action right now based on what the app shows.
+          Use the app naturally. Report:
+          1. What your current glucose value is.
+          2. Whether the app indicates anything requires your attention.
+          3. What you would do based on what you see (if anything).
+          You do not need to navigate to any specific screen — use the app the way you
+          normally would.
+        finalScreenAssertion: >
+          The agent has reported a glucose value and an assessment of whether action is needed.
+          A correct response acknowledges a low or below-target glucose value.
+
+  # ------------------------------------------------------------------
+  # EXPLORATORY: Senior — rapid fall situational awareness
+  # ------------------------------------------------------------------
+  - displayName: "Senior — rapid falling glucose trend awareness"
+    id: senior-rapid-fall-awareness
+    prerequisiteTestCaseId: setup-rapid-fall
+    steps:
+      - goal: >
+          You are a person with diabetes using LibreCare to monitor your glucose.
+          Your task: assess your current glucose situation with particular attention
+          to whether your glucose is stable, improving, or worsening.
+          Report what the app tells you about the direction and speed of change,
+          and whether you think your glucose might reach a dangerous level soon.
+          Use the app naturally.
+        finalScreenAssertion: >
+          The agent has assessed glucose trend direction.
+          A correct response references a falling or rapidly falling glucose trend.
+
+  # ------------------------------------------------------------------
+  # EXPLORATORY: Clinician — rapid rise in recent glucose history
+  # ------------------------------------------------------------------
+  - displayName: "Clinician — assess recent glucose control with rapid rise"
+    id: clinician-rapid-rise-control
+    prerequisiteTestCaseId: setup-rapid-rise
+    steps:
+      - goal: >
+          You are a clinician reviewing recent glucose data for a patient using LibreCare.
+          Your task: assess the quality of recent glucose control over the available
+          time period. Pay particular attention to direction of change, rate of change,
+          time in range, and any episodes of concern.
+          Use the app naturally — navigate to whichever screen provides the most relevant
+          clinical information.
+          Report:
+          1. Your overall assessment of recent glucose control.
+          2. Any specific findings that concern you clinically.
+          3. Whether the app provided sufficient information for a clinical assessment.
+        finalScreenAssertion: >
+          The agent has provided a clinical assessment that includes a comment on
+          glucose trend or rate of change.
+

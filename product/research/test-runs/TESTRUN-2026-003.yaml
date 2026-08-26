@@ -1,0 +1,36 @@
+id: "TESTRUN-2026-003"
+created_at: "2026-08-26"
+source: "firebase_app_testing_agent"
+test_case: "Clinician — assess recent glucose control"
+persona: "clinician"
+mode: "clinician"
+module: "Analysis"
+result: "PASS"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "English"
+  app_version: "2.11.1"
+  version_code: 36
+scenario: "NORMAL"
+actions:
+  - "Launch demo mode"
+  - "Navigate to Analysis"
+  - "Scroll to additional clinical metrics"
+  - "Review clinical glucose statistics"
+agent_summary: "Agent independently discovered the Analysis module and identified Time in Range, low/high episode counts, GMI, mean glucose, and variability-related information."
+positive_evidence:
+  - "Analysis module was discoverable without navigation instructions"
+  - "Agent identified: Time in Range (TIR: 100%)"
+  - "Agent identified: low episodes (0)"
+  - "Agent identified: high episodes (0)"
+  - "Agent identified: GMI approximately 5.9–6.0%"
+  - "Agent identified: mean glucose approximately 109–113 mg/dL"
+  - "Clinical metrics were discoverable"
+  - "Values are from demo data visible during the test"
+potential_issues:
+  - "Demo data is unusually benign with 100% TIR and no low/high episodes; clinically significant episodes should be tested separately"
+linked_observations: []
+review_status: "unreviewed"
+

@@ -1,0 +1,31 @@
+id: "TESTRUN-2026-001"
+created_at: "2026-08-26"
+source: "firebase_app_testing_agent"
+test_case: "Caregiver — assess current glucose situation"
+persona: "caregiver"
+mode: "caregiver"
+module: "Home / Monitoring"
+result: "PASS"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "English"
+  app_version: "2.11.1"
+  version_code: 36
+scenario: "NORMAL"
+actions:
+  - "Launch demo mode"
+  - "Review current monitored person's glucose"
+  - "Switch to another monitored person's profile"
+  - "Review the second person's glucose"
+agent_summary: "Both displayed profiles had glucose in range and the current situation did not require urgent attention."
+positive_evidence:
+  - "Current glucose status was discoverable"
+  - "Monitored-person switching was discovered without instruction"
+  - "Agent assessed more than one monitored person"
+  - "Test did not require navigation hints"
+potential_issues: []
+linked_observations: []
+review_status: "unreviewed"
+

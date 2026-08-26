@@ -19,6 +19,11 @@ internal object LibreCareTestTags {
     const val HOME_CHART_NAVIGATOR = "home.chart.navigator"
     const val HOME_CHART_RANGE_SELECTOR = "home.chart.rangeSelector"
 
+    // Debug-only: TEST / DEMO SCENARIO selector
+    const val DEMO_SCENARIO_SELECTOR = "debug.demo.scenarioSelector"
+    const val DEMO_SCENARIO_EXPAND_BUTTON = "debug.demo.scenarioExpandButton"
+    fun demoScenarioOption(name: String) = "debug.demo.scenario.$name"
+
     internal fun bottomNav(item: DashboardNavItem): String = "bottomNav.${item.name.lowercase()}"
 
     internal fun metricTile(metricId: QuickMetricId): String = "home.metric.${metricId.name.lowercase()}"

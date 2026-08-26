@@ -11,6 +11,7 @@ import com.libredisplay.data.local.ALL_MIGRATIONS
 import com.libredisplay.data.local.LibreDisplayDatabase
 import com.libredisplay.data.api.OkHttpLibreLinkUpHttp
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
+import com.libredisplay.data.demo.ScenarioAwareMockLibreLinkUpClient
 import com.libredisplay.data.repository.AuthRepository
 import com.libredisplay.data.repository.AppDataBackupRepository
 import com.libredisplay.data.repository.DiagnosticsStatsRepository
@@ -102,6 +103,7 @@ class LibreDisplayApp : Application() {
             settingsProvider = { settingsRepository.loadSettings() },
             authRepository = authRepository,
             productionClient = productionClient,
+            mockClient = ScenarioAwareMockLibreLinkUpClient(),
             localHistoryRepository = localGlucoseHistoryRepository
         )
 

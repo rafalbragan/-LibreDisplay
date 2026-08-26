@@ -1,0 +1,30 @@
+id: "TESTRUN-2026-002"
+created_at: "2026-08-26"
+source: "firebase_app_testing_agent"
+test_case: "Senior — understand my glucose now"
+persona: "senior"
+mode: "senior"
+module: "Home / Monitoring"
+result: "PASS"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "English"
+  app_version: "2.11.1"
+  version_code: 36
+scenario: "NORMAL"
+actions:
+  - "Launch demo mode"
+  - "Read the Home screen"
+agent_summary: "The screen clearly exposed current glucose 116 mg/dL, rising trend, glucose in range, and freshness / last update time."
+positive_evidence:
+  - "Agent explicitly identified: glucose 116 mg/dL"
+  - "Agent identified trend: rising"
+  - "Agent identified status: glucose in range"
+  - "Agent identified freshness / last update time"
+  - "All required information was found without navigating to another module"
+potential_issues: []
+linked_observations: []
+review_status: "unreviewed"
+

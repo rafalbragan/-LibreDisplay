@@ -2,6 +2,51 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.11.2 - 2026-08-26
+
+### PL
+
+#### Added
+- **Selektor scenariuszy TEST / DEMO SCENARIO** (tylko debug APK w trybie Demo): agenci Firebase mogą teraz wybierać scenariusze NORMAL / RAPID_RISE / RAPID_FALL / HYPO / SEVERE_HYPO / HYPER / STALE_DATA / MISSING_DATA / MULTIPLE_PATIENTS_ONE_AT_RISK bezpośrednio z interfejsu.
+- `ScenarioAwareMockLibreLinkUpClient`: nowy klient demo korzystający z `ScenarioDataGenerator`.
+- `DemoScenarioController`: bezpieczny singleton; `selectScenario` jest ścisłym no-op w release (BuildConfig.DEBUG).
+- `linked_test_runs` w `observation.schema.json`: walidacja wzorca `TESTRUN-YYYY-NNN`.
+- Importowalne YAML dla Firebase App Testing Agent: `testing/app-testing-agent/firebase/test_cases.yaml`.
+
+#### Fixed
+- Usunięto OBS-20260826-01 i OBS-20260826-02 — bezpodstawne dla pozytywnych testów bazowych.
+- Usunięto zduplikowany `test-run.schema.json`; kanonicznym schematem jest `test_run.schema.json`.
+- Naprawiono `product_cli.py`: dodano CURRENT_FOCUS_FILE, TEST_RUNS_DIR, collect_split, walidację punktacji, walidację CURRENT_FOCUS.yaml, walidację linked_test_runs, obsługę list-type w JSON Schema.
+
+#### Tests
+- Nowy `DemoScenarioSelectorTest` (14 przypadków) — PASS.
+- 13 testów product_cli — PASS.
+- `./gradlew testDebugUnitTest` — PASS.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.11.2-debug.apk` (22.71 MB)
+- `release-artifacts/LibreCare-2.11.2-release.apk` (3.51 MB)
+- `release-artifacts/LibreCare-2.11.2-release.aab` (6.34 MB)
+
+### EN
+
+#### Added
+- **TEST / DEMO SCENARIO selector** (debug APK, Demo mode only): Firebase agents can now select controlled scenarios via normal UI interaction.
+- `ScenarioAwareMockLibreLinkUpClient`: scenario-aware demo client.
+- `DemoScenarioController`: thread-safe singleton; `selectScenario` is a strict no-op in release.
+- `linked_test_runs` in `observation.schema.json` with TESTRUN-YYYY-NNN pattern validation.
+- Firebase App Testing Agent importable YAML: `testing/app-testing-agent/firebase/test_cases.yaml`.
+
+#### Fixed
+- Removed OBS-20260826-01 and OBS-20260826-02 — unjustified for three positive baseline test runs.
+- Removed duplicate `test-run.schema.json`; canonical schema is `test_run.schema.json`.
+- Fixed `product_cli.py`: CURRENT_FOCUS_FILE, TEST_RUNS_DIR, collect_split, score validation, CURRENT_FOCUS.yaml validation, linked_test_runs cross-reference, JSON Schema list-type handling.
+
+#### Tests
+- New `DemoScenarioSelectorTest` (14 test cases) — PASS.
+- 13 product_cli tests — PASS.
+- `./gradlew testDebugUnitTest` — PASS.
+
 ## 2.11.1 - 2026-08-25
 
 ### PL

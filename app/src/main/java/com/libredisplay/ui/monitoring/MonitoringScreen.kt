@@ -120,6 +120,7 @@ fun MonitoringScreen(
     val state by viewModel.uiState.collectAsState()
     val homeHistory by viewModel.homeHistory.collectAsState()
     val homeDataSpan by viewModel.homeDataSpan.collectAsState()
+    val demoScenario by viewModel.demoScenario.collectAsState()
     var historyContext by remember { mutableStateOf<HistoryOpenContext?>(null) }
     var nfzDetailsContext by remember { mutableStateOf<NfzDetailsContext?>(null) }
     var showSwitchToLiveDialog by remember { mutableStateOf(false) }
@@ -232,6 +233,15 @@ fun MonitoringScreen(
                     Column(modifier = contentModifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
                         if (state.isDemoMode) {
                             DemoModeBanner(onSwitchToLiveMode = { showSwitchToLiveDialog = true })
+                            // DEBUG-only: TEST / DEMO SCENARIO selector
+                            // The BuildConfig.DEBUG guard inside DemoScenarioSelectorCard ensures
+                            // this is dead code in release builds (R8 eliminates it entirely).
+                            if (BuildConfig.DEBUG) {
+                                DemoScenarioSelectorCard(
+                                    currentScenario = demoScenario,
+                                    onScenarioSelected = viewModel::selectDemoScenario
+                                )
+                            }
                         }
 
                         // Single identity area: selected person appears only in this switcher.

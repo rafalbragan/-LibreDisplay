@@ -1,0 +1,132 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/test_run.schema.json",
+  "title": "LibreCare Exploratory Test Run",
+  "description": "Structured record of an exploratory test run. Positive and negative evidence are preserved separately from problem observations.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "id",
+    "created_at",
+    "source",
+    "test_case",
+    "persona",
+    "mode",
+    "module",
+    "result",
+    "environment",
+    "scenario",
+    "actions",
+    "agent_summary",
+    "positive_evidence",
+    "potential_issues",
+    "linked_observations",
+    "review_status"
+  ],
+  "properties": {
+    "id": {
+      "type": "string",
+      "pattern": "^TESTRUN-[0-9]{4}-[0-9]{3}$",
+      "description": "Unique test-run ID. Format: TESTRUN-YYYY-NNN"
+    },
+    "created_at": {
+      "type": "string",
+      "description": "ISO-8601 date or date-time when the test was run."
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "firebase_app_testing_agent",
+        "firebase_robo",
+        "firebase_instrumentation",
+        "manual",
+        "other"
+      ],
+      "description": "Origin of the test run."
+    },
+    "test_case": {
+      "type": "string",
+      "description": "Human-readable test case title."
+    },
+    "persona": {
+      "type": "string",
+      "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"],
+      "description": "Target user persona."
+    },
+    "mode": {
+      "type": "string",
+      "enum": ["caregiver", "senior", "clinician", "cross_mode", "unknown"],
+      "description": "App mode being tested."
+    },
+    "module": {
+      "type": "string",
+      "description": "Primary module tested (e.g. 'Home / Monitoring', 'Analysis')."
+    },
+    "result": {
+      "type": "string",
+      "enum": ["PASS", "FAIL", "INCONCLUSIVE", "ERROR"],
+      "description": "Overall test result."
+    },
+    "environment": {
+      "type": "object",
+      "additionalProperties": true,
+      "description": "Environment details: device, API level, orientation, locale, app_version, version_code.",
+      "properties": {
+        "device": { "type": ["string", "null"] },
+        "api": { "type": ["integer", "null"], "minimum": 1 },
+        "orientation": { "type": ["string", "null"], "enum": ["portrait", "landscape", null] },
+        "locale": { "type": ["string", "null"] },
+        "app_version": { "type": ["string", "null"] },
+        "version_code": { "type": ["integer", "null"], "minimum": 1 }
+      }
+    },
+    "scenario": {
+      "type": "string",
+      "enum": [
+        "NORMAL",
+        "RAPID_RISE",
+        "RAPID_FALL",
+        "HYPO",
+        "SEVERE_HYPO",
+        "HYPER",
+        "STALE_DATA",
+        "MISSING_DATA",
+        "POST_MEAL_RISE",
+        "MULTIPLE_PATIENTS_ONE_AT_RISK",
+        "UNKNOWN"
+      ],
+      "description": "Synthetic demo data scenario."
+    },
+    "actions": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string" },
+      "description": "Observable actions performed during the test."
+    },
+    "agent_summary": {
+      "type": "string",
+      "description": "Explicit summary or output provided by the testing agent."
+    },
+    "positive_evidence": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Positive findings from the test."
+    },
+    "potential_issues": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Hypothetical issues observed, NOT automatically converted to Observations."
+    },
+    "linked_observations": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^OBS-[0-9A-Za-z._-]+$" },
+      "description": "Array of linked OBS IDs, if any."
+    },
+    "review_status": {
+      "type": "string",
+      "enum": ["unreviewed", "reviewed", "needs_followup"],
+      "description": "Review status of this test run."
+    }
+  }
+}
+

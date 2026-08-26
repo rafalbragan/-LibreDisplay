@@ -3,11 +3,14 @@ package com.libredisplay.ui.monitoring
 import android.app.Application
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.libredisplay.BuildConfig
 import com.libredisplay.LibreDisplayApp
 import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.LibreResponseDecodingException
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
+import com.libredisplay.data.demo.DemoScenario
+import com.libredisplay.data.demo.DemoScenarioController
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.data.repository.CredentialsSnapshot
@@ -58,6 +61,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         )
     )
     val uiState: StateFlow<MonitoringUiState> = _uiState.asStateFlow()
+
+    /**
+     * The currently active demo scenario. Emits `null` when the default mock demo is active.
+     * Only meaningful in debug builds — always `null` in release (guard is in [DemoScenarioController]).
+     */
+    val demoScenario: StateFlow<DemoScenario?> = DemoScenarioController.currentScenarioFlow
 
     private val _detailedHistory = MutableStateFlow<List<GlucoseHistoryPoint>>(emptyList())
     val detailedHistory: StateFlow<List<GlucoseHistoryPoint>> = _detailedHistory.asStateFlow()
@@ -212,6 +221,23 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
+    /**
+     * Select a controlled demo scenario (debug builds only).
+     *
+     * The [DemoScenarioController] ignores this call in release builds.
+     * After selection, a fresh data fetch is triggered so the UI reflects the new scenario.
+     *
+     * Pass `null` to revert to the default [MockLibreLinkUpClient] mock data.
+     */
+    fun selectDemoScenario(scenario: DemoScenario?) {
+        if (!BuildConfig.DEBUG) return
+        DemoScenarioController.selectScenario(scenario)
+        val settings = settingsRepository.loadSettings()
+        if (settings.useMock) {
+            connectManually(trigger = "scenario-changed")
+        }
+    }
+
     private fun bootstrapUsingPersistedTokenOnly() {
         val settings = settingsRepository.loadSettings()
         if (!settings.isConfigured()) {
@@ -358,22 +384,34 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         val previous = _uiState.value.selectedPatientId
         if (previous == normalized) return
         val selectedPerson = _uiState.value.availablePersons.firstOrNull { it.patientId == normalized }
+        if (selectedPerson == null) {
+            DiagnosticLogger.logWarning(
+                "MonitoringViewModel",
+                "PERSON SWITCH IGNORED unknown patientIdPrefix=${normalized.take(6)} available=${_uiState.value.availablePersons.size}"
+            )
+            return
+        }
         val selectedDisplayName = selectedPerson?.displayName ?: _uiState.value.selectedPersonName.orEmpty()
         DiagnosticLogger.logInfo("PERSON", "Switched selected person to: $selectedDisplayName / $normalized")
         DiagnosticLogger.logInfo(
             "MonitoringViewModel",
             "PERSON SWITCH old=${previous?.take(6) ?: "none"} new=${normalized.take(6)}"
         )
-        settingsRepository.saveSelectedPatientId(normalized)
+        runCatching { settingsRepository.saveSelectedPatientId(normalized) }
+            .onFailure { throwable ->
+                DiagnosticLogger.logException(
+                    "MonitoringViewModel",
+                    throwable,
+                    "Failed to persist selected person ${normalized.take(6)}"
+                )
+            }
         _uiState.update { current ->
-            val selectedName = current.availablePersons.firstOrNull { it.patientId == normalized }?.displayName
-            val selectedCurrent = current.availablePersons.firstOrNull { it.patientId == normalized }
             current.copy(
                 selectedPatientId = normalized,
-                selectedPersonFirstName = selectedCurrent?.firstName,
-                selectedPersonLastName = selectedCurrent?.lastName,
-                selectedPersonFullName = selectedName ?: selectedDisplayName.ifBlank { current.selectedPersonFullName },
-                selectedPersonName = selectedName ?: selectedDisplayName.ifBlank { current.selectedPersonName },
+                selectedPersonFirstName = selectedPerson.firstName,
+                selectedPersonLastName = selectedPerson.lastName,
+                selectedPersonFullName = selectedPerson.displayName.ifBlank { current.selectedPersonFullName },
+                selectedPersonName = selectedPerson.displayName.ifBlank { current.selectedPersonName },
                 isLoading = true,
                 historyStatus = HistoryStatus.Loading
             )
