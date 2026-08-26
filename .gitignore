@@ -24,3 +24,11 @@ local.properties
 .DS_Store
 Thumbs.db
 
+# Python
+__pycache__/
+*.pyc
+*.pyo
+
+# Backup and live-session data files (not source)
+docs/LibreCare-live-backup-*.json
+

@@ -18,7 +18,7 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
   crosses into clinical decision-making without a clinician-approved plan.
 - **Revisit condition:** Only within a separate, clinician-approved correction-plan
   safety/regulatory project (see `SAFETY_GUARDRAILS.md` G4).
-- **Structured record:** `examples/decision-no-autonomous-dosing.example.json`.
+- **Structured record:** `decisions/DEC-0004-no-autonomous-dosing.json`.
 
 ## D-0002 — LibreCare is one app with three perspectives (Caregiver primary)
 - **Date:** 2026-08-25
@@ -27,6 +27,15 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
   CAREGIVER as the primary direction.
 - **Reason:** Distinct core questions and cognitive-load needs, but shared CGM data/safety.
 - **Revisit condition:** If usage evidence shows a fourth perspective is warranted.
+- **Structured record:** `decisions/DEC-0001-three-mode-direction.json`.
+
+## D-0002A — Caregiver is the primary perspective for prioritization
+- **Date:** 2026-08-25
+- **Status:** ACCEPTED
+- **Decision:** Product prioritization and tradeoff decisions use caregiver as the primary perspective.
+- **Reason:** Fast caregiver interpretation and response remains the highest priority for current scope.
+- **Revisit condition:** If metrics show another perspective has consistently higher unmet-risk impact.
+- **Structured record:** `decisions/DEC-0002-caregiver-primary.json`.
 
 ## D-0003 — Mode differences via centralized presentation policy, not scattered `if (mode == ...)`
 - **Date:** 2026-08-25
@@ -35,6 +44,7 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
   policy provider; screens render from a policy rather than branching on mode.
 - **Reason:** Testability, consistency, and keeping shared safety rules from diverging per mode.
 - **Structured detail:** `MODE_ARCHITECTURE.md`.
+- **Structured record:** `decisions/DEC-0003-centralized-mode-policy.json`.
 
 ## D-0004 — Phase 1 does not change production UI
 - **Date:** 2026-08-25
@@ -43,6 +53,7 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
   no in-app mode switching, no new medical functionality.
 - **Reason:** Keep Android CI and Firebase Test Lab baseline green; separate infra from product change.
 - **Revisit condition:** Phase 3 begins only on explicit human go-ahead.
+- **Structured record:** `decisions/DEC-0005-phase1-no-production-ui-change.json`.
 
 ---
 

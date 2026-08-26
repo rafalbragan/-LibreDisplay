@@ -34,12 +34,15 @@ product/
   MODULE_MODE_MATRIX.md      # per-module direction for each mode
   schema/                    # JSON Schemas (Draft 2020-12)
     observation.schema.json
+    test-run.schema.json
     requirement.schema.json
     decision.schema.json
   research/
     README.md                # how a future AI Product Reviewer submits observations
     OBSERVATION_TEMPLATE.yaml
+    TEST_RUN_TEMPLATE.yaml
     observations/            # real observation records go here (one file each)
+    test-runs/               # real exploratory test-run records go here (one file each)
   requirements/
     REQUIREMENT_TEMPLATE.yaml
   decisions/

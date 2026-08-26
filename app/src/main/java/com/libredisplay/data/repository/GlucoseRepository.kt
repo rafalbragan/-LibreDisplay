@@ -188,9 +188,25 @@ class GlucoseRepository(
         preferredPatientId: String?,
         storedPatientId: String?
     ): LibreConnectionPerson {
-        val requestedPatientId = preferredPatientId?.trim().takeIf { !it.isNullOrBlank() }
-            ?: storedPatientId?.trim().takeIf { !it.isNullOrBlank() }
-        val selectedFromSettings = requestedPatientId?.let { requested -> persons.firstOrNull { it.patientId == requested } }
+        return selectPersonForSnapshot(persons, preferredPatientId, storedPatientId)
+    }
+
+    private suspend fun ensureMockReady(settings: AppSettings) {
+        mockClient.login(
+            email = settings.email.ifBlank { "mock@libredisplay.local" },
+            password = settings.password.ifBlank { "mock" }
+        )
+    }
+}
+
+internal fun selectPersonForSnapshot(
+    persons: List<LibreConnectionPerson>,
+    preferredPatientId: String?,
+    storedPatientId: String?
+): LibreConnectionPerson {
+    val requestedPatientId = preferredPatientId?.trim().takeIf { !it.isNullOrBlank() }
+        ?: storedPatientId?.trim().takeIf { !it.isNullOrBlank() }
+    val selectedFromSettings = requestedPatientId?.let { requested -> persons.firstOrNull { it.patientId == requested } }
         return if (selectedFromSettings != null) {
             DiagnosticLogger.logInfo(
                 "GlucoseRepository",
@@ -203,7 +219,8 @@ class GlucoseRepository(
                 )
             }
         } else {
-            val fallback = persons.first()
+            val fallback = persons.firstOrNull()
+                ?: throw NoActivePersonsException("Nie znaleziono aktywnych osób w LibreLinkUp.")
             DiagnosticLogger.logInfo(
                 "GlucoseRepository",
                 if (requestedPatientId != null) {
@@ -219,14 +236,7 @@ class GlucoseRepository(
                 )
             }
         }
-    }
 
-    private suspend fun ensureMockReady(settings: AppSettings) {
-        mockClient.login(
-            email = settings.email.ifBlank { "mock@libredisplay.local" },
-            password = settings.password.ifBlank { "mock" }
-        )
-    }
 }
 
 class SelectedPersonGraphException(

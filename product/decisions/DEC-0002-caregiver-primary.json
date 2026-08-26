@@ -1,0 +1,16 @@
+{
+  "id": "DEC-0002",
+  "date": "2026-08-25",
+  "subject": "Caregiver as primary perspective",
+  "status": "ACCEPTED",
+  "decision": "Caregiver is the primary perspective for prioritization and tradeoff decisions.",
+  "reason": "Caregiver workflows require rapid interpretation and action handoff while preserving safety boundaries.",
+  "evidence": [
+    "CURRENT_FOCUS.yaml sets primary_mode to caregiver.",
+    "PRODUCT_STRATEGY.md declares caregiver as the primary direction."
+  ],
+  "counterargument": "Equal weighting for all perspectives could feel fairer, but it dilutes focus in high-priority caregiver scenarios.",
+  "revisit_condition": "Revisit if product metrics show another perspective consistently drives higher-risk unmet needs.",
+  "related_requirements": []
+}
+

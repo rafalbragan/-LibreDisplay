@@ -1,0 +1,16 @@
+{
+  "id": "DEC-0005",
+  "date": "2026-08-25",
+  "subject": "Phase 1 excludes production UI changes",
+  "status": "ACCEPTED",
+  "decision": "Phase 1 scope is product infrastructure only and must not modify production Android UI, Kotlin, or Compose behavior.",
+  "reason": "Separating infrastructure from product behavior changes keeps delivery risk controlled and preserves existing runtime baselines.",
+  "evidence": [
+    "ROADMAP.md phase definition limits Phase 1 to foundation work.",
+    "DECISION_LOG.md confirms no production UI changes in Phase 1."
+  ],
+  "counterargument": "Shipping visible UI changes early could accelerate feedback, but it mixes foundation and feature risk in a single phase.",
+  "revisit_condition": "Revisit when a later phase is explicitly approved for production UI implementation.",
+  "related_requirements": []
+}
+

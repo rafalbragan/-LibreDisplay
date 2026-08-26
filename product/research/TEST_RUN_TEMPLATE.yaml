@@ -1,0 +1,30 @@
+# TEST RUN TEMPLATE (human-friendly)
+# Copy into product/research/test-runs/TEST-YYYY-NNN.(json|yaml) and fill it in.
+# Validate with: python scripts/product/product_cli.py validate
+#
+# NOTE: This TEMPLATE file is a scaffold and is intentionally NOT validated as a record.
+
+id: "TEST-2026-001"
+created_at: "2026-08-26"
+source: "Firebase App Testing Agent"
+release: "LibreCare 2.11.1 (36)"
+test_case: "Caregiver - assess current glucose situation"
+persona: "caregiver"
+mode: "caregiver"
+module: "Home / Monitoring"
+device: "Medium Phone 6.4in/16cm Arm"
+api_level: 30
+locale: "English"
+orientation: "portrait"      # portrait | landscape | unknown
+result: "PASS"               # PASS | FAIL | INCONCLUSIVE
+goal: "Assess current glucose situation for the monitored person."
+agent_actions:
+  - "Action performed by the testing agent."
+agent_conclusion: "Short conclusion from the run."
+positive_findings:
+  - "What worked well."
+potential_problems:
+  - "Potential issue observed during the run."
+linked_observations: []
+evidence_reference: "Link or artifact reference for this run."
+

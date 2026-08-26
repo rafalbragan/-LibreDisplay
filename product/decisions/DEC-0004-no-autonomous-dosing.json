@@ -1,0 +1,16 @@
+{
+  "id": "DEC-0004",
+  "date": "2026-08-25",
+  "subject": "Autonomous insulin-dose recommendation prohibited",
+  "status": "ACCEPTED",
+  "decision": "LibreCare must not autonomously compute or recommend an individual insulin dose from AI, CGM trends, or incomplete context.",
+  "reason": "This is a hard safety and regulatory boundary to prevent harmful clinical suggestions without clinician-approved protocols.",
+  "evidence": [
+    "SAFETY_GUARDRAILS.md states this as a binding prohibition.",
+    "DECISION_LOG.md records the standing prohibition."
+  ],
+  "counterargument": "Automatic dose suggestions may appear convenient, but they introduce unacceptable clinical and safety risk.",
+  "revisit_condition": "Revisit only within a dedicated, clinician-approved safety/regulatory project with explicit governance.",
+  "related_requirements": []
+}
+

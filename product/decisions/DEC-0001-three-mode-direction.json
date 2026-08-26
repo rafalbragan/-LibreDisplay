@@ -1,0 +1,16 @@
+{
+  "id": "DEC-0001",
+  "date": "2026-08-25",
+  "subject": "Three-mode product direction",
+  "status": "ACCEPTED",
+  "decision": "LibreCare direction is based on three perspectives: caregiver, senior, and clinician.",
+  "reason": "The same glucose data must support different primary questions and cognitive needs for each perspective.",
+  "evidence": [
+    "PRODUCT_STRATEGY.md defines the three perspectives.",
+    "MODE_ARCHITECTURE.md documents mode-aware behavior guidance."
+  ],
+  "counterargument": "A single generic mode could reduce configuration complexity, but it weakens role-specific clarity and usability.",
+  "revisit_condition": "Revisit only if validated usage data indicates the three-mode model no longer reflects real user needs.",
+  "related_requirements": []
+}
+

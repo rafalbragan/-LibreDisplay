@@ -1,0 +1,16 @@
+{
+  "id": "DEC-0003",
+  "date": "2026-08-25",
+  "subject": "Centralized mode-aware presentation policy",
+  "status": "ACCEPTED",
+  "decision": "Mode-specific behavior must be defined through a centralized, mode-aware presentation policy rather than scattered screen-level branching.",
+  "reason": "Centralization reduces divergence, improves testability, and keeps shared safety constraints consistent.",
+  "evidence": [
+    "MODE_ARCHITECTURE.md describes centralized policy direction.",
+    "DECISION_LOG.md documents this architectural rule."
+  ],
+  "counterargument": "Local branching can be faster to prototype, but it increases long-term inconsistency and maintenance risk.",
+  "revisit_condition": "Revisit only if a proven architecture provides equivalent consistency and testability with lower complexity.",
+  "related_requirements": []
+}
+
