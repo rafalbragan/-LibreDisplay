@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "965879258985",
+    "project_id": "librecare-testing",
+    "storage_bucket": "librecare-testing.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:965879258985:android:61120091a18ae4f1a567f8",
+        "android_client_info": {
+          "package_name": "com.libredisplay"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyAbLIhm1qBF2bMelqG7Bn38cfeGG6sthaQ"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
