@@ -15,6 +15,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Changed
 - `TopLevelNavigationBar` i `SideNavigationRail` obsługują teraz 4. top-level destination: `Futures`.
 - `MainActivity`, `MonitoringScreen`, `DataAnalysisScreen` i `SettingsMainScreen` zostały spięte z nową zakładką bez zmiany dotychczasowych przepływów monitoringu, analizy i ustawień.
+- Etykiety nawigacji zostały zwężone (`11sp`, `maxLines = 1`, ellipsis), aby układ 4 zakładek mieścił się bezpieczniej na mniejszych ekranach.
 - Wersja aplikacji: `2.11.2` (`versionCode 37`) → `2.12.0` (`versionCode 38`).
 
 #### Fixed
@@ -45,6 +46,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Changed
 - `TopLevelNavigationBar` and `SideNavigationRail` now expose a 4th top-level destination: `Futures`.
 - `MainActivity`, `MonitoringScreen`, `DataAnalysisScreen`, and `SettingsMainScreen` are now wired to the new tab while preserving existing Monitoring, Analysis, and Settings flows.
+- Navigation labels were tightened (`11sp`, `maxLines = 1`, ellipsis) so the 4-tab layout fits more safely on compact screens.
 - App version bumped from `2.11.2` (`versionCode 37`) to `2.12.0` (`versionCode 38`).
 
 #### Fixed

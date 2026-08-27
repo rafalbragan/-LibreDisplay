@@ -28,6 +28,7 @@ Data wydania / Release date: 2026-08-27
 
 ### Ulepszenia
 - Dolna nawigacja i landscape rail wspierają teraz 4. destination top-level bez zmiany istniejącej architektury stack-based.
+- Etykiety zakładek zostały dopasowane do układu 4 pozycji (`11sp`, pojedyncza linia, ellipsis), aby zachować czytelność na mniejszych ekranach.
 - Dodano test tagi dla ekranu `Futures` i filtrów odbiorców, aby nowe UI dało się stabilnie testować automatycznie.
 - Zaktualizowano dokumentację projektową dla `DEC-0007` i ścieżki wdrożenia funkcji eksperymentalnych.
 
@@ -79,6 +80,7 @@ Data wydania / Release date: 2026-08-27
 
 ### Improvements
 - Bottom navigation and landscape rail now support a 4th top-level destination without changing the existing stack-based architecture.
+- Tab labels were tuned for the 4-item layout (`11sp`, single line, ellipsis) to remain safer on compact screens.
 - Added test tags for the `Futures` screen and audience filters so the new UI can be covered with stable automated tests.
 - Updated product design documentation for `DEC-0007` and the experimental-feature rollout path.
 

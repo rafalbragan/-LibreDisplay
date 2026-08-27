@@ -91,6 +91,9 @@ AppNavigationState top-level switching
   - expandable details,
   - roadmap summary.
 
+### Adjusted
+- Top-level navigation labels were reduced to `11sp` and constrained to a single line with ellipsis so the new 4-tab layout fits more safely on compact phones.
+
 ### Preserved
 - `Główna`, `Analiza`, and `Ustawienia` keep their current workflows.
 - No production dashboard card was replaced in this release.

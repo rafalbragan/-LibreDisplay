@@ -51,7 +51,7 @@ Quality review for the new `Futures` tab focused on safe integration into the ex
 |-------|--------|-------|
 | Dark theme compatibility | PASS | New screen uses existing `LibreCareColors`. |
 | Readability | PASS | Hero and card text use larger body sizes (13-18sp). |
-| Phone-sized screens | PASS | Audience filter is horizontally scrollable to avoid crowding. |
+| Phone-sized screens | PASS | Audience filter is horizontally scrollable and top-level nav labels were tightened for the new 4-tab layout. |
 | Landscape support | PASS | New tab is exposed through `SideNavigationRail`. |
 | Accessibility basics | PASS | Clear text labels and explicit expand/collapse actions. |
 
@@ -166,6 +166,6 @@ Quality review for the new `Futures` tab focused on safe integration into the ex
 ## Git Note
 
 - `git status` was reviewed after the changes.
-- The Futures change set was committed as `e1119a4` (`feat: add Futures prototype tab`) and pushed to `origin/master`.
+- The Futures release change set was pushed to `origin/master`; final HEAD is `6401f59` (`fix: tighten Futures nav labels`).
 - The working tree still contains unrelated local modifications and untracked files outside this release scope; they were intentionally left out of the commit.
 
