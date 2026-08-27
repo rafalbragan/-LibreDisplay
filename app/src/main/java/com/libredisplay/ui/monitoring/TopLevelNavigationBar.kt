@@ -26,6 +26,7 @@ import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libredisplay.ui.theme.LibreCareColors
@@ -82,9 +83,11 @@ private fun RowScope.TopLevelNavItem(
         )
         Text(
             label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = if (selected) LibreCareColors.TextPrimary else LibreCareColors.TextSecondary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
@@ -142,9 +145,11 @@ private fun SideNavItem(
         )
         Text(
             label,
-            fontSize = 12.sp,
+            fontSize = 11.sp,
             color = if (selected) LibreCareColors.TextPrimary else LibreCareColors.TextSecondary,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
         )
     }
 }
