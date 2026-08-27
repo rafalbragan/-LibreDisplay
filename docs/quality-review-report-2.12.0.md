@@ -166,5 +166,6 @@ Quality review for the new `Futures` tab focused on safe integration into the ex
 ## Git Note
 
 - `git status` was reviewed after the changes.
-- `git push` for this change set was not executed in this session; this is reported as an operational next step rather than a code-quality failure.
+- The Futures change set was committed as `e1119a4` (`feat: add Futures prototype tab`) and pushed to `origin/master`.
+- The working tree still contains unrelated local modifications and untracked files outside this release scope; they were intentionally left out of the commit.
 
