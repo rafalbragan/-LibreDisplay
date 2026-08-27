@@ -113,6 +113,7 @@ fun MonitoringScreen(
     onNavigateToMetricSettings: () -> Unit = onNavigateToSettings,
     onNavigateToDiagnostics: () -> Unit,
     onNavigateToAnalytics: () -> Unit = onNavigateToDiagnostics,
+    onNavigateToFutures: () -> Unit = onNavigateToDiagnostics,
     onSwitchToLiveMode: () -> Unit,
     onRunUiAudit: () -> Unit = {},
     viewModel: MonitoringViewModel = viewModel()
@@ -208,6 +209,7 @@ fun MonitoringScreen(
                     selected = DashboardNavItem.GLOWNA,
                     onOpenHome = {},
                     onOpenHistory = onNavigateToAnalytics,
+                    onOpenFutures = onNavigateToFutures,
                     onOpenSettings = onNavigateToSettings
                 )
             }
@@ -419,6 +421,7 @@ fun MonitoringScreen(
                     selected = DashboardNavItem.GLOWNA,
                     onOpenHome = {},
                     onOpenHistory = onNavigateToAnalytics,
+                    onOpenFutures = onNavigateToFutures,
                     onOpenSettings = onNavigateToSettings
                 )
             }

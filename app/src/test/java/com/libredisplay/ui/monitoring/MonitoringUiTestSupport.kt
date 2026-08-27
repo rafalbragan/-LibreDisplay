@@ -107,6 +107,7 @@ internal fun MonitoringHomeTestHost(
                     selected = DashboardNavItem.GLOWNA,
                     onOpenHome = {},
                     onOpenHistory = {},
+                    onOpenFutures = {},
                     onOpenSettings = {}
                 )
             }
@@ -146,6 +147,7 @@ internal fun HistoryScreenshotHost(widthDp: Int, fontScale: Float) {
                         selected = DashboardNavItem.HISTORIA,
                         onOpenHome = {},
                         onOpenHistory = {},
+                        onOpenFutures = {},
                         onOpenSettings = {}
                     )
                 }
@@ -190,7 +192,8 @@ internal fun SettingsScreenshotHost(widthDp: Int, fontScale: Float) {
                 onNavigateToAppearance = {},
                 onNavigateToAdvanced = {},
                 onNavigateToRetention = {},
-                onNavigateToPolling = {}
+                onNavigateToPolling = {},
+                onOpenFutures = {}
             )
         }
     }

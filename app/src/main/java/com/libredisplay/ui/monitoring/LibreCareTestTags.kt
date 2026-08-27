@@ -18,6 +18,7 @@ internal object LibreCareTestTags {
     const val HOME_CHART_SELECTED_LABEL = "home.chart.selectedLabel"
     const val HOME_CHART_NAVIGATOR = "home.chart.navigator"
     const val HOME_CHART_RANGE_SELECTOR = "home.chart.rangeSelector"
+    const val FUTURES_SCREEN = "futures.screen"
 
     // Debug-only: TEST / DEMO SCENARIO selector
     const val DEMO_SCENARIO_SELECTOR = "debug.demo.scenarioSelector"
@@ -25,6 +26,10 @@ internal object LibreCareTestTags {
     fun demoScenarioOption(name: String) = "debug.demo.scenario.$name"
 
     internal fun bottomNav(item: DashboardNavItem): String = "bottomNav.${item.name.lowercase()}"
+
+    internal fun futuresCard(id: String): String = "futures.card.$id"
+
+    internal fun futuresAudience(id: String): String = "futures.audience.$id"
 
     internal fun metricTile(metricId: QuickMetricId): String = "home.metric.${metricId.name.lowercase()}"
 

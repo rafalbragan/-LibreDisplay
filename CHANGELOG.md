@@ -2,6 +2,68 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.12.0 - 2026-08-27
+
+### PL
+
+#### Added
+- Nowa górna zakładka `Futures` w dolnej nawigacji i w railu poziomym, przeznaczona do bezpiecznego oglądania kierunków rozwoju bez przebudowy bieżących ekranów produkcyjnych.
+- Ekran `Futures` z kartami propozycji dla obszarów: `Analiza+ do wdrożenia`, `Wyjaśnienia skoków glikemii`, `Ryzyko hipoglikemii`, `Wzorce zmienności`, `Reakcja na posiłki`, `Tygodniowa karta postępów`, `Aktywność sensora i luki danych`, `Osiągnięcia i serie`, `Ekrany Senior / Opiekun / Lekarz`, `Udostępnij lekarzowi`.
+- Filtr perspektywy `Wszyscy / Pacjent / Senior / Opiekun / Lekarz` na ekranie `Futures`, aby szybciej ocenić wartość pomysłów dla różnych grup użytkowników.
+- Nowe testy: `FuturesViewModelTest`, `FuturesScreenTest` oraz rozszerzony `AppNavigationStateTest`.
+
+#### Changed
+- `TopLevelNavigationBar` i `SideNavigationRail` obsługują teraz 4. top-level destination: `Futures`.
+- `MainActivity`, `MonitoringScreen`, `DataAnalysisScreen` i `SettingsMainScreen` zostały spięte z nową zakładką bez zmiany dotychczasowych przepływów monitoringu, analizy i ustawień.
+- Wersja aplikacji: `2.11.2` (`versionCode 37`) → `2.12.0` (`versionCode 38`).
+
+#### Fixed
+- Zachowano istniejącą funkcjonalność produkcyjną: nowa zakładka pełni rolę przestrzeni prototypowej i nie nadpisuje obecnych ekranów `Główna`, `Analiza` ani `Ustawienia`.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS (`483` testy, `0` błędów)
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Połączenie z urządzeniem/emulatorem: brak potwierdzonego środowiska (`adb` niedostępne), więc testów connected nie uruchomiono.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.12.0-debug.apk` (22,75 MB)
+- `release-artifacts/LibreCare-2.12.0-release.apk` (3,52 MB)
+- `release-artifacts/LibreCare-2.12.0-release.aab` (6,38 MB)
+
+### EN
+
+#### Added
+- New top-level `Futures` destination in the bottom navigation and landscape rail for safely previewing product ideas without redesigning the current production screens.
+- New `Futures` screen with proposal cards for: `Analysis+ implementation`, `Glucose spike explanations`, `Hypoglycemia risk`, `Variability patterns`, `Meal response`, `Weekly progress card`, `Sensor activity and data gaps`, `Achievements and streaks`, `Senior / Caregiver / Clinician screens`, and `Share with doctor`.
+- Audience filter `All / Patient / Senior / Caregiver / Clinician` on the `Futures` screen to quickly review ideas by persona.
+- New tests: `FuturesViewModelTest`, `FuturesScreenTest`, and an extended `AppNavigationStateTest`.
+
+#### Changed
+- `TopLevelNavigationBar` and `SideNavigationRail` now expose a 4th top-level destination: `Futures`.
+- `MainActivity`, `MonitoringScreen`, `DataAnalysisScreen`, and `SettingsMainScreen` are now wired to the new tab while preserving existing Monitoring, Analysis, and Settings flows.
+- App version bumped from `2.11.2` (`versionCode 37`) to `2.12.0` (`versionCode 38`).
+
+#### Fixed
+- Preserved current production behavior: the new tab acts as a prototype space and does not replace the existing `Home`, `Analysis`, or `Settings` experiences.
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS (`483` tests, `0` failures)
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Connected tests were not run because no confirmed connected device/emulator environment was available (`adb` not available).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.12.0-debug.apk` (22.75 MB)
+- `release-artifacts/LibreCare-2.12.0-release.apk` (3.52 MB)
+- `release-artifacts/LibreCare-2.12.0-release.aab` (6.38 MB)
+
 ## 2.11.2 - 2026-08-26
 
 ### PL

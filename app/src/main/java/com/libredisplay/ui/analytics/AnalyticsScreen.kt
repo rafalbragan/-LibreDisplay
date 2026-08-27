@@ -82,6 +82,7 @@ fun DataAnalysisScreen(
     showBackButton: Boolean = true,
     onNavigateBack: () -> Unit,
     onOpenHome: () -> Unit = {},
+    onOpenFutures: () -> Unit = {},
     onOpenSettings: () -> Unit = {},
     viewModel: DataAnalysisViewModel = viewModel()
 ) {
@@ -126,6 +127,7 @@ fun DataAnalysisScreen(
                 selected = DashboardNavItem.HISTORIA,
                 onOpenHome = onOpenHome,
                 onOpenHistory = {},
+                onOpenFutures = onOpenFutures,
                 onOpenSettings = onOpenSettings
             )
         }

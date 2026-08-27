@@ -24,6 +24,7 @@ import com.libredisplay.diagnostics.UiAuditStep
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.ui.monitoring.MonitoringScreen
 import com.libredisplay.ui.analytics.DataAnalysisScreen
+import com.libredisplay.ui.futures.FuturesScreen
 import com.libredisplay.ui.privacy.PrivacyDataScreen
 import com.libredisplay.ui.restore.StartupRestoreHost
 import com.libredisplay.ui.settings.AboutScreen
@@ -47,6 +48,7 @@ enum class AppScreen {
     Start,
     Monitoring,
     Analytics,
+    Futures,
     Settings,
     SettingsAccount,
     SettingsTargetRange,
@@ -219,6 +221,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                     fun auditStateFor(screen: AppScreen): AppNavigationState = when (screen) {
                         AppScreen.Monitoring,
                         AppScreen.Analytics,
+                        AppScreen.Futures,
                         AppScreen.Settings,
                         AppScreen.Start -> AppNavigationState(listOf(screen))
                         AppScreen.SettingsTargetRange,
@@ -334,6 +337,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             },
                             onNavigateToDiagnostics = { navigateTo(AppScreen.Diagnostics) },
                             onNavigateToAnalytics = { navigateTo(AppScreen.Analytics) },
+                            onNavigateToFutures = { navigateTo(AppScreen.Futures) },
                             onSwitchToLiveMode = {
                                 app.settingsRepository.switchToLiveMode()
                                 showLoginOnly = true
@@ -354,6 +358,16 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                             showBackButton = navigationState.stack.size > 2,
                             onNavigateBack = { navigateBack() },
                             onOpenHome = { navigateTo(AppScreen.Monitoring) },
+                            onOpenFutures = { navigateTo(AppScreen.Futures) },
+                            onOpenSettings = { navigateTo(AppScreen.Settings) }
+                        )
+                    }
+
+                    AppScreen.Futures -> {
+                        BackHandler { navigateBack() }
+                        FuturesScreen(
+                            onOpenHome = { navigateTo(AppScreen.Monitoring) },
+                            onOpenAnalytics = { navigateTo(AppScreen.Analytics) },
                             onOpenSettings = { navigateTo(AppScreen.Settings) }
                         )
                     }
@@ -383,6 +397,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 onNavigateBack = { navigateBack() },
                                 onOpenHome = { navigateTo(AppScreen.Monitoring) },
                                 onOpenHistory = { navigateTo(AppScreen.Analytics) },
+                                onOpenFutures = { navigateTo(AppScreen.Futures) },
                                 onNavigateToMonitoring = {
                                     navigateTo(AppScreen.SettingsTargetRange)
                                 },

@@ -39,6 +39,7 @@ fun SettingsMainScreen(
     onNavigateBack: () -> Unit,
     onOpenHome: () -> Unit = {},
     onOpenHistory: () -> Unit = {},
+    onOpenFutures: () -> Unit = {},
     onNavigateToMonitoring: () -> Unit,
     onNavigateToMetricSettings: () -> Unit,
     onNavigateToHbA1cSettings: () -> Unit,
@@ -84,6 +85,7 @@ fun SettingsMainScreen(
                 selected = DashboardNavItem.USTAWIENIA,
                 onOpenHome = onOpenHome,
                 onOpenHistory = onOpenHistory,
+                onOpenFutures = onOpenFutures,
                 onOpenSettings = {}
             )
         }

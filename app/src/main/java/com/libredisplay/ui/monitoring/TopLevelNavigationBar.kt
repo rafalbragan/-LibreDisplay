@@ -11,6 +11,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Settings
@@ -32,6 +33,7 @@ import com.libredisplay.ui.theme.LibreCareColors
 internal enum class DashboardNavItem(val label: String, val accessibilityLabel: String) {
     GLOWNA("Główna", "Główna"),
     HISTORIA("Analiza", "Analiza"),
+    FUTURES("Futures", "Futures"),
     USTAWIENIA("Ustawienia", "Ustawienia")
 }
 
@@ -40,6 +42,7 @@ internal fun TopLevelNavigationBar(
     selected: DashboardNavItem,
     onOpenHome: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenFutures: () -> Unit,
     onOpenSettings: () -> Unit
 ) {
     NavigationBar(
@@ -49,6 +52,7 @@ internal fun TopLevelNavigationBar(
     ) {
         TopLevelNavItem(selected == DashboardNavItem.GLOWNA, DashboardNavItem.GLOWNA.label, Icons.Default.Home, onOpenHome)
         TopLevelNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.Filled.BarChart, onOpenHistory)
+        TopLevelNavItem(selected == DashboardNavItem.FUTURES, DashboardNavItem.FUTURES.label, Icons.Filled.AutoAwesome, onOpenFutures)
         TopLevelNavItem(selected == DashboardNavItem.USTAWIENIA, DashboardNavItem.USTAWIENIA.label, Icons.Default.Settings, onOpenSettings)
     }
 }
@@ -94,6 +98,7 @@ internal fun SideNavigationRail(
     selected: DashboardNavItem,
     onOpenHome: () -> Unit,
     onOpenHistory: () -> Unit,
+    onOpenFutures: () -> Unit,
     onOpenSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -108,6 +113,7 @@ internal fun SideNavigationRail(
     ) {
         SideNavItem(selected == DashboardNavItem.GLOWNA, DashboardNavItem.GLOWNA.label, Icons.Default.Home, onOpenHome)
         SideNavItem(selected == DashboardNavItem.HISTORIA, DashboardNavItem.HISTORIA.label, Icons.Filled.BarChart, onOpenHistory)
+        SideNavItem(selected == DashboardNavItem.FUTURES, DashboardNavItem.FUTURES.label, Icons.Filled.AutoAwesome, onOpenFutures)
         SideNavItem(selected == DashboardNavItem.USTAWIENIA, DashboardNavItem.USTAWIENIA.label, Icons.Default.Settings, onOpenSettings)
     }
 }

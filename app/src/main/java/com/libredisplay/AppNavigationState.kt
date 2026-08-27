@@ -18,6 +18,7 @@ internal fun initialNavigationState(launchScreen: AppScreen, showLoginOnly: Bool
 internal fun AppScreen.isTopLevelDestination(): Boolean = when (this) {
     AppScreen.Monitoring,
     AppScreen.Analytics,
+    AppScreen.Futures,
     AppScreen.Settings -> true
     else -> false
 }
@@ -53,8 +54,9 @@ internal fun switchToTopLevel(currentStack: List<AppScreen>, destination: AppScr
 }
 
 internal fun navigationGraphEdges(): Map<AppScreen, List<AppScreen>> = mapOf(
-    AppScreen.Monitoring to listOf(AppScreen.Analytics, AppScreen.Settings, AppScreen.SettingsHomeMetrics),
-    AppScreen.Analytics to emptyList(),
+    AppScreen.Monitoring to listOf(AppScreen.Analytics, AppScreen.Futures, AppScreen.Settings, AppScreen.SettingsHomeMetrics),
+    AppScreen.Analytics to listOf(AppScreen.Futures),
+    AppScreen.Futures to emptyList(),
     AppScreen.Settings to listOf(
         AppScreen.SettingsTargetRange,
         AppScreen.SettingsHomeMetrics,

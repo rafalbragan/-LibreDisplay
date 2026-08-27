@@ -11,6 +11,7 @@ class AppNavigationStateTest {
     fun switchingToTopLevelDoesNotDuplicateMonitoringRoot() {
         val state = AppNavigationState(listOf(AppScreen.Monitoring))
             .navigateTo(AppScreen.Analytics)
+            .navigateTo(AppScreen.Futures)
             .navigateTo(AppScreen.Settings)
             .navigateTo(AppScreen.Analytics)
 
@@ -46,7 +47,7 @@ class AppNavigationStateTest {
         val routes = listOf(
             allMaxDepthRoutesFrom(AppScreen.Monitoring),
             allMaxDepthRoutesFrom(AppScreen.Settings)
-        ).flatten().distinct()
+        ).flatten().distinct().filter { route -> isAppendOnlyRoute(route) }
 
         assertFalse(routes.isEmpty())
 
@@ -71,6 +72,9 @@ class AppNavigationStateTest {
 
         state = state.navigateTo(AppScreen.Analytics)
         assertEquals(listOf(AppScreen.Monitoring, AppScreen.Analytics), state.stack)
+
+        state = state.navigateTo(AppScreen.Futures)
+        assertEquals(listOf(AppScreen.Monitoring, AppScreen.Futures), state.stack)
 
         state = state.navigateBack()
         assertEquals(AppScreen.Monitoring, state.current)
@@ -102,9 +106,9 @@ class AppNavigationStateTest {
     @Test
     fun bottomNavigationSwitchingOrders_doNotCreateUnexpectedDuplicates() {
         val sequences = listOf(
-            listOf(AppScreen.Analytics, AppScreen.Settings, AppScreen.Monitoring),
-            listOf(AppScreen.Settings, AppScreen.Analytics, AppScreen.Settings),
-            listOf(AppScreen.Analytics, AppScreen.Monitoring, AppScreen.Analytics, AppScreen.Settings)
+            listOf(AppScreen.Analytics, AppScreen.Futures, AppScreen.Settings, AppScreen.Monitoring),
+            listOf(AppScreen.Settings, AppScreen.Analytics, AppScreen.Futures, AppScreen.Settings),
+            listOf(AppScreen.Analytics, AppScreen.Monitoring, AppScreen.Futures, AppScreen.Analytics, AppScreen.Settings)
         )
 
         sequences.forEach { sequence ->
