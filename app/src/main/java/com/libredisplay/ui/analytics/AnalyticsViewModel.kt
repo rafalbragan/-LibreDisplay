@@ -76,7 +76,17 @@ data class DataAnalysisUiState(
     val trendObservations: List<String> = emptyList(),
     val nightOnlyEnabled: Boolean = false,
     val isLoading: Boolean = false,
-    val infoMessage: String? = null
+    val infoMessage: String? = null,
+    /** Number of days used for the overlay chart (1–90). Default is 14. */
+    val analysisPeriodDays: Int = 14,
+    /** True when the overlay window can be scrolled further into the past. */
+    val canNavigateBackward: Boolean = false,
+    /** True when the overlay window has been shifted and can move forward to today. */
+    val canNavigateForward: Boolean = false,
+    /** Saved horizontal scroll offset of the metrics table (px). */
+    val metricsScrollOffset: Int = 0,
+    /** Human-readable label for the current overlay date range, e.g. "24.08 — 06.09 (14 dni)". */
+    val overlayRangeLabel: String = ""
 )
 
 class DataAnalysisViewModel(application: Application) : AndroidViewModel(application) {
@@ -109,13 +119,18 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
     private var analysisBuffer: List<GlucoseHistoryPoint> = emptyList()
     private var barOffsetDays: Int = 0
     private var barOffsetMonths: Int = 0
+    /** How many days the overlay window is shifted into the past relative to today (0 = today). */
+    private var overlayOffsetDays: Int = 0
 
     private data class ChartsResult(
         val mode: BarChartMode,
         val monthlyAvailable: Boolean,
         val window: BarChartWindow,
         val overlay: FourteenDayOverlay,
-        val trends: List<String>
+        val trends: List<String>,
+        val canNavigateBackward: Boolean,
+        val canNavigateForward: Boolean,
+        val overlayRangeLabel: String
     )
 
     init {
@@ -159,6 +174,7 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             val storedRange = localRepository.loadStoredRange(patientId)
             barOffsetDays = 0
             barOffsetMonths = 0
+            overlayOffsetDays = 0
             _uiState.update {
                 it.copy(
                     selectedPatientId = patientId,
@@ -222,6 +238,41 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
             )
         }
         viewModelScope.launch(exceptionHandler) { recalculate() }
+    }
+
+    /**
+     * Updates the number of days shown in the overlay chart. Clamped to [1, 90].
+     * Triggers a chart recomputation with the new period.
+     */
+    fun onAnalysisPeriodChanged(days: Int) {
+        val clamped = days.coerceIn(1, 90)
+        if (clamped == _uiState.value.analysisPeriodDays) return
+        _uiState.update { it.copy(analysisPeriodDays = clamped) }
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
+    }
+
+    /**
+     * Shifts the overlay window by [deltaDays] days (positive = older, negative = newer).
+     * Clamps the offset so the window stays within available data and never goes into the future.
+     */
+    fun onNavigateAnalysisPeriod(deltaDays: Int) {
+        val now = Instant.now()
+        val maxOffset = AnalysisChartFactory.maxDailyOffset(
+            analysisBuffer, now, _uiState.value.analysisPeriodDays
+        )
+        overlayOffsetDays = (overlayOffsetDays + deltaDays).coerceIn(0, maxOffset)
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
+    }
+
+    /** Resets the overlay window to end at today. */
+    fun onResetOverlayToToday() {
+        overlayOffsetDays = 0
+        viewModelScope.launch(exceptionHandler) { recomputeCharts() }
+    }
+
+    /** Saves the horizontal scroll offset of the metrics table so it can be restored on re-entry. */
+    fun onMetricsScrollChanged(offset: Int) {
+        _uiState.update { it.copy(metricsScrollOffset = offset) }
     }
 
     fun exportRawDataToExcel() {
@@ -310,7 +361,10 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                     barWindow = null,
                     overlay = FourteenDayOverlay(emptyList(), emptyList()),
                     trendObservations = emptyList(),
-                    monthlyAvailable = false
+                    monthlyAvailable = false,
+                    canNavigateBackward = false,
+                    canNavigateForward = false,
+                    overlayRangeLabel = ""
                 )
             }
             return
@@ -321,8 +375,11 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         val requestedMode = state.barMode
         val offsetDays = barOffsetDays
         val offsetMonths = barOffsetMonths
+        val periodDays = state.analysisPeriodDays
+        val overlayOffset = overlayOffsetDays
         val result = withContext(Dispatchers.Default) {
             val now = Instant.now()
+            val zone = ZoneId.systemDefault()
             val monthlyAvailable = AnalysisChartFactory.hasMonthlyData(buffer, now)
             val effectiveMode = if (requestedMode == BarChartMode.MONTHLY && !monthlyAvailable) BarChartMode.DAILY else requestedMode
             val window = if (effectiveMode == BarChartMode.MONTHLY) {
@@ -336,9 +393,24 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                     settings.targetLow, settings.targetHigh, 54, 250, nightOnly
                 )
             }
-            val overlay = AnalysisChartFactory.overlayForWindow(buffer, window.windowStart, window.windowEnd, maxDays = 14)
+
+            // Overlay window — independent of the bar chart window; respects analysisPeriodDays
+            val overlayEndDate = now.atZone(zone).toLocalDate().minusDays(overlayOffset.toLong())
+            val overlayStartDate = overlayEndDate.minusDays((periodDays - 1).toLong())
+            val overlayWindowStart = overlayStartDate.atStartOfDay(zone).toInstant()
+            val overlayWindowEnd = overlayEndDate.plusDays(1).atStartOfDay(zone).toInstant()
+
+            val overlay = AnalysisChartFactory.overlayForWindow(buffer, overlayWindowStart, overlayWindowEnd, zone, periodDays)
             val trends = AnalysisTrendInterpreter.interpret(overlay, settings.targetLow, settings.targetHigh)
-            ChartsResult(effectiveMode, monthlyAvailable, window, overlay, trends)
+
+            val oldest = buffer.minByOrNull { it.timestamp }?.timestamp
+            val canBack = oldest != null && oldest.isBefore(overlayWindowStart)
+            val canForward = overlayOffset > 0
+            val startLbl = "%02d.%02d".format(overlayStartDate.dayOfMonth, overlayStartDate.monthValue)
+            val endLbl = "%02d.%02d".format(overlayEndDate.dayOfMonth, overlayEndDate.monthValue)
+            val rangeLabel = "$startLbl — $endLbl ($periodDays dni)"
+
+            ChartsResult(effectiveMode, monthlyAvailable, window, overlay, trends, canBack, canForward, rangeLabel)
         }
         _uiState.update {
             it.copy(
@@ -346,7 +418,10 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                 monthlyAvailable = result.monthlyAvailable,
                 barWindow = result.window,
                 overlay = result.overlay,
-                trendObservations = result.trends
+                trendObservations = result.trends,
+                canNavigateBackward = result.canNavigateBackward,
+                canNavigateForward = result.canNavigateForward,
+                overlayRangeLabel = result.overlayRangeLabel
             )
         }
     }

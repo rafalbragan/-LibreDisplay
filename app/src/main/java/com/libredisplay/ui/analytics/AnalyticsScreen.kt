@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -33,6 +34,7 @@ import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
@@ -58,6 +60,7 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.drawText
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -198,8 +201,82 @@ fun DataAnalysisScreen(
 
             HorizontalDivider(color = LibreCareColors.Surface)
 
+            // ---- Period control for overlay ----
+            if (state.selectedPatientId != null) {
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(LibreCareColors.Surface.copy(alpha = 0.15f), RoundedCornerShape(10.dp))
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        "📊 WIZUALIZACJA ZAKRESU",
+                        color = LibreCareColors.TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 12.sp
+                    )
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Text("Liczba dni:", color = LibreCareColors.TextSecondary, fontSize = 11.sp)
+                        var periodText by remember(state.analysisPeriodDays) {
+                            mutableStateOf(state.analysisPeriodDays.toString())
+                        }
+                        OutlinedTextField(
+                            value = periodText,
+                            onValueChange = { text ->
+                                periodText = text
+                                text.toIntOrNull()?.let { viewModel.onAnalysisPeriodChanged(it) }
+                            },
+                            modifier = Modifier.width(80.dp),
+                            textStyle = TextStyle(fontSize = 12.sp, color = LibreCareColors.TextPrimary),
+                            singleLine = true,
+                            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number)
+                        )
+                    }
+                    Row(
+                        modifier = Modifier.horizontalScroll(rememberScrollState()),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        OutlinedButton(
+                            onClick = { viewModel.onNavigateAnalysisPeriod(30) },
+                            enabled = state.canNavigateBackward
+                        ) { Text("◀◀ Miesiąc", fontSize = 11.sp) }
+                        OutlinedButton(
+                            onClick = { viewModel.onNavigateAnalysisPeriod(7) },
+                            enabled = state.canNavigateBackward
+                        ) { Text("◀ Tydzień", fontSize = 11.sp) }
+                        OutlinedButton(
+                            onClick = { viewModel.onResetOverlayToToday() }
+                        ) { Text("Dzisiaj", fontSize = 11.sp) }
+                        OutlinedButton(
+                            onClick = { viewModel.onNavigateAnalysisPeriod(-7) },
+                            enabled = state.canNavigateForward
+                        ) { Text("Tydzień ▶", fontSize = 11.sp) }
+                        OutlinedButton(
+                            onClick = { viewModel.onNavigateAnalysisPeriod(-30) },
+                            enabled = state.canNavigateForward
+                        ) { Text("Miesiąc ▶▶", fontSize = 11.sp) }
+                    }
+                    if (state.overlayRangeLabel.isNotEmpty()) {
+                        Text(
+                            "Zakres: ${state.overlayRangeLabel}",
+                            color = LibreCareColors.TextSecondary,
+                            fontSize = 10.sp
+                        )
+                    }
+                }
+            }
+
             // ---- Overlay section ----
-            Text("Profil dobowy (nakładka 14 dni)", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 14.sp)
+            Text(
+                "Profil dobowy (nakładka ${state.analysisPeriodDays} dni)",
+                color = LibreCareColors.TextPrimary,
+                fontWeight = FontWeight.SemiBold,
+                fontSize = 14.sp
+            )
             OverlayLineChart(state.overlay)
             OverlayLegend()
 
@@ -208,12 +285,22 @@ fun DataAnalysisScreen(
                     modifier = Modifier
                         .fillMaxWidth()
                         .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
-                        .padding(10.dp),
-                    verticalArrangement = Arrangement.spacedBy(4.dp)
+                        .padding(12.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    Text("Obserwacje", color = LibreCareColors.TextPrimary, fontWeight = FontWeight.SemiBold, fontSize = 13.sp)
+                    Text(
+                        "⭐ WNIOSKI & OBSERWACJE",
+                        color = LibreCareColors.TextPrimary,
+                        fontWeight = FontWeight.Bold,
+                        fontSize = 14.sp
+                    )
                     state.trendObservations.forEach { obs ->
-                        Text("• $obs", color = LibreCareColors.TextSecondary, fontSize = 12.sp)
+                        Text(
+                            "• $obs",
+                            color = LibreCareColors.TextSecondary,
+                            fontSize = 14.sp,
+                            lineHeight = 20.sp
+                        )
                     }
                 }
             }
@@ -225,7 +312,11 @@ fun DataAnalysisScreen(
                 Text("Ustaw zakres własny (od-do)")
             }
 
-            MetricsTable(metricsByPeriod = state.metricsByPeriod)
+            MetricsTable(
+                metricsByPeriod = state.metricsByPeriod,
+                scrollOffset = state.metricsScrollOffset,
+                onScrollChanged = viewModel::onMetricsScrollChanged
+            )
 
             OutlinedButton(modifier = Modifier.fillMaxWidth(), onClick = { viewModel.exportRawDataToExcel() }) {
                 Text("Eksportuj surowe dane do Excela")
@@ -477,7 +568,11 @@ private fun OverlayLineChart(overlay: FourteenDayOverlay) {
 }
 
 @Composable
-private fun MetricsTable(metricsByPeriod: Map<AnalysisPeriod, PeriodMetrics>) {
+private fun MetricsTable(
+    metricsByPeriod: Map<AnalysisPeriod, PeriodMetrics>,
+    scrollOffset: Int = 0,
+    onScrollChanged: (Int) -> Unit = {}
+) {
     val periods = AnalysisPeriod.entries
     val rows = listOf(
         "TIR" to { m: PeriodMetrics -> m.tirPercent?.let { "$it%" } ?: "—" },
@@ -493,29 +588,46 @@ private fun MetricsTable(metricsByPeriod: Map<AnalysisPeriod, PeriodMetrics>) {
         "Aktywność" to { m: PeriodMetrics -> m.sensorActivityPercent?.let { "${"%.0f".format(it)}%" } ?: "—" }
     )
 
-    Row(
+    Box(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(rememberScrollState())
             .background(LibreCareColors.Surface.copy(alpha = 0.25f), RoundedCornerShape(10.dp))
             .padding(8.dp)
     ) {
-        Column(modifier = Modifier.width(112.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
-            HeaderCell("Metryka")
-            rows.forEach { (label, _) ->
-                MetricCell(label, bold = true)
-            }
-        }
-        periods.forEach { period ->
-            val metrics = metricsByPeriod[period] ?: PeriodMetrics.empty
+        Row(modifier = Modifier.fillMaxWidth()) {
+            // Sticky left column — metric names, never scrolls
             Column(
-                modifier = Modifier.width(82.dp),
-                horizontalAlignment = Alignment.End,
+                modifier = Modifier.width(112.dp),
                 verticalArrangement = Arrangement.spacedBy(6.dp)
             ) {
-                HeaderCell(period.label)
-                rows.forEach { (_, valueResolver) ->
-                    MetricCell(valueResolver(metrics), alignEnd = true)
+                HeaderCell("Metryka")
+                rows.forEach { (label, _) ->
+                    MetricCell(label, bold = true)
+                }
+            }
+
+            // Scrollable right columns — period values
+            val scrollState = rememberScrollState(initial = scrollOffset)
+            LaunchedEffect(scrollState.value) {
+                onScrollChanged(scrollState.value)
+            }
+            Row(
+                modifier = Modifier
+                    .weight(1f)
+                    .horizontalScroll(scrollState)
+            ) {
+                periods.forEach { period ->
+                    val metrics = metricsByPeriod[period] ?: PeriodMetrics.empty
+                    Column(
+                        modifier = Modifier.width(82.dp),
+                        horizontalAlignment = Alignment.End,
+                        verticalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        HeaderCell(period.label)
+                        rows.forEach { (_, valueResolver) ->
+                            MetricCell(valueResolver(metrics), alignEnd = true)
+                        }
+                    }
                 }
             }
         }

@@ -67,6 +67,51 @@ class AnalysisChartFactoryTest {
         assertTrue(max in 20..30)
     }
 
+    @Test
+    fun overlayForWindow_7days_limitsToSevenDayLines() {
+        // 10 readings across 10 different days
+        val readings = (0..9).map { dayOffset ->
+            point("2026-08-${14 + dayOffset}T08:00:00Z", 100 + dayOffset * 5)
+        }
+        val start = Instant.parse("2026-08-17T22:00:00Z")
+        val end = Instant.parse("2026-08-24T22:00:00Z")
+        val overlay = AnalysisChartFactory.overlayForWindow(readings, start, end, zone, maxDays = 7)
+        assertTrue("Expected ≤7 day lines, got ${overlay.dayLines.size}", overlay.dayLines.size <= 7)
+        assertTrue(overlay.averageLine.isNotEmpty())
+    }
+
+    @Test
+    fun overlayForWindow_30days_acceptsFullRange() {
+        val readings = (0..27).map { dayOffset ->
+            point(String.format("2026-07-%02dT08:00:00Z", dayOffset + 1), 120)
+        }
+        val start = Instant.parse("2026-07-01T00:00:00Z")
+        val end = Instant.parse("2026-07-31T00:00:00Z")
+        val overlay = AnalysisChartFactory.overlayForWindow(readings, start, end, zone, maxDays = 30)
+        assertTrue("Expected >0 day lines for 30-day range", overlay.dayLines.isNotEmpty())
+        assertTrue(overlay.dayLines.size <= 30)
+    }
+
+    @Test
+    fun overlayForWindow_emptyReadings_returnsEmpty() {
+        val overlay = AnalysisChartFactory.overlayForWindow(
+            emptyList(),
+            Instant.parse("2026-08-01T00:00:00Z"),
+            Instant.parse("2026-08-15T00:00:00Z"),
+            zone, maxDays = 14
+        )
+        assertTrue(overlay.dayLines.isEmpty())
+        assertTrue(overlay.averageLine.isEmpty())
+    }
+
+    @Test
+    fun maxDailyOffset_withShortPeriod_returnsLargerMax() {
+        val readings = listOf(point("2026-07-15T10:00:00Z", 100))
+        val maxWith14Days = AnalysisChartFactory.maxDailyOffset(readings, now, 14, zone)
+        val maxWith7Days = AnalysisChartFactory.maxDailyOffset(readings, now, 7, zone)
+        assertTrue("7-day max ($maxWith7Days) should be ≥ 14-day max ($maxWith14Days)", maxWith7Days >= maxWith14Days)
+    }
+
     private fun point(timestamp: String, value: Int): GlucoseHistoryPoint =
         GlucoseHistoryPoint(value = value, timestamp = Instant.parse(timestamp), trend = GlucoseTrend.FLAT)
 }

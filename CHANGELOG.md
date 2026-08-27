@@ -2,6 +2,66 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.13.0 - 2026-08-27
+
+### PL
+
+#### Added
+- Regulowany zakres analizy (1–90 dni) w sekcji nakładki wykresu dobowego — pole tekstowe pozwala wpisać dowolną liczbę dni; domyślnie 14 jak dotychczas.
+- Nawigacja okna nakładki — 5 przycisków (◀◀ Miesiąc, ◀ Tydzień, Dzisiaj, Tydzień ▶, Miesiąc ▶▶) umożliwiają przesuwanie okna nakładki niezależnie od wykresu słupkowego.
+- Etykieta zakresu nakładki — nad wykresem pojawia się czytelny zakres dat i liczba dni.
+- Zachowanie pozycji przewijania tabeli metryk między wizytami na ekranie Analiza.
+- Nowe testy jednostkowe: `overlayForWindow_7days`, `overlayForWindow_30days`, `overlayForWindow_emptyReadings`, `maxDailyOffset_withShortPeriod`.
+
+#### Changed
+- Sekcja obserwacji: nagłówek → "⭐ WNIOSKI & OBSERWACJE", czcionka 12sp → 14sp, odstępy powiększone.
+- Tytuł wykresu dobowego — dynamiczny: "Profil dobowy (nakładka N dni)".
+- Tabela metryk — stała lewa kolumna z nazwami metryk; prawa część przewijalna.
+- Wersja aplikacji: `2.12.0` (`versionCode 38`) → `2.13.0` (`versionCode 39`).
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS (`491` testy, `0` błędów)
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- Połączenie z urządzeniem/emulatorem: brak potwierdzonego środowiska.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.13.0-debug.apk` (22,77 MB)
+- `release-artifacts/LibreCare-2.13.0-release.apk` (3,52 MB)
+- `release-artifacts/LibreCare-2.13.0-release.aab` (6,39 MB)
+
+### EN
+
+#### Added
+- Variable analysis period (1–90 days) for the overlay chart — text input field; default unchanged at 14 days.
+- Overlay window navigation — 5 buttons to shift the overlay window independently of the bar chart.
+- Overlay range label — shows current date range and day count above the chart.
+- Metrics table scroll offset is now preserved when navigating away and returning.
+- New unit tests for `AnalysisChartFactory` covering 7-day, 30-day, empty, and offset scenarios.
+
+#### Changed
+- Observations section header → "⭐ WNIOSKI & OBSERWACJE", font 12sp → 14sp, improved spacing.
+- Daily profile chart title is now dynamic: "Profil dobowy (nakładka N dni)".
+- Metrics table uses a sticky left column; only the right (value) columns scroll horizontally.
+- App version bumped from `2.12.0` (`versionCode 38`) to `2.13.0` (`versionCode 39`).
+
+#### Tests
+- `./gradlew clean` — PASS
+- `./gradlew testDebugUnitTest` — PASS (`491` tests, `0` failures)
+- `./gradlew lint` — PASS
+- `./gradlew assembleDebug` — PASS
+- `./gradlew assembleRelease` — PASS
+- `./gradlew bundleRelease` — PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.13.0-debug.apk` (22.77 MB)
+- `release-artifacts/LibreCare-2.13.0-release.apk` (3.52 MB)
+- `release-artifacts/LibreCare-2.13.0-release.aab` (6.39 MB)
+
 ## 2.12.0 - 2026-08-27
 
 ### PL
