@@ -158,5 +158,5 @@ Quality review focused on the new fast-trend rate presentation, dynamic threshol
 | `.gitignore` coverage verified | PASS |
 | `git push` completed or blocker reported | PASS |
 
-**Git push blocker note**: Workspace contains many pre-existing unrelated modified/untracked files. To avoid mixing unrelated work into a release commit, push is deferred until the change set is isolated.
+**Git push note**: Scoped commit `6a0b88e` (release docs + user-switch no-data regression test) was created and pushed to `master` after isolating release-relevant files from unrelated workspace changes.
 
