@@ -1,5 +1,10 @@
 name: Download App Testing Results
 
+# Workload Identity Federation requires an OIDC token from GitHub.
+permissions:
+  contents: read
+  id-token: write
+
 on:
   workflow_dispatch:
     inputs:
@@ -11,45 +16,68 @@ jobs:
   download-results:
     name: Download & Package Firebase Results
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      id-token: write
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
     steps:
       # ──────────────────────────────────────────────────
       # 1. Checkout (needed for a clean workspace)
       # ──────────────────────────────────────────────────
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       # ──────────────────────────────────────────────────
-      # 2. Authenticate via Workload Identity Federation
+      # 2. Validate required repository variables
       # ──────────────────────────────────────────────────
-      - name: Authenticate to Google Cloud (WIF)
+      - name: Validate GCP repository variables
+        shell: bash
+        run: |
+          missing=""
+          [ -z "$GCP_PROJECT_ID" ]                && missing="${missing}GCP_PROJECT_ID "
+          [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] && missing="${missing}GCP_WORKLOAD_IDENTITY_PROVIDER "
+          [ -z "$GCP_SERVICE_ACCOUNT" ]            && missing="${missing}GCP_SERVICE_ACCOUNT "
+
+          missing=$(echo "$missing" | sed 's/[[:space:]]*$//')
+
+          if [ -n "$missing" ]; then
+            for var in $missing; do
+              echo "::error::Missing repository variable: ${var}"
+            done
+            echo "::error::Configure the above variables in: Settings → Secrets and variables → Actions → Variables"
+            exit 1
+          fi
+
+          echo "All required GCP repository variables are present."
+
+      # ──────────────────────────────────────────────────
+      # 3. Authenticate via Workload Identity Federation
+      # ──────────────────────────────────────────────────
+      - name: Authenticate to Google Cloud (Workload Identity Federation)
         id: auth
-        uses: google-github-actions/auth@v2
+        uses: google-github-actions/auth@v3
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
-          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
-          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
 
       # ──────────────────────────────────────────────────
-      # 3. Set up gcloud CLI
+      # 4. Set up gcloud CLI
       # ──────────────────────────────────────────────────
-      - name: Set up gcloud CLI
-        uses: google-github-actions/setup-gcloud@v2
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v3
         with:
-          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          version: '>= 417.0.0'
 
       # ──────────────────────────────────────────────────
-      # 4. Prepare output directories
+      # 5. Prepare output directories
       # ──────────────────────────────────────────────────
       - name: Create output directories
-        run: |
-          mkdir -p app-testing-results/raw
+        run: mkdir -p app-testing-results/raw
 
       # ──────────────────────────────────────────────────
-      # 5. Download ALL artifacts recursively from GCS
+      # 6. Download ALL artifacts recursively from GCS
       # ──────────────────────────────────────────────────
       - name: Download Firebase test artifacts from GCS
         id: download
@@ -75,14 +103,14 @@ jobs:
 
           if [ "${FILE_COUNT}" -eq 0 ]; then
             echo "::error::No files downloaded from GCS prefix: ${PREFIX}"
-            echo "::error::Please verify the prefix is correct and that the service account has storage.objects.list and storage.objects.get permissions."
+            echo "::error::Verify the prefix is correct and that the service account has storage.objects.list and storage.objects.get on this bucket."
             exit 1
           fi
 
           echo "Downloaded ${FILE_COUNT} file(s) successfully."
 
       # ──────────────────────────────────────────────────
-      # 6. Generate manifest (path, size, SHA-256)
+      # 7. Generate manifest (path, size, SHA-256)
       # ──────────────────────────────────────────────────
       - name: Generate manifest
         run: |
@@ -102,21 +130,17 @@ jobs:
             printf "%-80s %12s  %s\n" "${REL_PATH}" "${SIZE}" "${SHA256}" >> "${MANIFEST}"
           done < <(find app-testing-results/raw -type f -print0 | sort -z)
 
-          echo ""
-          echo "Manifest written to ${MANIFEST}"
-          wc -l "${MANIFEST}"
+          echo "Manifest written to ${MANIFEST} ($(wc -l < "${MANIFEST}") lines)"
 
       # ──────────────────────────────────────────────────
-      # 7. Collect summary statistics
+      # 8. Collect summary statistics
       # ──────────────────────────────────────────────────
       - name: Collect summary statistics
         id: stats
         run: |
-          # Total size (human-readable)
           TOTAL_SIZE_BYTES=$(find app-testing-results/raw -type f -print0 | xargs -0 stat -c%s 2>/dev/null | awk '{s+=$1} END {print s+0}')
           TOTAL_SIZE_HR=$(numfmt --to=iec-i --suffix=B "${TOTAL_SIZE_BYTES}" 2>/dev/null || echo "${TOTAL_SIZE_BYTES} bytes")
 
-          # Presence checks
           ACTIONS_JSON=$(find app-testing-results/raw -name "actions.json" | wc -l | tr -d ' ')
           ROBO_PB=$(find app-testing-results/raw -name "robo_results.pb" | wc -l | tr -d ' ')
           SCREENSHOTS=$(find app-testing-results/raw \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" \) | wc -l | tr -d ' ')
@@ -133,7 +157,7 @@ jobs:
           echo "videos=${VIDEOS}"                       >> "$GITHUB_OUTPUT"
 
       # ──────────────────────────────────────────────────
-      # 8. Create ZIP archive
+      # 9. Create ZIP archive
       # ──────────────────────────────────────────────────
       - name: Create ZIP archive
         run: |
@@ -143,7 +167,7 @@ jobs:
           echo "ZIP created: ${ZIP_NAME} (${ZIP_SIZE} bytes)"
 
       # ──────────────────────────────────────────────────
-      # 9. Upload as GitHub Actions artifact
+      # 10. Upload as GitHub Actions artifact
       # ──────────────────────────────────────────────────
       - name: Upload artifact
         uses: actions/upload-artifact@v4
@@ -154,7 +178,7 @@ jobs:
           retention-days: 30
 
       # ──────────────────────────────────────────────────
-      # 10. Write GitHub Step Summary
+      # 11. Write GitHub Step Summary
       # ──────────────────────────────────────────────────
       - name: Write step summary
         if: always()
@@ -180,4 +204,3 @@ jobs:
             echo ""
             echo "\`app-testing-results/manifest.txt\` is included inside the ZIP."
           } >> "$GITHUB_STEP_SUMMARY"
-
