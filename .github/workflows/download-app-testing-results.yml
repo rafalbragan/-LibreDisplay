@@ -1,0 +1,183 @@
+name: Download App Testing Results
+
+on:
+  workflow_dispatch:
+    inputs:
+      results_prefix:
+        description: "Full gs:// prefix of Firebase App Testing Agent result directory"
+        required: true
+
+jobs:
+  download-results:
+    name: Download & Package Firebase Results
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      id-token: write
+
+    steps:
+      # ──────────────────────────────────────────────────
+      # 1. Checkout (needed for a clean workspace)
+      # ──────────────────────────────────────────────────
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # ──────────────────────────────────────────────────
+      # 2. Authenticate via Workload Identity Federation
+      # ──────────────────────────────────────────────────
+      - name: Authenticate to Google Cloud (WIF)
+        id: auth
+        uses: google-github-actions/auth@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ secrets.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ secrets.GCP_SERVICE_ACCOUNT }}
+
+      # ──────────────────────────────────────────────────
+      # 3. Set up gcloud CLI
+      # ──────────────────────────────────────────────────
+      - name: Set up gcloud CLI
+        uses: google-github-actions/setup-gcloud@v2
+        with:
+          project_id: ${{ secrets.GCP_PROJECT_ID }}
+
+      # ──────────────────────────────────────────────────
+      # 4. Prepare output directories
+      # ──────────────────────────────────────────────────
+      - name: Create output directories
+        run: |
+          mkdir -p app-testing-results/raw
+
+      # ──────────────────────────────────────────────────
+      # 5. Download ALL artifacts recursively from GCS
+      # ──────────────────────────────────────────────────
+      - name: Download Firebase test artifacts from GCS
+        id: download
+        env:
+          RESULTS_PREFIX: ${{ github.event.inputs.results_prefix }}
+        run: |
+          echo "::group::Downloading from GCS"
+          echo "GCS prefix: ${RESULTS_PREFIX}"
+
+          # Normalise: ensure prefix ends with /
+          PREFIX="${RESULTS_PREFIX%/}/"
+
+          gcloud storage cp --recursive \
+            "${PREFIX}**" \
+            app-testing-results/raw/ \
+            2>&1 | tee /tmp/gcs-download.log || true
+
+          echo "::endgroup::"
+
+          # Count downloaded files
+          FILE_COUNT=$(find app-testing-results/raw -type f | wc -l | tr -d ' ')
+          echo "files_downloaded=${FILE_COUNT}" >> "$GITHUB_OUTPUT"
+
+          if [ "${FILE_COUNT}" -eq 0 ]; then
+            echo "::error::No files downloaded from GCS prefix: ${PREFIX}"
+            echo "::error::Please verify the prefix is correct and that the service account has storage.objects.list and storage.objects.get permissions."
+            exit 1
+          fi
+
+          echo "Downloaded ${FILE_COUNT} file(s) successfully."
+
+      # ──────────────────────────────────────────────────
+      # 6. Generate manifest (path, size, SHA-256)
+      # ──────────────────────────────────────────────────
+      - name: Generate manifest
+        run: |
+          MANIFEST="app-testing-results/manifest.txt"
+          echo "# LibreCare Firebase App Testing Results – Manifest" > "${MANIFEST}"
+          echo "# Generated: $(date -u '+%Y-%m-%dT%H:%M:%SZ')" >> "${MANIFEST}"
+          echo "# GCS prefix: ${{ github.event.inputs.results_prefix }}" >> "${MANIFEST}"
+          echo "# Run ID: ${{ github.run_id }}" >> "${MANIFEST}"
+          echo "" >> "${MANIFEST}"
+          printf "%-80s %12s  %s\n" "RELATIVE_PATH" "SIZE_BYTES" "SHA256" >> "${MANIFEST}"
+          printf "%-80s %12s  %s\n" "$(printf '%0.s-' {1..80})" "$(printf '%0.s-' {1..12})" "$(printf '%0.s-' {1..64})" >> "${MANIFEST}"
+
+          while IFS= read -r -d '' file; do
+            REL_PATH="${file#app-testing-results/raw/}"
+            SIZE=$(stat -c%s "${file}" 2>/dev/null || stat -f%z "${file}" 2>/dev/null || echo "0")
+            SHA256=$(sha256sum "${file}" | awk '{print $1}')
+            printf "%-80s %12s  %s\n" "${REL_PATH}" "${SIZE}" "${SHA256}" >> "${MANIFEST}"
+          done < <(find app-testing-results/raw -type f -print0 | sort -z)
+
+          echo ""
+          echo "Manifest written to ${MANIFEST}"
+          wc -l "${MANIFEST}"
+
+      # ──────────────────────────────────────────────────
+      # 7. Collect summary statistics
+      # ──────────────────────────────────────────────────
+      - name: Collect summary statistics
+        id: stats
+        run: |
+          # Total size (human-readable)
+          TOTAL_SIZE_BYTES=$(find app-testing-results/raw -type f -print0 | xargs -0 stat -c%s 2>/dev/null | awk '{s+=$1} END {print s+0}')
+          TOTAL_SIZE_HR=$(numfmt --to=iec-i --suffix=B "${TOTAL_SIZE_BYTES}" 2>/dev/null || echo "${TOTAL_SIZE_BYTES} bytes")
+
+          # Presence checks
+          ACTIONS_JSON=$(find app-testing-results/raw -name "actions.json" | wc -l | tr -d ' ')
+          ROBO_PB=$(find app-testing-results/raw -name "robo_results.pb" | wc -l | tr -d ' ')
+          SCREENSHOTS=$(find app-testing-results/raw \( -iname "*.png" -o -iname "*.jpg" -o -iname "*.jpeg" -o -iname "*.webp" \) | wc -l | tr -d ' ')
+          VIDEOS=$(find app-testing-results/raw \( -iname "*.mp4" -o -iname "*.avi" -o -iname "*.mov" -o -iname "*.webm" \) | wc -l | tr -d ' ')
+
+          [ "${ACTIONS_JSON}" -gt 0 ] && ACTIONS_FOUND="YES" || ACTIONS_FOUND="NO"
+          [ "${ROBO_PB}" -gt 0 ]      && ROBO_FOUND="YES"    || ROBO_FOUND="NO"
+
+          echo "total_size_bytes=${TOTAL_SIZE_BYTES}"   >> "$GITHUB_OUTPUT"
+          echo "total_size_hr=${TOTAL_SIZE_HR}"         >> "$GITHUB_OUTPUT"
+          echo "actions_json_found=${ACTIONS_FOUND}"    >> "$GITHUB_OUTPUT"
+          echo "robo_results_found=${ROBO_FOUND}"       >> "$GITHUB_OUTPUT"
+          echo "screenshots=${SCREENSHOTS}"             >> "$GITHUB_OUTPUT"
+          echo "videos=${VIDEOS}"                       >> "$GITHUB_OUTPUT"
+
+      # ──────────────────────────────────────────────────
+      # 8. Create ZIP archive
+      # ──────────────────────────────────────────────────
+      - name: Create ZIP archive
+        run: |
+          ZIP_NAME="librecare-firebase-results-${{ github.run_id }}.zip"
+          zip -r "${ZIP_NAME}" app-testing-results/
+          ZIP_SIZE=$(stat -c%s "${ZIP_NAME}" 2>/dev/null || stat -f%z "${ZIP_NAME}" 2>/dev/null || echo "unknown")
+          echo "ZIP created: ${ZIP_NAME} (${ZIP_SIZE} bytes)"
+
+      # ──────────────────────────────────────────────────
+      # 9. Upload as GitHub Actions artifact
+      # ──────────────────────────────────────────────────
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: librecare-firebase-results-${{ github.run_id }}
+          path: librecare-firebase-results-${{ github.run_id }}.zip
+          if-no-files-found: error
+          retention-days: 30
+
+      # ──────────────────────────────────────────────────
+      # 10. Write GitHub Step Summary
+      # ──────────────────────────────────────────────────
+      - name: Write step summary
+        if: always()
+        run: |
+          {
+            echo "## 🔥 LibreCare – Firebase App Testing Results"
+            echo ""
+            echo "| Field | Value |"
+            echo "|---|---|"
+            echo "| **RESULTS_PREFIX** | \`${{ github.event.inputs.results_prefix }}\` |"
+            echo "| **FILES_DOWNLOADED** | ${{ steps.download.outputs.files_downloaded }} |"
+            echo "| **TOTAL_SIZE** | ${{ steps.stats.outputs.total_size_hr }} (${{ steps.stats.outputs.total_size_bytes }} bytes) |"
+            echo "| **ACTIONS_JSON_FOUND** | ${{ steps.stats.outputs.actions_json_found }} |"
+            echo "| **ROBO_RESULTS_FOUND** | ${{ steps.stats.outputs.robo_results_found }} |"
+            echo "| **SCREENSHOTS_FOUND** | ${{ steps.stats.outputs.screenshots }} |"
+            echo "| **VIDEOS_FOUND** | ${{ steps.stats.outputs.videos }} |"
+            echo ""
+            echo "### Artifact"
+            echo ""
+            echo "\`librecare-firebase-results-${{ github.run_id }}.zip\` uploaded as GitHub Actions artifact."
+            echo ""
+            echo "### Manifest"
+            echo ""
+            echo "\`app-testing-results/manifest.txt\` is included inside the ZIP."
+          } >> "$GITHUB_STEP_SUMMARY"
+
