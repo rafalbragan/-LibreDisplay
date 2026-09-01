@@ -16,6 +16,7 @@ import androidx.compose.material.icons.filled.WarningAmber
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
@@ -29,6 +30,7 @@ import androidx.compose.ui.semantics.semantics
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.ui.monitoring.GlucoseWarningLevel
 import com.libredisplay.ui.theme.LibreCareColors
+import java.time.Duration
 import java.time.Instant
 
 /**
@@ -47,9 +49,27 @@ fun RedesignedCurrentGlucoseCard(
     reading: GlucoseReading,
     targetLow: Int,
     targetHigh: Int,
+    trendWindowMinutes: Int,
     now: Instant = Instant.now(),
     modifier: Modifier = Modifier
 ) {
+    val projectionThresholds = remember(targetLow, targetHigh) {
+        TrendProjectionThresholds(
+            lowThresholdMgDl = targetLow,
+            highThresholdMgDl = targetHigh
+        )
+    }
+    val trendProjection = remember(reading, trendWindowMinutes, projectionThresholds, now) {
+        buildTrendProjection(
+            reading = reading,
+            trendWindowMinutes = trendWindowMinutes,
+            thresholds = projectionThresholds,
+            now = now
+        )
+    }
+    val trendRateLabel = trendProjection?.let { formatTrendRatePerMinute(it.rateMgDlPerMinute) }
+    val projectionMessage = trendProjection?.let(::formatTrendProjectionMessage)
+
     val presentation = buildGlucoseStatusPresentation(
         reading = reading,
         now = now,
@@ -75,7 +95,11 @@ fun RedesignedCurrentGlucoseCard(
         modifier = modifier
             .fillMaxWidth()
             .semantics(mergeDescendants = true) {
-                contentDescription = "Aktualna glikemia: ${reading.value} miligramów na decylitr. ${primaryWarning.title}. Trend: ${trend.label}."
+                contentDescription = buildString {
+                    append("Aktualna glikemia: ${reading.value} miligramów na decylitr. ${primaryWarning.title}. Trend: ${trend.label}.")
+                    trendRateLabel?.let { append(" Tempo zmian: $it.") }
+                    projectionMessage?.let { append(" $it") }
+                }
             }
             .padding(horizontal = 4.dp, vertical = 4.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp)
@@ -147,9 +171,21 @@ fun RedesignedCurrentGlucoseCard(
             TrendSummary(
                 arrow = trend.arrow,
                 label = trendText ?: trend.label,
+                ratePerMinuteLabel = trendRateLabel,
                 status = statusText,
                 color = trendColor,
                 modifier = Modifier.weight(1f)
+            )
+        }
+
+        projectionMessage?.let { message ->
+            Text(
+                text = message,
+                color = LibreCareColors.TextSecondary,
+                fontSize = 13.sp,
+                lineHeight = 17.sp,
+                fontWeight = FontWeight.Normal,
+                modifier = Modifier.fillMaxWidth()
             )
         }
 
@@ -166,6 +202,7 @@ fun RedesignedCurrentGlucoseCard(
 private fun TrendSummary(
     arrow: String,
     label: String,
+    ratePerMinuteLabel: String?,
     status: String,
     color: Color,
     modifier: Modifier = Modifier
@@ -175,7 +212,12 @@ private fun TrendSummary(
         verticalAlignment = Alignment.CenterVertically,
         modifier = modifier
             .heightIn(min = 64.dp)
-            .semantics { contentDescription = "Trend: $label, status: $status" }
+            .semantics {
+                contentDescription = buildString {
+                    append("Trend: $label, status: $status")
+                    ratePerMinuteLabel?.let { append(", tempo: $it") }
+                }
+            }
     ) {
         Text(
             text = arrow,
@@ -198,6 +240,16 @@ private fun TrendSummary(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
             )
+            ratePerMinuteLabel?.let { rateLabel ->
+                Text(
+                    text = rateLabel,
+                    color = LibreCareColors.TextSecondary,
+                    fontSize = 12.sp,
+                    lineHeight = 14.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
             Text(
                 text = status,
                 color = color,
@@ -258,4 +310,3 @@ private fun MedicalAlertInline(
         }
     }
 }
-

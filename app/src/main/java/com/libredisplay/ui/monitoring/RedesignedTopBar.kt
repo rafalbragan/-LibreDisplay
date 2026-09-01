@@ -68,6 +68,11 @@ fun LibreTopBar(
         }
     } ?: "brak danych"
 
+    val dataAgeText = reading?.let { r ->
+        val dataAge = Duration.between(r.timestamp, now)
+        formatReadingAge(dataAge)
+    } ?: "brak danych"
+
     Surface(
         color = LibreCareColors.Background,
         modifier = modifier
@@ -119,6 +124,15 @@ fun LibreTopBar(
                             Text(
                                 text = "Ostatnia aktualizacja: $topUpdateText",
                                 modifier = Modifier.testTag(LibreCareTestTags.TOP_BAR_LAST_UPDATE),
+                                color = LibreCareColors.TextSecondary,
+                                fontSize = 11.sp,
+                                lineHeight = 12.sp,
+                                maxLines = 1,
+                                textAlign = TextAlign.End
+                            )
+                            Text(
+                                text = "Wiek danych: $dataAgeText",
+                                modifier = Modifier.testTag("top_bar_data_age"),
                                 color = LibreCareColors.TextSecondary,
                                 fontSize = 11.sp,
                                 lineHeight = 12.sp,
@@ -189,6 +203,15 @@ fun LibreTopBar(
                                 textAlign = TextAlign.End
                             )
                         }
+                        Text(
+                            text = "Wiek danych: $dataAgeText",
+                            modifier = Modifier.testTag("top_bar_data_age"),
+                            color = LibreCareColors.TextSecondary,
+                            fontSize = 11.sp,
+                            lineHeight = 12.sp,
+                            maxLines = 1,
+                            textAlign = TextAlign.End
+                        )
                         if (onRunUiAudit != null && BuildConfig.DEBUG) {
                             IconButton(onClick = onRunUiAudit, modifier = Modifier.width(36.dp).height(36.dp).testTag(LibreCareTestTags.TOP_BAR_UI_AUDIT)) {
                                 Icon(

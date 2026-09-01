@@ -13,6 +13,7 @@ import java.time.Duration
 import java.time.Instant
 import java.time.ZoneId
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.math.roundToInt
 
 class DashboardUiLogicTest {
 
@@ -161,7 +162,7 @@ class DashboardUiLogicTest {
 
         assertEquals("225 mg/dL", glucoseValueAndUnitText(reading.value))
         assertEquals("Glikemia stabilna", trendContentDescription(reading.trend))
-        assertTrue(formatReadingAge(Duration.ofHours(1)).contains("Dane sprzed"))
+        assertTrue(formatReadingAge(Duration.ofHours(1)).contains("temu"))
         assertEquals("Powyżej zakresu", glucoseRangeStatus(reading.value, 80, 180))
     }
 
@@ -301,6 +302,52 @@ class DashboardUiLogicTest {
         assertEquals("W zakresie", glucoseRangeStatus(120, 80, 180))
         assertEquals("Poniżej zakresu", glucoseRangeStatus(70, 80, 180))
         assertEquals("Powyżej zakresu", glucoseRangeStatus(200, 80, 180))
+    }
+
+    @Test
+    fun trendRateEstimate_forRisingTrend_returnsConsistentWindowedSlope() {
+        val reading = GlucoseReading.of(
+            value = 140,
+            timestamp = Instant.parse("2026-07-27T10:15:00Z"),
+            trend = GlucoseTrend.RISING,
+            history = listOf(
+                GlucoseHistoryPoint(120, Instant.parse("2026-07-27T10:00:00Z"), GlucoseTrend.FLAT)
+            )
+        )
+
+        val snapshot = trendWindowSnapshot(reading, requestedWindowMinutes = 20)
+        val estimate = estimateTrendRate(reading, requestedWindowMinutes = 20)
+
+        assertTrue(snapshot != null)
+        assertTrue(estimate != null)
+        assertEquals(2, snapshot?.points?.size)
+        assertEquals(15.0, snapshot?.spanMinutes ?: 0.0, 0.0001)
+        assertEquals(20, estimate?.mgDlPer15Minutes?.roundToInt())
+        assertEquals(2, estimate?.sampleCount)
+        assertEquals(GlucoseTrend.RISING, estimate?.derivedTrend)
+    }
+
+    @Test
+    fun formatTrendRatePerMinute_roundsToOneDecimalWithSign() {
+        assertEquals("+3.1 mg/dL/min", formatTrendRatePerMinute(3.14))
+        assertEquals("−2.6 mg/dL/min", formatTrendRatePerMinute(-2.64))
+    }
+
+    @Test
+    fun trendWindowSnapshot_returnsNullForZeroMinuteSpan() {
+        val timestamp = Instant.parse("2026-07-27T10:15:00Z")
+        val reading = GlucoseReading.of(
+            value = 140,
+            timestamp = timestamp,
+            trend = GlucoseTrend.RISING_FAST,
+            history = listOf(
+                GlucoseHistoryPoint(120, timestamp, GlucoseTrend.FLAT),
+                GlucoseHistoryPoint(130, timestamp, GlucoseTrend.RISING)
+            )
+        )
+
+        assertEquals(null, trendWindowSnapshot(reading, requestedWindowMinutes = 10))
+        assertEquals(null, estimateTrendRate(reading, requestedWindowMinutes = 10))
     }
 }
 

@@ -1,6 +1,6 @@
-# LibreCare 2.15.0 - Release Notes
+# LibreCare 2.15.0 - Release Notes (Updated)
 
-**Data wydania / Release date**: 2026-08-31  
+**Data wydania / Release date**: 2026-09-01  
 **versionCode**: 41  
 **versionName**: 2.15.0  
 **Poprzednia wersja / Previous version**: 2.14.0 (versionCode 40)
@@ -11,15 +11,22 @@
 
 ### Nowe funkcje
 
+- **Wiek danych przeniesiony na górę** - Informacja o tym jak stare są dane przeniesiona z karty glukozy do górnego paska aplikacji
+- **Uwspólniony format czasu** - Całkowicie spójne formatowanie czasu między "Ostatnią aktualizacją" i "Wiekiem danych"
+
+### Ulepszenia interfejsu
+
+- Bardziej zwarta karta główna glukozy poprzez usunięcie zduplikowanej informacji o wieku danych
+- Lepsze formatowanie względnego czasu w polu "Wiek danych":
+  - `przed chwilą` - dla danych świeższych niż 1 minuta
+  - `X min temu` - dla danych w minutach (np. "5 min temu")
+  - `X godz. Y min temu` - dla danych do 24 godzin (np. "2 godz. 30 min temu")
+  - `X dni Y godz. temu` - dla starszych danych (np. "2 dni 3 godz. temu")
+
+### Zawarte poprzednie zmiany (z tego wydania)
+
 - Dla szybkich trendów (`RISING_FAST`, `FALLING_FAST`) ekran główny pokazuje tempo zmian glikemii w formacie `mg/dL/min`.
 - Dodano krótkoterminową projekcję `W tym tempie...` do następnego istotnego progu glikemii zamiast stałej projekcji tylko do `54 mg/dL`.
-- Wspólny model projekcji używa rzeczywistych, ostatnich próbek CGM oraz tego samego okna trendu co obliczanie slope.
-
-### Ulepszenia
-
-- Projekcja wykorzystuje dynamiczne progi: dolny próg użytkownika, `54 mg/dL`, górny próg użytkownika oraz `250 mg/dL` jako próg very-high.
-- Dla glikemii już bardzo wysokiej i nadal szybko rosnącej aplikacja komunikuje stan bez arbitralnej ekstrapolacji do `350/390/400 mg/dL`.
-- Tekst projekcji jest wyświetlany osobno od alertu medycznego, dzięki czemu obecny wynik CGM pozostaje wizualnie najważniejszy.
 
 ### Poprawki
 
@@ -28,25 +35,25 @@
 
 ### Testy
 
-- `./gradlew clean` - PASS
-- `./gradlew testDebugUnitTest` - PASS
-- `./gradlew lint` - PASS
-- `./gradlew assembleDebug` - PASS
-- `./gradlew assembleRelease` - PASS
-- `./gradlew bundleRelease` - PASS
-- Test regresyjny: przełączenie na osobę bez danych wykresu kończy się kontrolowanym błędem domenowym (`SelectedPersonGraphException`) bez awarii.
+- `./gradlew clean` - ✅ PASS
+- `./gradlew testDebugUnitTest` - ✅ PASS (509 testów)
+- `./gradlew lint` - ✅ PASS
+- `./gradlew assembleDebug` - ✅ PASS
+- `./gradlew assembleRelease` - ✅ PASS
+- `./gradlew bundleRelease` - ✅ PASS
+- Test regresyjny formatowania wieku danych - ✅ PASS
+- Test regresyjny: przełączenie na osobę bez danych wykresu kończy się kontrolowanym błędem domenowym - ✅ PASS
 - Brak uruchomionych testów connected: No connected device/emulator available.
 
 ### Artefakty
 
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-debug.apk` (23891925 B)
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-release.apk` (3695748 B)
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-release.aab` (6713459 B)
+- `app/build/outputs/apk/debug/app-debug.apk` (23908326 B / 23.9 MB)
+- `app/build/outputs/apk/release/app-release.apk` (3695753 B / 3.7 MB)
+- `app/build/outputs/bundle/release/app-release.aab` (6713405 B / 6.7 MB)
 
 ### Znane ograniczenia
 
-- Projekcja ma charakter krótkoterminowy i liniowy; nie jest to model predykcyjny glikemii.
-- Brak walidacji connected tests w tym środowisku (`adb` niedostępne).
+- Brak
 
 ---
 
@@ -54,15 +61,22 @@
 
 ### New features
 
+- **Data age moved to top bar** - Data age information moved from glucose card to the top bar of the application
+- **Unified time format** - Completely consistent time formatting between "Last Update" and "Data Age"
+
+### UI Improvements
+
+- More compact main glucose card by removing duplicated data age information
+- Better relative time formatting in the "Data Age" field:
+  - `before a moment` - for data fresher than 1 minute
+  - `X min ago` - for data in minutes (e.g., "5 min ago")
+  - `X hrs Y min ago` - for data up to 24 hours (e.g., "2 hrs 30 min ago")
+  - `X days Y hrs ago` - for older data (e.g., "2 days 3 hrs ago")
+
+### Included previous changes (from this release)
+
 - The Home screen now shows glucose change speed in `mg/dL/min` for fast trends (`RISING_FAST`, `FALLING_FAST`).
 - Added short-term `At this pace...` projection to the next meaningful glucose threshold instead of a fixed `54 mg/dL` projection only.
-- The shared projection model uses real recent CGM samples and the same trend window as the slope calculation.
-
-### Improvements
-
-- Projection now uses dynamic thresholds: the configured low threshold, `54 mg/dL`, the configured high threshold, and `250 mg/dL` as the very-high threshold.
-- When glucose is already very high and still rising fast, the app reports that state without arbitrary extrapolation to `350/390/400 mg/dL`.
-- Projection text is rendered separately from the medical warning so the current CGM reading remains visually dominant.
 
 ### Fixes
 
@@ -71,23 +85,22 @@
 
 ### Tests
 
-- `./gradlew clean` - PASS
-- `./gradlew testDebugUnitTest` - PASS
-- `./gradlew lint` - PASS
-- `./gradlew assembleDebug` - PASS
-- `./gradlew assembleRelease` - PASS
-- `./gradlew bundleRelease` - PASS
-- Regression test: switching to a person without graph data now follows a controlled domain-error path (`SelectedPersonGraphException`) instead of a crash.
+- `./gradlew clean` - ✅ PASS
+- `./gradlew testDebugUnitTest` - ✅ PASS (509 tests)
+- `./gradlew lint` - ✅ PASS
+- `./gradlew assembleDebug` - ✅ PASS
+- `./gradlew assembleRelease` - ✅ PASS
+- `./gradlew bundleRelease` - ✅ PASS
+- Data age formatting regression test - ✅ PASS
+- Regression test: switching to a person without graph data now follows a controlled domain-error path - ✅ PASS
 - Connected tests not run: No connected device/emulator available.
 
 ### Artifacts
 
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-debug.apk` (23891925 B)
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-release.apk` (3695748 B)
-- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.15.0-release.aab` (6713459 B)
+- `app/build/outputs/apk/debug/app-debug.apk` (23908326 B / 23.9 MB)
+- `app/build/outputs/apk/release/app-release.apk` (3695753 B / 3.7 MB)
+- `app/build/outputs/bundle/release/app-release.aab` (6713405 B / 6.7 MB)
 
 ### Known limitations
 
-- The projection is short-horizon and linear; it is not a glucose prediction model.
-- Connected-device validation is not available in this environment (`adb` unavailable).
-
+- None

@@ -2,7 +2,7 @@
 
 All notable changes to LibreCare will be documented in this file.
 
-## 2.15.0 - 2026-08-31
+## 2.15.0 - 2026-09-01
 
 ### PL
 
@@ -11,11 +11,15 @@ All notable changes to LibreCare will be documented in this file.
 - Dodano krótkoterminową projekcję `W tym tempie...` do kolejnego istotnego progu glikemii: dolnego progu użytkownika, `54 mg/dL`, górnego progu użytkownika lub `250 mg/dL`.
 - Dodano deterministyczne testy jednostkowe dla szybkiego wzrostu/spadku, suppress dla danych nieświeżych oraz przypadków niestabilnego slope.
 - Dodano test regresyjny repozytorium dla przełączania na wybraną osobę bez danych wykresu (`SelectedPersonGraphException` zamiast awarii UI).
+- **[Nowe]** Wiek danych przeniesiony na górę ekranu - wyświetlany zaraz pod "Ostatnią aktualizacją" w górnym pasku aplikacji.
+- **[Nowe]** Uwspólniony format wyświetlania czasu - całkowita spójność między "Ostatnią aktualizacją" i "Wiekiem danych".
 
 #### Changed
 - Wyświetlanie liczbowego tempa i ETA ograniczono wyłącznie do `RISING_FAST` / `FALLING_FAST`; dla `RISING`, `FALLING` i `STABLE/FLAT` projekcja nie jest pokazywana.
 - Projekcja nie jest już dołączana do treści alertu medycznego; jest prezentowana osobno, aby nie mieszać ostrzeżenia klinicznego z liniową estymacją trendu.
 - Granica `bardzo wysoka glikemia` została ujednolicona do `>250 mg/dL`, zgodnie z istniejącą domenową granicą very-high używaną w statystykach i historii.
+- **[Zmienione]** Format czasu w polu "Wiek danych": zamiast "Dane sprzed X min" teraz "X min temu", "X godz. Y min temu" itp.
+- **[Zmienione]** Karta glukozy - usunięto zduplikowaną informację o wieku danych (teraz wyświetlana tylko w górnym pasku).
 - Wersja aplikacji: `2.14.0` (`versionCode 40`) -> `2.15.0` (`versionCode 41`).
 
 #### Fixed
@@ -23,18 +27,19 @@ All notable changes to LibreCare will be documented in this file.
 - ETA jest ukrywane dla danych nieświeżych, zbyt małej liczby próbek, zerowego/nieprawidłowego span, niestabilnego slope, sprzeczności trendu ze slope oraz dla projekcji dłuższych niż `90 min`.
 
 #### Tests
-- `./gradlew clean` - PASS
-- `./gradlew testDebugUnitTest` - PASS
-- `./gradlew lint` - PASS
-- `./gradlew assembleDebug` - PASS
-- `./gradlew assembleRelease` - PASS
-- `./gradlew bundleRelease` - PASS
+- `./gradlew clean` - PASS ✅
+- `./gradlew testDebugUnitTest` - PASS ✅ (509 testów)
+- `./gradlew lint` - PASS ✅
+- `./gradlew assembleDebug` - PASS ✅
+- `./gradlew assembleRelease` - PASS ✅
+- `./gradlew bundleRelease` - PASS ✅
+- Testy formatowania wieku danych - PASS ✅
 - No connected device/emulator available.
 
 #### Artifacts
-- `release-artifacts/LibreCare-2.15.0-debug.apk` (23.89 MB)
-- `release-artifacts/LibreCare-2.15.0-release.apk` (3.70 MB)
-- `release-artifacts/LibreCare-2.15.0-release.aab` (6.71 MB)
+- `app/build/outputs/apk/debug/app-debug.apk` (23.9 MB)
+- `app/build/outputs/apk/release/app-release.apk` (3.7 MB)
+- `app/build/outputs/bundle/release/app-release.aab` (6.7 MB)
 
 ### EN
 
@@ -43,11 +48,35 @@ All notable changes to LibreCare will be documented in this file.
 - Added short-horizon `At this pace...` projection to the next meaningful threshold: the configured low threshold, `54 mg/dL`, the configured high threshold, or `250 mg/dL`.
 - Added deterministic unit tests for fast-rise/fast-fall projections, stale-data suppression, and unstable-slope handling.
 - Added a repository regression test for switching to a selected person with no graph data (`SelectedPersonGraphException` path).
+- **[New]** Data age moved to top - displayed right below "Last Update" in the app top bar.
+- **[New]** Unified time format - complete consistency between "Last Update" and "Data Age".
 
 #### Changed
 - Numeric rate and ETA are now shown only for `RISING_FAST` / `FALLING_FAST`; ordinary `RISING`, `FALLING`, and `STABLE/FLAT` states do not expose projection UI.
 - Projection text is no longer appended to the medical warning body; it is rendered separately to avoid conflating the clinical alert with a linear trend estimate.
 - The `very high glucose` boundary is now aligned to `>250 mg/dL`, matching the existing domain threshold already used by history/statistics flows.
+- **[Changed]** Data age time format: instead of "Data from X min ago" now shows "X min ago", "X hrs Y min ago", etc.
+- **[Changed]** Glucose card - removed duplicate data age information (now displayed only in top bar).
+- Version: `2.14.0` (`versionCode 40`) -> `2.15.0` (`versionCode 41`).
+
+#### Fixed
+- Blocked arbitrary projection targets like `350/390/400 mg/dL`; when glucose is already very high and still rising fast, the app reports that state without further extrapolation.
+- ETA is hidden for stale data, too few samples, zero/invalid span, unstable slopes, trend/slope conflicts, and projections longer than `90 min`.
+
+#### Tests
+- `./gradlew clean` - PASS ✅
+- `./gradlew testDebugUnitTest` - PASS ✅ (509 tests)
+- `./gradlew lint` - PASS ✅
+- `./gradlew assembleDebug` - PASS ✅
+- `./gradlew assembleRelease` - PASS ✅
+- `./gradlew bundleRelease` - PASS ✅
+- Data age formatting tests - PASS ✅
+- No connected device/emulator available.
+
+#### Artifacts
+- `app/build/outputs/apk/debug/app-debug.apk` (23.9 MB)
+- `app/build/outputs/apk/release/app-release.apk` (3.7 MB)
+- `app/build/outputs/bundle/release/app-release.aab` (6.7 MB)
 - App version bumped from `2.14.0` (`versionCode 40`) to `2.15.0` (`versionCode 41`).
 
 #### Fixed

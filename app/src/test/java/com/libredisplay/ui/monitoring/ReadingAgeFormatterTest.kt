@@ -14,28 +14,28 @@ class ReadingAgeFormatterTest {
 
     @Test
     fun minutes_areFormatted() {
-        assertEquals("Dane sprzed 7 min", formatReadingAge(Duration.ofMinutes(7)))
+        assertEquals("7 min temu", formatReadingAge(Duration.ofMinutes(7)))
     }
 
     @Test
     fun oneHourPlusMinutes_areFormatted() {
-        assertEquals("Dane sprzed 1 godz. 5 min", formatReadingAge(Duration.ofMinutes(65)))
+        assertEquals("1 godz. 5 min temu", formatReadingAge(Duration.ofMinutes(65)))
     }
 
     @Test
     fun manyHours_areFormatted() {
-        assertEquals("Dane sprzed 7 godz. 7 min", formatReadingAge(Duration.ofMinutes(427)))
+        assertEquals("7 godz. 7 min temu", formatReadingAge(Duration.ofMinutes(427)))
     }
 
     @Test
     fun daysHoursMinutes_areFormatted() {
-        assertEquals("Dane sprzed 1 dzień 1 godz. 10 min", formatReadingAge(Duration.ofMinutes(1510)))
-        assertEquals("Dane sprzed 2 dni 2 godz. 15 min", formatReadingAge(Duration.ofMinutes(3015)))
+        assertEquals("1 dzień 1 godz. temu", formatReadingAge(Duration.ofMinutes(1510)))
+        assertEquals("2 dni 2 godz. temu", formatReadingAge(Duration.ofMinutes(3015)))
     }
 
     @Test
     fun nullDuration_returnsMissingText() {
-        assertEquals("Brak czasu pomiaru", formatReadingAge(null))
+        assertEquals("brak czasu pomiaru", formatReadingAge(null))
     }
 }
 

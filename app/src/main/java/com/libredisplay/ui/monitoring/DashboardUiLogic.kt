@@ -13,6 +13,7 @@ import java.time.Instant
 import java.time.ZoneId
 import kotlin.math.abs
 import kotlin.math.max
+import kotlin.math.roundToInt
 
 internal typealias GlucosePoint = GlucoseHistoryPoint
 
@@ -57,6 +58,23 @@ internal data class DashboardMetricTile(
     val supportingText: String,
     val hasData: Boolean
 )
+
+internal data class TrendWindowSnapshot(
+    val points: List<GlucoseHistoryPoint>,
+    val windowMinutes: Int,
+    val spanMinutes: Double
+)
+
+internal data class TrendRateEstimate(
+    val mgDlPerMinute: Double,
+    val mgDlPer15Minutes: Double,
+    val windowMinutes: Int,
+    val sampleCount: Int = 0,
+    val spanMinutes: Double = 0.0
+)
+
+internal val TrendRateEstimate.derivedTrend: GlucoseTrend
+    get() = GlucoseTrend.fromSlope(mgDlPerMinute)
 
 internal sealed interface MonitoringAction {
     data class OpenHistory(val context: HistoryOpenContext) : MonitoringAction
@@ -210,31 +228,75 @@ internal fun formatChartPointLabel(
 }
 
 internal fun formatReadingAge(duration: Duration?): String {
-    val safeDuration = duration ?: return "Brak czasu pomiaru"
-    if (safeDuration.isNegative || safeDuration.isZero) return "przed chwilą"
+     val safeDuration = duration ?: return "brak czasu pomiaru"
+     if (safeDuration.isNegative || safeDuration.isZero) return "przed chwilą"
 
-    val totalMinutes = safeDuration.toMinutes()
-    if (totalMinutes < 1) return "przed chwilą"
-    if (totalMinutes < 60) return "Dane sprzed ${totalMinutes} min"
+     val totalMinutes = safeDuration.toMinutes()
+     if (totalMinutes < 1) return "przed chwilą"
+     if (totalMinutes < 60) return "${totalMinutes} min temu"
 
-    val totalHours = totalMinutes / 60
-    val minutes = totalMinutes % 60
-    if (totalHours < 24) {
-        return if (totalHours == 1L) {
-            "Dane sprzed 1 godz. ${minutes} min"
-        } else {
-            "Dane sprzed ${totalHours} godz. ${minutes} min"
-        }
-    }
+     val totalHours = totalMinutes / 60
+     val minutes = totalMinutes % 60
+     if (totalHours < 24) {
+         return if (minutes == 0L) {
+             if (totalHours == 1L) "1 godz. temu" else "${totalHours} godz. temu"
+         } else {
+             val minSuffix = if (minutes == 1L) "min" else "min"
+             if (totalHours == 1L) "1 godz. ${minutes} $minSuffix temu" else "${totalHours} godz. ${minutes} $minSuffix temu"
+         }
+     }
 
-    val days = totalHours / 24
-    val hours = totalHours % 24
-    val dayLabel = if (days == 1L) "1 dzień" else "$days dni"
-    return "Dane sprzed $dayLabel ${hours} godz. ${minutes} min"
-}
+     val days = totalHours / 24
+     val hours = totalHours % 24
+     val dayLabel = if (days == 1L) "1 dzień" else "$days dni"
+     val hourLabel = if (hours == 1L) "1 godz." else "$hours godz."
+     return "$dayLabel $hourLabel temu"
+ }
 
 internal fun formatDurationLabel(duration: Duration?): String {
     return PolishDateTimeFormatter.formatCompactDuration(duration)
+}
+
+internal fun estimateTrendRate(
+    reading: GlucoseReading,
+    requestedWindowMinutes: Int
+): TrendRateEstimate? {
+    val snapshot = trendWindowSnapshot(reading = reading, requestedWindowMinutes = requestedWindowMinutes) ?: return null
+    val first = snapshot.points.first()
+    val last = snapshot.points.last()
+    val mgDlPerMinute = (last.value - first.value).toDouble() / snapshot.spanMinutes
+    return TrendRateEstimate(
+        mgDlPerMinute = mgDlPerMinute,
+        mgDlPer15Minutes = mgDlPerMinute * 15.0,
+        windowMinutes = snapshot.windowMinutes,
+        sampleCount = snapshot.points.size,
+        spanMinutes = snapshot.spanMinutes
+    )
+}
+
+internal fun trendWindowSnapshot(
+    reading: GlucoseReading,
+    requestedWindowMinutes: Int
+): TrendWindowSnapshot? {
+    val windowMinutes = requestedWindowMinutes.coerceIn(3, 20)
+    val timeline = readingTimeline(reading)
+    if (timeline.size < 2) return null
+
+    val end = timeline.last().timestamp
+    val windowStart = end.minus(Duration.ofMinutes(windowMinutes.toLong()))
+    val inWindow = timeline.filter { !it.timestamp.isBefore(windowStart) && !it.timestamp.isAfter(end) }
+    if (inWindow.size < 2) return null
+
+    val first = inWindow.first()
+    val last = inWindow.last()
+    val spanMinutes = Duration.between(first.timestamp, last.timestamp).seconds.toDouble() / 60.0
+    if (!spanMinutes.isFinite() || spanMinutes <= 0.0) return null
+
+    return TrendWindowSnapshot(
+        points = inWindow,
+        windowMinutes = windowMinutes,
+        spanMinutes = spanMinutes
+    )
 }
 
 internal fun rangeTileUi(percent: Int?, duration: Duration?, hasReadings: Boolean = duration != null || percent != null): RangeTileUi {
