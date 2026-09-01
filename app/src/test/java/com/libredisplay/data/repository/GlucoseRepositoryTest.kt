@@ -15,6 +15,7 @@ import com.libredisplay.data.model.LibreConnectionPerson
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import retrofit2.Response
@@ -209,6 +210,44 @@ class GlucoseRepositoryTest {
         val snapshot = repository.fetchMonitoringSnapshot(preferredPatientId = "patient-tata")
 
         assertEquals("patient-tata", snapshot.selectedPerson.patientId)
+        assertEquals(listOf("patient-tata"), http.graphPatientIds)
+    }
+
+    @Test
+    fun fetchMonitoringSnapshot_whenSelectedPersonHasNoData_throwsSelectedPersonGraphException() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(listOf(Response.success(json("""
+                {"data":[
+                  {"patientId":"patient-mama","firstName":"Mama"},
+                  {"patientId":"patient-tata","firstName":"Tata"}
+                ]}
+            """)))),
+            graphResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"connection":{},"graphData":[]}}
+            """))))
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        val authRepository = AuthRepository(
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
+            client = client
+        )
+        val repository = GlucoseRepository(
+            settingsProvider = { AppSettings(appMode = AppMode.LIVE, email = "user@example.com", password = "secret") },
+            authRepository = authRepository,
+            productionClient = client
+        )
+
+        val exception = runCatching {
+            repository.fetchMonitoringSnapshot(preferredPatientId = "patient-tata")
+        }.exceptionOrNull()
+
+        assertTrue(exception is SelectedPersonGraphException)
+        val selectedPersonException = exception as SelectedPersonGraphException
+        assertEquals("patient-tata", selectedPersonException.selectedPerson.patientId)
+        assertNotNull(exception.cause)
         assertEquals(listOf("patient-tata"), http.graphPatientIds)
     }
 

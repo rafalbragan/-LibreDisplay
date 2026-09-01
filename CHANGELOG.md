@@ -2,6 +2,136 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.15.0 - 2026-08-31
+
+### PL
+
+#### Added
+- Dla trendów `RISING_FAST` i `FALLING_FAST` ekran główny pokazuje szacowane tempo zmian glikemii w formacie `mg/dL/min`, liczone z rzeczywistych, ostatnich odczytów CGM z tego samego okna trendu co estymacja slope.
+- Dodano krótkoterminową projekcję `W tym tempie...` do kolejnego istotnego progu glikemii: dolnego progu użytkownika, `54 mg/dL`, górnego progu użytkownika lub `250 mg/dL`.
+- Dodano deterministyczne testy jednostkowe dla szybkiego wzrostu/spadku, suppress dla danych nieświeżych oraz przypadków niestabilnego slope.
+- Dodano test regresyjny repozytorium dla przełączania na wybraną osobę bez danych wykresu (`SelectedPersonGraphException` zamiast awarii UI).
+
+#### Changed
+- Wyświetlanie liczbowego tempa i ETA ograniczono wyłącznie do `RISING_FAST` / `FALLING_FAST`; dla `RISING`, `FALLING` i `STABLE/FLAT` projekcja nie jest pokazywana.
+- Projekcja nie jest już dołączana do treści alertu medycznego; jest prezentowana osobno, aby nie mieszać ostrzeżenia klinicznego z liniową estymacją trendu.
+- Granica `bardzo wysoka glikemia` została ujednolicona do `>250 mg/dL`, zgodnie z istniejącą domenową granicą very-high używaną w statystykach i historii.
+- Wersja aplikacji: `2.14.0` (`versionCode 40`) -> `2.15.0` (`versionCode 41`).
+
+#### Fixed
+- Zablokowano arbitralne cele projekcji typu `350/390/400 mg/dL`; gdy glukoza jest już bardzo wysoka i nadal szybko rośnie, aplikacja komunikuje ten stan bez dalszej ekstrapolacji.
+- ETA jest ukrywane dla danych nieświeżych, zbyt małej liczby próbek, zerowego/nieprawidłowego span, niestabilnego slope, sprzeczności trendu ze slope oraz dla projekcji dłuższych niż `90 min`.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.0-debug.apk` (23.89 MB)
+- `release-artifacts/LibreCare-2.15.0-release.apk` (3.70 MB)
+- `release-artifacts/LibreCare-2.15.0-release.aab` (6.71 MB)
+
+### EN
+
+#### Added
+- Home fast-trend presentation now shows estimated glucose change speed in `mg/dL/min` for `RISING_FAST` and `FALLING_FAST`, computed from real recent CGM readings using the same trend window/slope semantics as the projection pipeline.
+- Added short-horizon `At this pace...` projection to the next meaningful threshold: the configured low threshold, `54 mg/dL`, the configured high threshold, or `250 mg/dL`.
+- Added deterministic unit tests for fast-rise/fast-fall projections, stale-data suppression, and unstable-slope handling.
+- Added a repository regression test for switching to a selected person with no graph data (`SelectedPersonGraphException` path).
+
+#### Changed
+- Numeric rate and ETA are now shown only for `RISING_FAST` / `FALLING_FAST`; ordinary `RISING`, `FALLING`, and `STABLE/FLAT` states do not expose projection UI.
+- Projection text is no longer appended to the medical warning body; it is rendered separately to avoid conflating the clinical alert with a linear trend estimate.
+- The `very high glucose` boundary is now aligned to `>250 mg/dL`, matching the existing domain threshold already used by history/statistics flows.
+- App version bumped from `2.14.0` (`versionCode 40`) to `2.15.0` (`versionCode 41`).
+
+#### Fixed
+- Prevented arbitrary projection targets such as `350/390/400 mg/dL`; when glucose is already very high and still rising fast, the app now reports that state without further extrapolation.
+- ETA is suppressed for stale data, insufficient samples, zero/invalid spans, unstable slopes, trend/slope disagreement, and projections longer than `90 min`.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.0-debug.apk` (23.89 MB)
+- `release-artifacts/LibreCare-2.15.0-release.apk` (3.70 MB)
+- `release-artifacts/LibreCare-2.15.0-release.aab` (6.71 MB)
+
+## 2.14.0 - 2026-08-27
+
+### PL
+
+#### Added
+- Ekran główny pokazuje wyliczane tempo zmian glikemii przy strzałce trendu w formacie `mg/dL/15 min`.
+- Dodano projekcję czasu do wartości krytycznej `54 mg/dL` i włączono ją do treści zalecenia, gdy trend wskazuje sensowny spadek.
+- Ustawienia monitoringu zawierają nową konfigurację: `Okno estymacji tempa (3-20 min)`.
+- Nowe testy logiki estymacji i rekomendacji: `trendRateEstimate_forRisingTrend_returnsRatePer15Minutes`, `criticalLowProjection_forFallingTrend_returnsEtaAndRecommendation`, `projectedCriticalLowRecommendation_isAppendedToWarningMessage`.
+
+#### Changed
+- Domyślne okno estymacji trendu zmieniono z `3` na `10` minut.
+- Zakres konfiguracyjny okna estymacji został ograniczony i walidowany do `3-20` minut w UI i repozytorium ustawień.
+- Backup ustawień (`BackupCodec`/`BackupModels`) używa nowej wartości domyślnej okna trendu (`10 min`).
+- Wersja aplikacji: `2.13.0` (`versionCode 39`) -> `2.14.0` (`versionCode 40`).
+
+#### Fixed
+- Ukrywanie estymacji tempa dla zbyt małej dynamiki (`|tempo| < 5 mg/dL/15 min`) zapobiega pokazywaniu mylących, niemiarodajnych wartości.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.14.0-debug.apk` (23.89 MB)
+- `release-artifacts/LibreCare-2.14.0-release.apk` (3.70 MB)
+- `release-artifacts/LibreCare-2.14.0-release.aab` (6.71 MB)
+
+### EN
+
+#### Added
+- Home screen now shows computed glucose change speed next to the trend arrow in `mg/dL/15 min`.
+- Added projected time to the critical threshold `54 mg/dL` and appended it to recommendations when the current trend indicates a meaningful decline.
+- Monitoring settings now include `Trend estimation window (3-20 min)`.
+- Added unit tests for trend-speed estimation and projected recommendation text.
+
+#### Changed
+- Default trend estimation window changed from `3` to `10` minutes.
+- Trend estimation window is now validated and clamped to `3-20` minutes in both UI and settings repository.
+- Settings backup defaults (`BackupCodec`/`BackupModels`) now use the updated trend window default (`10 min`).
+- App version bumped from `2.13.0` (`versionCode 39`) to `2.14.0` (`versionCode 40`).
+
+#### Fixed
+- Trend-speed projection is hidden for very small changes (`|speed| < 5 mg/dL/15 min`) to avoid noisy and misleading guidance.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.14.0-debug.apk` (23.89 MB)
+- `release-artifacts/LibreCare-2.14.0-release.apk` (3.70 MB)
+- `release-artifacts/LibreCare-2.14.0-release.aab` (6.71 MB)
+
 ## 2.13.0 - 2026-08-27
 
 ### PL
