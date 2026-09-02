@@ -33,7 +33,15 @@ jobs:
             const hasLabel = (issue.labels || []).some(l => l.name === 'product-inbox');
             const title = issue.title || '';
             const hasPrefix = title.startsWith('[Product Inbox]');
-            const shouldProcess = hasLabel || hasPrefix;
+            const body = issue.body || '';
+            const normalizedBody = body.replace(/\r\n/g, '\n').toLowerCase();
+            const requiredHeadings = [
+              '### type',
+              '### persona',
+              '### what did you notice / what would you like?',
+            ];
+            const hasFormSignature = requiredHeadings.every(h => normalizedBody.includes(h));
+            const shouldProcess = hasLabel || hasPrefix || hasFormSignature;
 
             if (!shouldProcess) {
               core.setOutput('process', 'false');

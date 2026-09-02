@@ -327,6 +327,21 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         text = ISSUE_FORM_PATH.read_text(encoding="utf-8")
         self.assertIn("title: \"[Product Inbox] \"", text)
 
+    def test_workflow_bootstrap_routing_supports_body_signature(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        # CASE A: no label/no prefix can still process via canonical form headings.
+        self.assertIn("const hasFormSignature", text)
+        self.assertIn("'### type'", text)
+        self.assertIn("'### persona'", text)
+        self.assertIn("'### what did you notice / what would you like?'", text)
+        self.assertIn("const shouldProcess = hasLabel || hasPrefix || hasFormSignature;", text)
+        # CASE B/C: explicit label or title prefix should still process.
+        self.assertIn("const hasLabel", text)
+        self.assertIn("const hasPrefix", text)
+        # CASE D: ordinary issue path is ignored.
+        self.assertIn("if (!shouldProcess)", text)
+        self.assertIn("core.setOutput('process', 'false');", text)
+
 
 if __name__ == "__main__":
     unittest.main()
