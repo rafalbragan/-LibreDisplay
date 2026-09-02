@@ -1,0 +1,48 @@
+{
+  "bug_id": "BUG-0001",
+  "title": "[Blad LibreCare] Product Review ignoruje istniejące dowody z repozytorium",
+  "source": "GITHUB_BUG_ISSUE",
+  "source_reference": "GH-ISSUE-5",
+  "source_issue_number": 5,
+  "source_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/5",
+  "related_requirement_ids": [],
+  "related_test_ids": [
+    "Dodać test kontraktowy Product Review: gdy zgłoszenie wskazuje istniejącą funkcję, review musi sprawdzić odpowiednie źródła kodu, nawigacji, testów i raportów technicznych albo jawnie oznaczyć ich brak jako ograniczenie zakresu.",
+    "Dodać test regresyjny dla Futures potwierdzający rozpoznanie FuturesScreen, FuturesViewModel, nawigacji oraz liczby zapisanych pomysłów.",
+    "Dodać test negatywny potwierdzający, że dowody implementacji nie są traktowane jako decyzja o akceptacji funkcji ani jako zgoda na wdrożenie."
+  ],
+  "observed_behavior": "Product Review dla zgłoszenia „Futures jako ekran rozwoju LibreCare” stwierdził, że nie ma potwierdzenia istnienia zakładki Futures ani inwentaryzacji jej pomysłów.\n\nTymczasem przed uruchomieniem review wykonano analizę repozytorium, która potwierdziła:\n\n- FuturesScreen istnieje jako realny ekran/nawigacja,\n- istnieje FuturesViewModel,\n- znaleziono 10 zapisanych pomysłów,\n- 6 z nich ma częściową implementację,\n- raport znajduje się w futures-and-perspectives-inventory.md.\n\nProduct Review nie wykorzystał tych dostępnych dowodów i na tej podstawie uznał temat za niejednoznaczny.",
+  "expected_behavior": "Product Review powinien przy analizie zgłoszenia sprawdzić dostępne dowody repozytorium dotyczące zgłaszanego obszaru, szczególnie gdy Issue odnosi się do istniejącego kodu lub wcześniej wykonanego raportu.\n\nNie powinien twierdzić, że nie ma dowodu na istnienie funkcji, jeśli takie dowody znajdują się w repozytorium i są dostępne dla read-only Product Review AI.\n\nProduct Foundation nadal pozostaje źródłem kanonicznych decyzji, ale istniejący kod i raporty techniczne powinny być traktowane jako dowód stanu implementacji.",
+  "reproduction": "1. Otworzyć Product Inbox dotyczący istniejącej funkcji Futures.\n2. W repozytorium mieć futures-and-perspectives-inventory.md oraz istniejące:\n   - FuturesScreen.kt\n   - FuturesViewModel.kt\n3. Uruchomić automatyczny Product Review.\n4. Review stwierdza, że brak potwierdzenia istnienia Futures i inwentaryzacji pomysłów.",
+  "classification": "NEEDS_PRODUCT_DECISION",
+  "severity": "MEDIUM",
+  "safety_impact": "LOW",
+  "status": "NEEDS_PRODUCT_DECISION",
+  "implementation_issue": {},
+  "implementation_issue_number": null,
+  "implementation_issue_url": null,
+  "pull_request": {},
+  "pull_request_number": null,
+  "pull_request_url": null,
+  "validation_state": "PENDING",
+  "evidence": [
+    {
+      "source": "GITHUB_BUG_ISSUE",
+      "source_reference": "GH-ISSUE-5",
+      "captured_at": "2026-09-02T16:59:01Z"
+    }
+  ],
+  "dedup_signature": "product review dla zgłoszenia „futures jako ekran rozwoju librecare” stwierdził, że nie ma potwierdzenia istnienia zakładki futures ani inwentaryzacji jej pomysłów. tymczasem przed uruchomieniem review wykonano analizę repozytorium, która potwierdziła: - futuresscreen istnieje jako realny ekran/nawigacja, - istnieje futuresviewmodel, - znaleziono 10 zapisanych pomysłów, - 6 z nich ma częściową implementację, - raport znajduje się w futures-and-perspectives-inventory.md. product review nie wykorzystał tych dostępnych dowodów i na tej podstawie uznał temat za niejednoznaczny.||product review powinien przy analizie zgłoszenia sprawdzić dostępne dowody repozytorium dotyczące zgłaszanego obszaru, szczególnie gdy issue odnosi się do istniejącego kodu lub wcześniej wykonanego raportu. nie powinien twierdzić, że nie ma dowodu na istnienie funkcji, jeśli takie dowody znajdują się w repozytorium i są dostępne dla read-only product review ai. product foundation nadal pozostaje źródłem kanonicznych decyzji, ale istniejący kod i raporty techniczne powinny być traktowane jako dowód stanu implementacji.||1. otworzyć product inbox dotyczący istniejącej funkcji futures. 2. w repozytorium mieć futures-and-perspectives-inventory.md oraz istniejące: - futuresscreen.kt - futuresviewmodel.kt 3. uruchomić automatyczny product review. 4. review stwierdza, że brak potwierdzenia istnienia futures i inwentaryzacji pomysłów.||",
+  "created_at": "2026-09-02T16:59:01Z",
+  "updated_at": "2026-09-02T17:00:14Z",
+  "location": "GitHub Product Inbox / Product Review AI",
+  "history": "Nie wiem. Został wykryty podczas pierwszych testów live automatyzacji Product Foundation.",
+  "additional_context": "Raport:\nfutures-and-perspectives-inventory.md\n\nNajważniejsze wyniki raportu:\nFUTURES_TAB_EXISTS: YES\nTOTAL_EXISTING_IDEAS: 10\nPARTIAL_IMPLEMENTATION: 6\nIDEA_ONLY: 4\n\nCelem nie jest automatyczne akceptowanie pomysłów z Futures.\nProblemem jest nieuwzględnienie istniejących dowodów przy Product Review.",
+  "triage_reasoning": "Dowody potwierdzają, że twierdzenie review o braku zakładki Futures było faktycznie niezgodne ze stanem repozytorium: istnieją FuturesScreen.kt, FuturesViewModel.kt, integracja z nawigacją, testy ekranu i ViewModelu oraz 10 pomysłów w kodzie. Nie ma jednak zaakceptowanego wymagania ani kryterium, które jednoznacznie nakazuje Product Review analizować także kod aplikacji i raporty techniczne poza katalogiem Product Foundation. Obecny prompt ogranicza wskazane źródła głównie do product/inbox, requirements, research, decisions i generated. Dlatego jest to potwierdzona rozbieżność faktograficzna, ale decyzja o rozszerzeniu kontraktu Product Review na dowody implementacyjne wymaga decyzji produktowo-procesowej. Nie należy automatycznie tworzyć zadania naprawczego ani uznawać pomysłów Futures za zaakceptowane funkcje.",
+  "triage_traceability": {
+    "accepted_related_requirement_ids": [],
+    "has_test_evidence": true,
+    "requires_behavior_change": true,
+    "safety_requires_product_decision": false
+  }
+}
