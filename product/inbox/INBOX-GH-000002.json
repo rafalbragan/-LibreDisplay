@@ -1,0 +1,15 @@
+{
+  "inbox_id": "INBOX-GH-000002",
+  "github_issue_number": 2,
+  "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/2",
+  "created_at": "2026-09-02T14:42:48Z",
+  "updated_at": "2026-09-02T14:44:05Z",
+  "submitted_by": "rafalbragan",
+  "type": "PROBLEM",
+  "persona": "OPIEKUN",
+  "module": "GLOWNA_MONITORING",
+  "raw_input": "Gdy odczyt glukozy jest nieaktualny, chciałbym od razu widzieć, że nie powinienem traktować wyświetlanej wartości jako bieżącej.\n\nSama informacja o czasie ostatniej aktualizacji może być niewystarczająca. Na ekranie opiekuna powinno być jednoznacznie widoczne, że dane są stare lub utracono aktualne dane.",
+  "why_it_matters": "Opiekun może podejmować decyzję na podstawie wartości, która wygląda wiarygodnie, ale w rzeczywistości pochodzi sprzed dłuższego czasu. Świeżość danych jest istotna dla szybkiej oceny sytuacji.",
+  "context": "LibreCare ma już logikę stale/fresh oraz scenariusz STALE_DATA. Chciałbym sprawdzić, czy sposób prezentacji jest wystarczająco jednoznaczny dla opiekuna.",
+  "status": "ANALYZED"
+}

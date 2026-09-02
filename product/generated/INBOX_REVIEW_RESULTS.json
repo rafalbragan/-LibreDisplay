@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-02T09:19:49Z",
+  "generated_at": "2026-09-02T14:44:06Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -34,6 +34,45 @@
       "reasoning_summary": "The issue is valid as a product refinement, but the product foundation already confirms that freshness and staleness are important and visible; the missing part is a validated, user-friendly presentation format. Because there is existing capability overlap and no direct research proving the exact wording or threshold behavior, the recommended decision is to hold this item until a concise UX validation confirms the preferred relative-time language and preserves precision without masking staleness.",
       "governance_notes": [],
       "generated_at": "2026-09-02T01:08:36Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000002",
+      "github_issue_number": 2,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/2",
+      "classification": "TEST_COVERAGE_GAP",
+      "summary": "Zgłoszenie wskazuje na potencjalną lukę w jednoznaczności prezentacji nieświeżych danych opiekuna, ale repozytorium nie zawiera dowodu, że obecny ekran w scenariuszu STALE_DATA rzeczywiście wprowadza opiekuna w błąd.",
+      "evidence_available": [
+        "SAFETY_GUARDRAILS.md G7 uznaje świeżość i nieświeżość danych za właściwość bezpieczeństwa.",
+        "REQ-0002 obejmuje prezentację świeżości danych na kartach opiekuna i został zaakceptowany oraz oznaczony jako zwalidowany.",
+        "REQ-0002 wymaga zachowania istniejącej klasyfikacji stale/fresh bez zmiany progów i logiki.",
+        "TESTRUN-2026-002 potwierdza, że w scenariuszu NORMAL użytkownik rozpoznaje czas ostatniej aktualizacji, ale nie testuje nieświeżych danych.",
+        "TESTRUN-2026-006 i TESTRUN-2026-007 dotyczą priorytetyzacji osób wymagających uwagi, nie jednoznaczności statusu STALE_DATA.",
+        "CURRENT_FOCUS.yaml nadaje data_reliability i caregiver_speed najwyższy priorytet, a głównym trybem jest caregiver."
+      ],
+      "evidence_missing": [
+        "Brak zapisanego test runu lub obserwacji dla scenariusza STALE_DATA potwierdzającego, jak obecny interfejs jest rozumiany przez opiekuna.",
+        "Brak dowodu, że opiekun myli nieświeży odczyt z bieżącą wartością.",
+        "Brak porównania wariantów: sam czas ostatniej aktualizacji, jawna etykieta stanu oraz etykieta z rekomendacją sprawdzenia źródła danych.",
+        "Brak wyników dla małego ekranu, trybu ciemnego, dostępności i lokalizacji polskiej w scenariuszu nieświeżych danych.",
+        "Brak niezależnego potwierdzenia w dokumentacji implementacji, że obecna logika stale/fresh jest widoczna w każdej odpowiedniej karcie opiekuna."
+      ],
+      "existing_capability_overlap": [
+        "REQ-0002 już obejmuje czytelną, naturalną prezentację świeżości danych na głównych kartach opiekuna.",
+        "Repozytorium deklaruje istniejącą klasyfikację stale/fresh, ale jej prezentacja w scenariuszu STALE_DATA nie jest zwalidowaną capability.",
+        "REQ-0001 wykorzystuje stale data jako stan wymagający uwagi, lecz testy REQ-0001 nie dowodzą, że sam status nieświeżości jest jednoznacznie rozumiany.",
+        "Nie należy tworzyć odrębnego wymagania wyłącznie na podstawie pozytywnego testu NORMAL ani traktować go jako dowodu dla STALE_DATA."
+      ],
+      "proposed_requirement": "Nie tworzyć jeszcze duplikatu REQ-0002. Najpierw wykonać celowany test użyteczności i regresji dla STALE_DATA: opiekun powinien bez przechodzenia do szczegółów rozpoznać, że wyświetlana wartość nie jest bieżąca, odróżnić ją od aktualnego odczytu oraz nie odebrać komunikatu jako porady terapeutycznej. Jeśli test wykaże niejednoznaczność, rozszerzyć REQ-0002 o jawny, spójny status nieświeżości dla kart opiekuna, bez zmiany progów stale/fresh.",
+      "user_value": "Jednoznaczne oznaczenie nieświeżych danych może ograniczyć ryzyko oparcia oceny sytuacji na historycznej wartości i skrócić czas rozpoznania utraty aktualnych danych przez opiekuna.",
+      "counterargument": "Dodatkowy czerwony status, ostrzeżenie lub komunikat może zwiększyć alarm fatigue, dublować sekcję Wymaga uwagi i sugerować, że każda nieświeżość wymaga natychmiastowego działania. Sama obserwacja, że użytkownik widzi czas aktualizacji, nie dowodzi jeszcze realnego problemu decyzyjnego.",
+      "simpler_alternative": "Najpierw ujednolicić istniejącą etykietę na karcie: zachować względny czas z REQ-0002, a po przekroczeniu istniejącego progu stale dodać krótkie, jednoznaczne oznaczenie typu Dane nieaktualne. Nie dodawać nowego alertu, modalu ani rekomendacji leczenia; sprawdzić ten wariant w jednym scenariuszu STALE_DATA.",
+      "safety_impact": "HIGH",
+      "estimated_scope": "SMALL",
+      "proposed_priority": "P1",
+      "recommended_decision": "HOLD",
+      "reasoning_summary": "To nie jest potwierdzona nowa capability ani wystarczająco udokumentowany nowy problem produktowy. Jest to wiarygodna, safety-relevant hipoteza oraz wyraźna luka testowa: obecne materiały potwierdzają rozpoznawanie świeżości w scenariuszu NORMAL i istnienie logiki stale/fresh, ale nie potwierdzają jednoznacznego rozpoznawania starych danych przez opiekuna. Ponieważ REQ-0002 już dotyczy tego obszaru, właściwym krokiem jest HOLD, test STALE_DATA oraz ewentualne rozszerzenie istniejącego wymagania, a nie akceptacja kolejnego równoległego wymagania. Jakakolwiek zmiana powinna pozostać prezentacyjna, zachować istniejące reguły klasyfikacji i nie zawierać autonomicznych zaleceń dotyczących insuliny ani leczenia.",
+      "governance_notes": [],
+      "generated_at": "2026-09-02T14:44:05Z"
     }
   ]
 }

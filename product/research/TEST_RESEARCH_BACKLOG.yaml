@@ -19,3 +19,16 @@ items:
     priority: "P1"
     recommended_test_or_research: "Create clinician-focused test scenarios with diverse glucose patterns and edge cases"
     status: "OPEN"
+
+  INBOX-GH-000002:
+    title: "Inbox Coverage Gap: issue #2"
+    persona: "unknown"
+    module: "unknown"
+    source_ids:
+      - "INBOX-GH-000002"
+      - "GH-ISSUE-2"
+    reason: "Zgłoszenie wskazuje na potencjalną lukę w jednoznaczności prezentacji nieświeżych danych opiekuna, ale repozytorium nie zawiera dowodu, że obecny ekran w scenariuszu STALE_DATA rzeczywiście wprowadza opiekuna w błąd."
+    risk: "MEDIUM"
+    priority: "P1"
+    recommended_test_or_research: "Define dedicated reproduction scenario and collect evidence before requirement drafting"
+    status: "OPEN"
