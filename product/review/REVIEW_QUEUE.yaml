@@ -77,7 +77,7 @@ candidates:
       fazy foundation.
     safety_impact: LOW
     proposed_priority: P1
-    human_decision: PENDING
+    human_decision: ACCEPT
     source_ids:
     - INBOX-GH-000006
     - GH-ISSUE-6
@@ -86,4 +86,4 @@ candidates:
     github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/6
     recommended_decision: ACCEPT
     classification: PRODUCT_PROBLEM
-    applied_requirement_id: null
+    applied_requirement_id: REQ-0003

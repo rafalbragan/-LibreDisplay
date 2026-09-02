@@ -1,0 +1,10 @@
+{
+  "req_id": "REQ-0003",
+  "implementation_id": "IMP-REQ-0003",
+  "status": "QUEUED",
+  "implementation_issue_number": 7,
+  "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/7",
+  "blocked": false,
+  "copilot_real_assignee_confirmed": false,
+  "comment_markdown": "<!-- LIBRECARE_COPILOT_ASSIGNMENT_STATUS -->\n## LibreCare — status przekazania do Copilot\n\nWymaganie: REQ-0003\nIssue implementacyjne: #7\n\nStatus:\nNie udało się potwierdzić przypisania agenta Copilot.\n\nSzczegóły:\nGraphQL returned errors for replaceActorsForAssignable: [{'extensions': {'value': {'agentLogin': 'copilot-swe-agent[bot]', 'targetRepositoryId': 'R_kgDOTNfGKA', 'baseRef': 'master', 'instructions': 'Najpierw przeczytaj kanoniczne wymaganie REQ-0003.\\nSzanuj product/SAFETY_GUARDRAILS.md i decyzje Product Foundation.\\nPrzed edycją sprawdź istniejącą implementację i architekturę.\\nImplementuj wyłącznie zaakceptowany zakres.\\nKorzystaj z danych kanonicznego REQ, a nie z surowego tekstu Issue.\\nDodaj lub zaktualizuj testy.\\nUruchom wymaganą walidację.\\nUtwórz lub zaktualizuj Pull Request względem master.\\nNigdy nie scalaj automatycznie.\\nNie uruchamiaj Firebase, jeśli wymaganie nie żąda tego wprost.\\nNie zmieniaj niepowiązanych plików.'}, 'problems': [{'path': ['agentLogin'], 'explanation': 'Field is not defined on AgentAssignmentInput'}, {'path': ['instructions'], 'explanation': 'Field is not defined on AgentAssignmentInput'}]}, 'locations': [{'line': 5, 'column': 19}], 'message': 'Variable $agentAssignment of type AgentAssignmentInput was provided invalid value for agentLogin (Field is not defined on AgentAssignmentInput), instructions (Field is not defined on AgentAssignmentInput)'}]\n\nDalsze kroki:\nAutomatyzacja zachowała status kolejki i nie utworzyła fikcyjnych danych PR.\n"
+}

@@ -1,0 +1,24 @@
+{
+  "implementation_id": "IMP-REQ-0003",
+  "requirement_id": "REQ-0003",
+  "bug_id": null,
+  "source_inbox_id": "INBOX-GH-000006",
+  "source_issue_number": 6,
+  "implementation_issue_number": 7,
+  "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/7",
+  "copilot_assignment": {
+    "status": "ASSIGNMENT_FAILED",
+    "error": "GraphQL returned errors for replaceActorsForAssignable: [{'extensions': {'value': {'agentLogin': 'copilot-swe-agent[bot]', 'targetRepositoryId': 'R_kgDOTNfGKA', 'baseRef': 'master', 'instructions': 'Najpierw przeczytaj kanoniczne wymaganie REQ-0003.\\nSzanuj product/SAFETY_GUARDRAILS.md i decyzje Product Foundation.\\nPrzed edycją sprawdź istniejącą implementację i architekturę.\\nImplementuj wyłącznie zaakceptowany zakres.\\nKorzystaj z danych kanonicznego REQ, a nie z surowego tekstu Issue.\\nDodaj lub zaktualizuj testy.\\nUruchom wymaganą walidację.\\nUtwórz lub zaktualizuj Pull Request względem master.\\nNigdy nie scalaj automatycznie.\\nNie uruchamiaj Firebase, jeśli wymaganie nie żąda tego wprost.\\nNie zmieniaj niepowiązanych plików.'}, 'problems': [{'path': ['agentLogin'], 'explanation': 'Field is not defined on AgentAssignmentInput'}, {'path': ['instructions'], 'explanation': 'Field is not defined on AgentAssignmentInput'}]}, 'locations': [{'line': 5, 'column': 19}], 'message': 'Variable $agentAssignment of type AgentAssignmentInput was provided invalid value for agentLogin (Field is not defined on AgentAssignmentInput), instructions (Field is not defined on AgentAssignmentInput)'}]"
+  },
+  "branch": null,
+  "pull_request_number": null,
+  "pull_request_url": null,
+  "status": "QUEUED",
+  "created_at": "2026-09-02",
+  "attempt_count": 0,
+  "last_ci_result": "UNKNOWN",
+  "validation_state": "PENDING",
+  "acceptance_test_ids": [],
+  "ci_failures": [],
+  "updated_at": "2026-09-02T19:08:01Z"
+}

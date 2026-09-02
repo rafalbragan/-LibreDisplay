@@ -1,0 +1,134 @@
+id: REQ-0003
+title: Product Review powinien, gdy zgłoszenie odwołuje się do istniejącej funkcji
+  lub konkretnego raportu, wykonać jawny, r...
+status: ACCEPTED
+problem: Product Review ma potwierdzony problem z rozdzieleniem źródeł decyzji produktowych
+  od read-only dowodów stanu implementacji. W przypadku Futures wcześniejsza analiza
+  błędnie uznała brak dowodu istnienia funkcji, mimo że repozytorium zawiera ekran,
+  ViewModel, testy i integrację nawigacji. Nie jest to jednak dowód, że wszystkie
+  twierdzenia ze zgłoszenia, w szczególności raport futures-and-perspectives-inventory.md
+  i częściowa implementacja sześciu pomysłów, są obecnie dostępne lub potwierdzone.
+target_personas:
+- unknown
+target_modes:
+- unknown
+target_modules:
+- unknown
+linked_observations: []
+user_outcome: Dokładniejszy Product Review ograniczy błędne klasyfikowanie istniejących
+  funkcji jako niejednoznacznych, zmniejszy duplikację pracy i poprawi jakość decyzji
+  człowieka. Jednocześnie jawne rozdzielenie dowodu implementacji od Product Foundation
+  pozwoli uniknąć uznawania prototypu za zaakceptowaną funkcję.
+solution_options:
+- id: opt-primary
+  summary: 'Product Review powinien, gdy zgłoszenie odwołuje się do istniejącej funkcji
+    lub konkretnego raportu, wykonać jawny, read-only przegląd odpowiednich dowodów
+    repozytorium: kodu, nawigacji, testów i dostępnych raportów technicznych. Wynik
+    powinien rozdzielać: potwierdzony stan implementacji, stan zwalidowanej capability,
+    decyzje Product Foundation, niepewności oraz brakujące dowody. Dowody implementacji
+    nie mogą automatycznie tworzyć, akceptować ani zmieniać wymagania, decyzji, statusu
+    ani zakresu wdrożenia. Należy dodać kontraktowy test obecności dowodów i test
+    negatywny potwierdzający zachowanie granicy decyzyjnej.'
+  pros:
+  - Bezpośrednio adresuje zaakceptowany problem z Product Inbox
+  cons:
+  - Automatyczne analizowanie kodu i raportów może zwiększyć złożoność, ujawnić nieaktualne
+    lub sprzeczne źródła oraz stworzyć pozorne poczucie pewności. W repozytorium może
+    istnieć kod martwy, testowy albo prototypowy, więc samo znalezienie klasy lub
+    testu nie potwierdza dostępności, jakości ani wartości funkcji. Rozszerzenie zakresu
+    review może też odciągnąć uwagę od priorytetów fazy foundation.
+- id: opt-minimal
+  summary: Nie rozszerzać od razu pełnej analizy semantycznej repozytorium. Dodać
+    deterministyczny manifest dowodów dla zgłoszonych identyfikatorów, sprawdzający
+    istnienie wskazanych plików, symboli, testów i raportów oraz podający ich ścieżki.
+    Product Review używa manifestu wyłącznie jako dowodu stanu, a w przypadku braku
+    lub sprzeczności oznacza ograniczenie i pozostawia decyzję człowiekowi.
+  pros:
+  - Potencjalnie mniejszy koszt implementacji
+  cons:
+  - Może nie rozwiązać w pełni zaakceptowanego problemu
+recommended_option: opt-primary
+counterargument: Automatyczne analizowanie kodu i raportów może zwiększyć złożoność,
+  ujawnić nieaktualne lub sprzeczne źródła oraz stworzyć pozorne poczucie pewności.
+  W repozytorium może istnieć kod martwy, testowy albo prototypowy, więc samo znalezienie
+  klasy lub testu nie potwierdza dostępności, jakości ani wartości funkcji. Rozszerzenie
+  zakresu review może też odciągnąć uwagę od priorytetów fazy foundation.
+scores:
+  safety: 5
+  caregiver_value: 3
+  senior_value: 3
+  clinician_value: 3
+  frequency: 5
+  confidence: 5
+  complexity: 5
+  strategy_alignment: 6
+safety_implications: LOW
+acceptance_criteria:
+- 'Product Review powinien, gdy zgłoszenie odwołuje się do istniejącej funkcji lub
+  konkretnego raportu, wykonać jawny, read-only przegląd odpowiednich dowodów repozytorium:
+  kodu, nawigacji, testów i dostępnych raportów technicznych. Wynik powinien rozdzielać:
+  potwierdzony stan implementacji, stan zwalidowanej capability, decyzje Product Foundation,
+  niepewności oraz brakujące dowody. Dowody implementacji nie mogą automatycznie tworzyć,
+  akceptować ani zmieniać wymagania, decyzji, statusu ani zakresu wdrożenia. Należy
+  dodać kontraktowy test obecności dowodów i test negatywny potwierdzający zachowanie
+  granicy decyzyjnej.'
+- Nie rozszerzono zakresu poza kanoniczne wymaganie.
+- Dodano lub zaktualizowano testy oraz utrzymano brak regresji.
+test_plan:
+- python scripts/product/product_cli.py validate
+- python scripts/product/product_cli.py summary
+- ./gradlew testDebugUnitTest --rerun-tasks
+- ./gradlew lintDebug
+- ./gradlew assembleDebug
+- ./gradlew assembleDebugAndroidTest
+human_decision: ACCEPT
+human_decision_date: '2026-09-02'
+human_decision_maker: rafalbragan
+human_decision_reason: Product Review ma potwierdzony problem z rozdzieleniem źródeł
+  decyzji produktowych od read-only dowodów stanu implementacji. W przypadku Futures
+  wcześniejsza analiza błędnie uznała brak dowodu istnienia funkcji, mimo że repozytorium
+  zawiera ekran, ViewModel, testy i integrację nawigacji. Nie jest to jednak dowód,
+  że wszystkie twierdzenia ze zgłoszenia, w szczególności raport futures-and-perspectives-inventory.md
+  i częściowa implementacja sześciu pomysłów, są obecnie dostępne lub potwierdzone.
+source_ids:
+- INBOX-GH-000006
+- GH-ISSUE-6
+source_candidate_id: CAND-INBOX-GH-000006
+source_inbox_id: INBOX-GH-000006
+source_github_issue_number: 6
+source_github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/6
+related_decisions: []
+created_at: '2026-09-02'
+implementation:
+  implementation_id: IMP-REQ-0003
+  source_inbox_id: INBOX-GH-000006
+  source_inbox_issue_number: 6
+  source_inbox_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/6
+  implementation_status: QUEUED
+  validation_state: PENDING
+  implementation_issue:
+    number: 7
+    url: https://github.com/rafalbragan/-LibreDisplay/issues/7
+    title: '[Implementacja] REQ-0003 — Product Review powinien, gdy zgłoszenie odwołuje
+      się do istniejącej funkcji lub konkretnego raportu, wykonać jawny, r'
+    agent_assignment:
+      status: ASSIGNMENT_FAILED
+      error: 'GraphQL returned errors for replaceActorsForAssignable: [{''extensions'':
+        {''value'': {''agentLogin'': ''copilot-swe-agent[bot]'', ''targetRepositoryId'':
+        ''R_kgDOTNfGKA'', ''baseRef'': ''master'', ''instructions'': ''Najpierw przeczytaj
+        kanoniczne wymaganie REQ-0003.\nSzanuj product/SAFETY_GUARDRAILS.md i decyzje
+        Product Foundation.\nPrzed edycją sprawdź istniejącą implementację i architekturę.\nImplementuj
+        wyłącznie zaakceptowany zakres.\nKorzystaj z danych kanonicznego REQ, a nie
+        z surowego tekstu Issue.\nDodaj lub zaktualizuj testy.\nUruchom wymaganą walidację.\nUtwórz
+        lub zaktualizuj Pull Request względem master.\nNigdy nie scalaj automatycznie.\nNie
+        uruchamiaj Firebase, jeśli wymaganie nie żąda tego wprost.\nNie zmieniaj niepowiązanych
+        plików.''}, ''problems'': [{''path'': [''agentLogin''], ''explanation'': ''Field
+        is not defined on AgentAssignmentInput''}, {''path'': [''instructions''],
+        ''explanation'': ''Field is not defined on AgentAssignmentInput''}]}, ''locations'':
+        [{''line'': 5, ''column'': 19}], ''message'': ''Variable $agentAssignment
+        of type AgentAssignmentInput was provided invalid value for agentLogin (Field
+        is not defined on AgentAssignmentInput), instructions (Field is not defined
+        on AgentAssignmentInput)''}]'
+    updated_at: '2026-09-02T19:08:01Z'
+  implementation_pr: {}
+  copilot_handoff_allowed: true
