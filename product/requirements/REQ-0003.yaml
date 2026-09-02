@@ -113,10 +113,8 @@ implementation:
       się do istniejącej funkcji lub konkretnego raportu, wykonać jawny, r'
     agent_assignment:
       status: ASSIGNMENT_FAILED
-      error: 'GraphQL returned errors for replaceActorsForAssignable: [{''type'':
-        ''FORBIDDEN'', ''path'': [''replaceActorsForAssignable''], ''locations'':
-        [{''line'': 7, ''column'': 19}], ''message'': ''Copilot agent is not enabled
-        in this repository.''}]'
-    updated_at: '2026-09-02T22:22:57Z'
+      error: Copilot assignee was not confirmed after GraphQL mutation; mutation_assignees=['Copilot'],
+        issue_assignees=['Copilot']
+    updated_at: '2026-09-02T22:33:54Z'
   implementation_pr: {}
   copilot_handoff_allowed: true

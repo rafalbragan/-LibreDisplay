@@ -6,5 +6,5 @@
   "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/7",
   "blocked": false,
   "copilot_real_assignee_confirmed": false,
-  "comment_markdown": "<!-- LIBRECARE_COPILOT_ASSIGNMENT_STATUS -->\n## LibreCare — status przekazania do Copilot\n\nWymaganie: REQ-0003\nIssue implementacyjne: #7\n\nStatus:\nNie udało się potwierdzić przypisania agenta Copilot.\n\nSzczegóły:\nGraphQL returned errors for replaceActorsForAssignable: [{'type': 'FORBIDDEN', 'path': ['replaceActorsForAssignable'], 'locations': [{'line': 7, 'column': 19}], 'message': 'Copilot agent is not enabled in this repository.'}]\n\nDalsze kroki:\nAutomatyzacja zachowała status kolejki i nie utworzyła fikcyjnych danych PR.\n"
+  "comment_markdown": "<!-- LIBRECARE_COPILOT_ASSIGNMENT_STATUS -->\n## LibreCare — status przekazania do Copilot\n\nWymaganie: REQ-0003\nIssue implementacyjne: #7\n\nStatus:\nNie udało się potwierdzić przypisania agenta Copilot.\n\nSzczegóły:\nCopilot assignee was not confirmed after GraphQL mutation; mutation_assignees=['Copilot'], issue_assignees=['Copilot']\n\nDalsze kroki:\nAutomatyzacja zachowała status kolejki i nie utworzyła fikcyjnych danych PR.\n"
 }
