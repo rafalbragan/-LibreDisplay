@@ -38,6 +38,7 @@ class ProductCliInboxTest(unittest.TestCase):
         class FakeGitHubClient:
             created_issues = []
             assigned = []
+            assignment_tokens = []
             labels = []
             next_issue_number = 500
             issue_assignees = {}
@@ -88,6 +89,7 @@ class ProductCliInboxTest(unittest.TestCase):
             def assign_copilot(self, issue_number: int, base_branch: str, instructions: str):
                 if self.__class__.assign_should_fail:
                     raise RuntimeError("GraphQL assignment failed: missing feature preview")
+                self.__class__.assignment_tokens.append(self.token)
                 logins = set(self.__class__.issue_assignees.get(issue_number, []))
                 logins.add("copilot-swe-agent[bot]")
                 self.__class__.issue_assignees[issue_number] = sorted(logins)
@@ -107,6 +109,7 @@ class ProductCliInboxTest(unittest.TestCase):
         self.cli.GITHUB_CLIENT_FACTORY = FakeGitHubClient
         self.fake_client.created_issues = []
         self.fake_client.assigned = []
+        self.fake_client.assignment_tokens = []
         self.fake_client.labels = []
         self.fake_client.next_issue_number = 500
         self.fake_client.issue_assignees = {}
@@ -245,7 +248,7 @@ class ProductCliInboxTest(unittest.TestCase):
             code = self.cli.cmd_inbox_handle_decision(str(event_file))
         return code, stdout.getvalue()
 
-    def run_handoff(self, event: dict, output_name: str = "handoff.json") -> dict:
+    def run_handoff(self, event: dict, output_name: str = "handoff.json", copilot_assignment_token: str = "copilot-user-token") -> dict:
         event_file = self.root / "comment-event.json"
         output_file = self.root / output_name
         self.write_json(event_file, event)
@@ -255,6 +258,7 @@ class ProductCliInboxTest(unittest.TestCase):
                 repo_owner="example",
                 repo_name="repo",
                 github_token="token",
+                copilot_assignment_token=copilot_assignment_token,
                 output_file=str(output_file),
             )
         self.assertEqual(0, result)
@@ -291,6 +295,8 @@ class ProductCliInboxTest(unittest.TestCase):
                 f"--repo-name={repo_name}",
                 "--github-token",
                 "token",
+                "--copilot-assignment-token",
+                "user-token",
             ])
         finally:
             self.cli.cmd_inbox_sync_implementation_handoff = original
@@ -622,6 +628,30 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(1, len(self.fake_client.created_issues))
         self.assertEqual(1, len(self.fake_client.assigned))
 
+    def test_assignment_uses_dedicated_user_token(self):
+        event = self.make_issue_event(246, "Problem", "User token for Copilot assignment")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(246, self.ai_payload(246, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        summary = self.run_handoff(decision_event, output_name="handoff-user-token.json", copilot_assignment_token="copilot-user-token")
+        self.assertEqual("AGENT_ASSIGNED", summary["status"])
+        self.assertEqual(["copilot-user-token"], self.fake_client.assignment_tokens)
+
+    def test_missing_assignment_token_keeps_queue_and_posts_polish_comment(self):
+        event = self.make_issue_event(247, "Problem", "Missing Copilot user token")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(247, self.ai_payload(247, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        summary = self.run_handoff(decision_event, output_name="handoff-missing-user-token.json", copilot_assignment_token="")
+        self.assertEqual("QUEUED", summary["status"])
+        self.assertFalse(summary["copilot_real_assignee_confirmed"])
+        self.assertEqual([], self.fake_client.assignment_tokens)
+        self.assertIn("COPILOT_AGENT_USER_TOKEN", summary.get("comment_markdown", ""))
+
     def test_existing_implementation_record_issue_is_reused_without_search_or_create(self):
         event = self.make_issue_event(243, "Problem", "Reuse issue from IMP record")
         self.assertEqual(0, self.run_import(event))
@@ -707,12 +737,14 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(0, rc)
         self.assertEqual("rafalbragan", captured["repo_owner"])
         self.assertEqual("LibreDisplay", captured["repo_name"])
+        self.assertEqual("user-token", captured["copilot_assignment_token"])
 
     def test_handoff_cli_parses_repo_name_with_leading_hyphen(self):
         rc, captured = self.parse_handoff_args("-LibreDisplay")
         self.assertEqual(0, rc)
         self.assertEqual("rafalbragan", captured["repo_owner"])
         self.assertEqual("-LibreDisplay", captured["repo_name"])
+        self.assertEqual("user-token", captured["copilot_assignment_token"])
 
     def test_owner_and_repo_name_extract_correctly_from_full_repository(self):
         full_repository = "rafalbragan/-LibreDisplay"
@@ -1247,6 +1279,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("customInstructions", text)
         self.assertNotIn('"agentLogin": COPILOT_AGENT_LOGIN', text)
         self.assertNotIn('"instructions": instructions', text)
+        self.assertIn("copilot_assignment_token", text)
 
     def test_workflows_use_safe_repo_argument_shape_for_leading_hyphen_names(self):
         inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -1254,6 +1287,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
         self.assertIn('--repo-name="${{ github.event.repository.name }}"', inbox_text)
         self.assertIn("'--repo-name=${{ github.event.repository.name }}'", inbox_text)
+        self.assertIn('--copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN"', inbox_text)
         self.assertNotIn('--repo-name "${{ github.event.repository.name }}"', inbox_text)
         self.assertNotIn("'--repo-name','${{ github.event.repository.name }}'", inbox_text)
 
@@ -1261,6 +1295,12 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("'--repo-name=${{ github.event.repository.name }}'", bug_text)
         self.assertNotIn('--repo-name "${{ github.event.repository.name }}"', bug_text)
         self.assertNotIn("'--repo-name','${{ github.event.repository.name }}'", bug_text)
+
+    def test_workflow_uses_user_token_for_agent_assignment(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}", text)
+        self.assertIn('--copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN"', text)
+        self.assertNotIn('--copilot-assignment-token "$GITHUB_TOKEN"', text)
 
     def test_workflow_decision_fallback_comment_is_polish(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")

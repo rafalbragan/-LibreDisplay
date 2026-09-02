@@ -1302,6 +1302,7 @@ def sync_requirement_handoff(
     repo_owner: str,
     repo_name: str,
     github_token: str,
+    copilot_assignment_token: str | None = None,
     base_branch: str = DEFAULT_BASE_BRANCH,
 ) -> dict:
     implementation = ensure_requirement_implementation_block(requirement)
@@ -1379,11 +1380,20 @@ def sync_requirement_handoff(
         "Nie zmieniaj niepowiązanych plików.",
     ])
     assignment_error = None
-    try:
-        assignment = client.assign_copilot(int(github_issue["number"]), base_branch=base_branch, instructions=instructions)
-    except RuntimeError as exc:
-        assignment = {"status": "ASSIGNMENT_FAILED", "error": str(exc)}
-        assignment_error = str(exc)
+    assignment_token = str(copilot_assignment_token or "").strip()
+    if not assignment_token:
+        assignment_error = (
+            "Brak skonfigurowanego sekretu COPILOT_AGENT_USER_TOKEN. "
+            "Automatyzacja pozostawia status w kolejce do czasu dodania tokenu użytkownika."
+        )
+        assignment = {"status": "ASSIGNMENT_FAILED", "error": assignment_error}
+    else:
+        assignment_client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, assignment_token)
+        try:
+            assignment = assignment_client.assign_copilot(int(github_issue["number"]), base_branch=base_branch, instructions=instructions)
+        except RuntimeError as exc:
+            assignment = {"status": "ASSIGNMENT_FAILED", "error": str(exc)}
+            assignment_error = str(exc)
 
     if assignment.get("status") != "ASSIGNED":
         implementation["implementation_issue"] = {
@@ -2104,6 +2114,7 @@ def cmd_inbox_sync_implementation_handoff(
     repo_owner: str,
     repo_name: str,
     github_token: str,
+    copilot_assignment_token: str | None = None,
     base_branch: str = DEFAULT_BASE_BRANCH,
     output_file: str | None = None,
 ) -> int:
@@ -2139,6 +2150,7 @@ def cmd_inbox_sync_implementation_handoff(
         repo_owner=repo_owner,
         repo_name=repo_name,
         github_token=github_token,
+        copilot_assignment_token=copilot_assignment_token,
         base_branch=base_branch,
     )
     handoff_file = IMPLEMENTATION_HANDOFFS_DIR / f"{summary['req_id']}.json"
@@ -3052,6 +3064,12 @@ def main(argv=None) -> int:
     inbox_handoff.add_argument("--repo-owner", required=True, help="GitHub repository owner")
     inbox_handoff.add_argument("--repo-name", required=True, help="GitHub repository name")
     inbox_handoff.add_argument("--github-token", required=True, help="GitHub token with issue write permission")
+    inbox_handoff.add_argument(
+        "--copilot-assignment-token",
+        required=False,
+        default="",
+        help="User token used only for Copilot coding-agent assignment GraphQL calls",
+    )
     inbox_handoff.add_argument("--base-branch", required=False, default=DEFAULT_BASE_BRANCH, help="Base branch for Copilot implementation work")
     inbox_handoff.add_argument("--output-file", required=False, help="Optional JSON output path")
 
@@ -3098,6 +3116,7 @@ def main(argv=None) -> int:
             repo_owner=args.repo_owner,
             repo_name=args.repo_name,
             github_token=args.github_token,
+            copilot_assignment_token=args.copilot_assignment_token,
             base_branch=args.base_branch,
             output_file=args.output_file,
         )
