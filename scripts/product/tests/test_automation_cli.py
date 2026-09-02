@@ -63,6 +63,10 @@ class AutomationCliTest(unittest.TestCase):
 		shutil.copytree(WORKSPACE_ROOT / "product", self.root / "product")
 		(self.root / "product" / "bugs").mkdir(exist_ok=True)
 		(self.root / "product" / "implementation").mkdir(exist_ok=True)
+		for bug_path in (self.root / "product" / "bugs").glob("BUG-*.json"):
+			bug_path.unlink()
+		for impl_path in (self.root / "product" / "implementation").glob("IMP-BUG-*.json"):
+			impl_path.unlink()
 
 		self.cli.ROOT = self.root
 		self.cli.PRODUCT = self.root / "product"
@@ -94,6 +98,9 @@ class AutomationCliTest(unittest.TestCase):
 
 	def read_json(self, path: Path) -> dict:
 		return json.loads(path.read_text(encoding="utf-8"))
+
+	def bug_impl_paths(self) -> list[Path]:
+		return sorted((self.root / "product" / "implementation").glob("IMP-BUG-*.json"))
 
 	def bug_issue_event(self, number: int, title: str, observed: str, expected: str, reproduction: str) -> dict:
 		body = "\n".join([
@@ -239,6 +246,7 @@ class AutomationCliTest(unittest.TestCase):
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertEqual("GITHUB_BUG_ISSUE", bug["source"])
 		self.assertEqual(5, bug["source_issue_number"])
+		self.assertEqual([], self.bug_impl_paths())
 
 	def test_product_inbox_issue_is_not_routed_as_bug(self):
 		event = self.issue_event(
@@ -299,6 +307,7 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(first_id, second_id)
 		bug_files = sorted((self.root / "product" / "bugs").glob("BUG-*.json"))
 		self.assertEqual(1, len(bug_files))
+		self.assertEqual([], self.bug_impl_paths())
 
 	def test_new_behavior_routes_to_product_decision_and_no_fix(self):
 		bug_id = self.import_bug(
@@ -320,6 +329,7 @@ class AutomationCliTest(unittest.TestCase):
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertEqual("NEEDS_PRODUCT_DECISION", bug["status"])
 		self.assertEqual(0, len(FakeGitHubClient.created_issues))
+		self.assertEqual([], self.bug_impl_paths())
 
 	def test_safety_semantics_change_routes_to_product_decision(self):
 		bug_id = self.import_bug(
@@ -359,6 +369,7 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertEqual("TRIAGED", bug["status"])
+		self.assertEqual([], self.bug_impl_paths())
 
 	def test_duplicate_bug_does_not_create_duplicate_fix_or_record(self):
 		first = self.import_bug(
@@ -390,6 +401,30 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 		self.assertEqual(1, len(FakeGitHubClient.assignments))
+		impl = self.read_json(self.root / "product" / "implementation" / f"IMP-{bug_id}.json")
+		self.assertIsNone(impl["source_inbox_id"])
+		self.assertEqual(407, impl["source_issue_number"])
+
+	def test_non_confirmed_triage_removes_preexisting_bug_impl_record(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(412, "[Blad LibreCare] Wstepny import", "Objaw", "Oczekiwanie", "1. Repro")
+		)
+		# Simulate stale state from older automation runs.
+		self.cli.ensure_bug_impl(self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json"))
+		self.assertTrue((self.root / "product" / "implementation" / f"IMP-{bug_id}.json").exists())
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "INCONCLUSIVE",
+				"reasoning": "Brak wystarczajacych danych.",
+				"severity": "LOW",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		self.assertFalse((self.root / "product" / "implementation" / f"IMP-{bug_id}.json").exists())
 
 	def test_bug_pr_ci_failure_uses_bounded_repair_loop(self):
 		bug_id = self.import_bug(

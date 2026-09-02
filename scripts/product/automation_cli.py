@@ -337,7 +337,8 @@ def ensure_bug_impl(bug: dict) -> dict:
         "implementation_id": f"IMP-{bug['bug_id']}",
         "requirement_id": None,
         "bug_id": bug["bug_id"],
-        "source_inbox_id": bug.get("source_reference"),
+        # Bug issues are canonical bug sources, not Product Inbox items.
+        "source_inbox_id": None,
         "source_issue_number": bug.get("source_issue_number"),
         "implementation_issue_number": (bug.get("implementation_issue") or {}).get("number"),
         "implementation_issue_url": (bug.get("implementation_issue") or {}).get("url"),
@@ -498,7 +499,6 @@ def cmd_bug_import(event_file: str) -> int:
     if fields.get("context"):
         bug["additional_context"] = fields["context"]
     bug, action = create_or_deduplicate_bug(bug)
-    ensure_bug_impl(bug)
     print(json.dumps({"bug_id": bug["bug_id"], "status": bug["status"], "action": action}, ensure_ascii=False))
     return 0
 
@@ -542,6 +542,11 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
         "requires_behavior_change": requires_change,
         "safety_requires_product_decision": safety_requires_product,
     }
+    if bug["classification"] != "CONFIRMED_DEFECT":
+        # Non-confirmed outcomes must not stay in implementation/fix tracking.
+        stale_impl = impl_path(f"IMP-{bug_id}")
+        if stale_impl.exists():
+            stale_impl.unlink()
     bug["updated_at"] = now_iso()
     write_json(bug_path, bug)
     write_json(BUG_REVIEWS_DIR / f"{bug_id}.json", {"bug_id": bug_id, "classification": bug["classification"], "status": bug["status"], "generated_at": now_iso()})
@@ -569,7 +574,6 @@ def cmd_bug_create(source: str, source_reference: str, title: str, observed_beha
         safety_impact=safety_impact,
     )
     bug, action = create_or_deduplicate_bug(bug)
-    ensure_bug_impl(bug)
     print(json.dumps({"bug_id": bug["bug_id"], "status": bug["status"], "action": action}, ensure_ascii=False))
     return 0
 
@@ -584,6 +588,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
         return 1
     issue = bug.get("implementation_issue") or {}
     if issue.get("number") and issue.get("assigned_agent") == COPILOT_AGENT_LOGIN:
+        ensure_bug_impl(bug)
         summary = {"bug_id": bug_id, "status": bug.get("status"), "implementation_issue_number": int(issue["number"]), "implementation_issue_url": issue.get("url"), "blocked": False}
         if output_file:
             write_json(Path(output_file), summary)

@@ -206,7 +206,7 @@ class ProductCliInboxTest(unittest.TestCase):
     def run_decision(self, event: dict) -> int:
         event_file = self.root / "comment-event.json"
         self.write_json(event_file, event)
-        with self.patched_paths():
+        with self.patched_paths(), contextlib.redirect_stdout(io.StringIO()):
             return self.cli.cmd_inbox_handle_decision(str(event_file))
 
     def run_decision_with_output(self, event: dict) -> tuple[int, str]:
@@ -221,7 +221,7 @@ class ProductCliInboxTest(unittest.TestCase):
         event_file = self.root / "comment-event.json"
         output_file = self.root / output_name
         self.write_json(event_file, event)
-        with self.patched_paths():
+        with self.patched_paths(), contextlib.redirect_stdout(io.StringIO()):
             result = self.cli.cmd_inbox_sync_implementation_handoff(
                 event_file=str(event_file),
                 repo_owner="example",
@@ -594,6 +594,16 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(0, self.run_import(event))
         self.assertEqual(0, self.run_apply_ai(228, self.ai_payload(228, "PRODUCT_PROBLEM", "ACCEPT")))
         self.assertEqual(0, self.run_decision(self.make_comment_event(event, "/accept", author="repo-owner")))
+        self.assertEqual(0, self.run_validate())
+
+    def test_validate_passes_for_issue5_bug_without_implementation_record(self):
+        bug_path = self.root / "product" / "bugs" / "BUG-0001.json"
+        self.assertTrue(bug_path.exists())
+        bug = json.loads(bug_path.read_text(encoding="utf-8"))
+        self.assertEqual("GITHUB_BUG_ISSUE", bug.get("source"))
+        self.assertEqual(5, bug.get("source_issue_number"))
+        self.assertEqual("NEEDS_PRODUCT_DECISION", bug.get("status"))
+        self.assertFalse((self.root / "product" / "implementation" / "IMP-BUG-0001.json").exists())
         self.assertEqual(0, self.run_validate())
 
     def test_req0002_bootstrap_implementation_record_is_honest(self):
