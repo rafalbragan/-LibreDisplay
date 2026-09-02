@@ -42,6 +42,8 @@ class ProductCliInboxTest(unittest.TestCase):
             next_issue_number = 500
             issue_assignees = {}
             assign_should_fail = False
+            existing_issues_by_req = {}
+            find_existing_calls = 0
 
             def __init__(self, owner: str, repo: str, token: str):
                 self.owner = owner
@@ -52,6 +54,10 @@ class ProductCliInboxTest(unittest.TestCase):
                 self.__class__.labels.append((name, color, description))
 
             def find_existing_implementation_issue(self, req_id: str, expected_title: str):
+                self.__class__.find_existing_calls += 1
+                existing = self.__class__.existing_issues_by_req.get(req_id)
+                if existing is not None:
+                    return dict(existing)
                 for issue in self.__class__.created_issues:
                     if issue["req_id"] == req_id:
                         return issue["response"]
@@ -105,6 +111,8 @@ class ProductCliInboxTest(unittest.TestCase):
         self.fake_client.next_issue_number = 500
         self.fake_client.issue_assignees = {}
         self.fake_client.assign_should_fail = False
+        self.fake_client.existing_issues_by_req = {}
+        self.fake_client.find_existing_calls = 0
 
     def tearDown(self):
         self.cli.GITHUB_CLIENT_FACTORY = self.original_client_factory
@@ -614,6 +622,86 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(1, len(self.fake_client.created_issues))
         self.assertEqual(1, len(self.fake_client.assigned))
 
+    def test_existing_implementation_record_issue_is_reused_without_search_or_create(self):
+        event = self.make_issue_event(243, "Problem", "Reuse issue from IMP record")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(243, self.ai_payload(243, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        req_id = sorted([rid for rid in self.req_ids() if rid.startswith("REQ-")])[-1]
+        impl_id = f"IMP-{req_id}"
+        impl_path = self.root / "product" / "implementation" / f"{impl_id}.json"
+        impl = json.loads(impl_path.read_text(encoding="utf-8"))
+        impl["implementation_issue_number"] = 7
+        impl["implementation_issue_url"] = "https://github.com/example/repo/issues/7"
+        impl["copilot_assignment"] = {}
+        impl["status"] = "QUEUED"
+        self.write_json(impl_path, impl)
+
+        req_path = self.root / "product" / "requirements" / f"{req_id}.yaml"
+        requirement = self.cli.load_yaml(req_path)
+        requirement["implementation"]["implementation_issue"] = {}
+        requirement["implementation"]["implementation_status"] = "QUEUED"
+        self.cli.save_yaml(req_path, requirement)
+
+        self.fake_client.issue_assignees[7] = []
+        summary = self.run_handoff(decision_event, output_name="handoff-imp-reuse.json")
+        self.assertEqual(7, summary["implementation_issue_number"])
+        self.assertEqual(0, self.fake_client.find_existing_calls)
+        self.assertEqual(0, len(self.fake_client.created_issues))
+        self.assertEqual(1, len(self.fake_client.assigned))
+        self.assertEqual(7, self.fake_client.assigned[0]["issue_number"])
+
+    def test_existing_issue_lookup_by_req_identity_reuses_issue(self):
+        event = self.make_issue_event(244, "Problem", "Lookup issue by REQ label")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(244, self.ai_payload(244, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        req_id = sorted([rid for rid in self.req_ids() if rid.startswith("REQ-")])[-1]
+        self.fake_client.existing_issues_by_req[req_id] = {
+            "number": 7,
+            "html_url": "https://github.com/example/repo/issues/7",
+            "title": f"[Implementacja] {req_id} — Existing",
+            "labels": [{"name": "implementation"}, {"name": req_id}, {"name": "copilot"}],
+            "body": f"<!-- LIBRECARE_REQUIREMENT_ID: {req_id} -->",
+        }
+        self.fake_client.issue_assignees[7] = []
+
+        summary = self.run_handoff(decision_event, output_name="handoff-lookup-reuse.json")
+        self.assertEqual(7, summary["implementation_issue_number"])
+        self.assertEqual(1, self.fake_client.find_existing_calls)
+        self.assertEqual(0, len(self.fake_client.created_issues))
+        self.assertEqual(1, len(self.fake_client.assigned))
+
+    def test_existing_issue_with_confirmed_assignee_skips_duplicate_assignment(self):
+        event = self.make_issue_event(245, "Problem", "No duplicate assignment")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(245, self.ai_payload(245, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        req_id = sorted([rid for rid in self.req_ids() if rid.startswith("REQ-")])[-1]
+        req_path = self.root / "product" / "requirements" / f"{req_id}.yaml"
+        requirement = self.cli.load_yaml(req_path)
+        requirement["implementation"]["implementation_issue"] = {
+            "number": 7,
+            "url": "https://github.com/example/repo/issues/7",
+            "title": f"[Implementacja] {req_id}",
+            "agent_assignment": {"status": "ASSIGNED"},
+        }
+        requirement["implementation"]["implementation_status"] = "QUEUED"
+        self.cli.save_yaml(req_path, requirement)
+        self.fake_client.issue_assignees[7] = ["copilot-swe-agent[bot]"]
+
+        summary = self.run_handoff(decision_event, output_name="handoff-already-assigned.json")
+        self.assertTrue(summary["copilot_real_assignee_confirmed"])
+        self.assertEqual("AGENT_ASSIGNED", summary["status"])
+        self.assertEqual(0, len(self.fake_client.assigned))
+        self.assertEqual(0, len(self.fake_client.created_issues))
+
     def test_handoff_cli_parses_repo_name_without_hyphen(self):
         rc, captured = self.parse_handoff_args("LibreDisplay")
         self.assertEqual(0, rc)
@@ -1027,6 +1115,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_product_cli_uses_graphql_assignment_mutations(self):
         text = CLI_PATH.read_text(encoding="utf-8")
+        self.assertIn("def find_existing_implementation_issue", text)
         self.assertIn("addAssigneesToAssignable", text)
         self.assertIn("replaceActorsForAssignable", text)
         self.assertIn("GraphQL-Features", text)

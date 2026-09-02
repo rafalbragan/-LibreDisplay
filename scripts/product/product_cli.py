@@ -1115,6 +1115,28 @@ class GitHubIssueAutomationClient:
                 {"name": name, "color": color, "description": description},
             )
 
+    def find_existing_implementation_issue(self, req_id: str, expected_title: str) -> dict | None:
+        encoded_labels = urllib_parse.quote(f"{req_id},implementation", safe="")
+        issues = self._request(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/issues?state=all&labels={encoded_labels}&per_page=100",
+        )
+        for issue in issues or []:
+            if issue.get("pull_request"):
+                continue
+            labels = {
+                str((entry or {}).get("name", "")).strip()
+                for entry in (issue.get("labels") or [])
+                if isinstance(entry, dict)
+            }
+            if req_id not in labels or "implementation" not in labels:
+                continue
+            title = str(issue.get("title", ""))
+            body = str(issue.get("body", ""))
+            if title == expected_title or req_id in title or f"LIBRECARE_REQUIREMENT_ID: {req_id}" in body:
+                return issue
+        return None
+
     def get_issue(self, issue_number: int) -> dict:
         return self._request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
 
@@ -1308,12 +1330,11 @@ def sync_requirement_handoff(
     labels = ["implementation", "copilot", requirement["id"]]
     issue_info = implementation.get("implementation_issue") or {}
     existing_impl = load_implementation_record(implementation.get("implementation_id")) or {}
-    if existing_impl.get("implementation_issue_number") and existing_impl.get("copilot_assignment") and issue_info.get("number") is None:
+    if existing_impl.get("implementation_issue_number") and issue_info.get("number") is None:
         implementation["implementation_issue"] = {
             "number": existing_impl.get("implementation_issue_number"),
             "url": existing_impl.get("implementation_issue_url"),
             "title": title,
-            "assigned_agent": COPILOT_AGENT_LOGIN,
             "agent_assignment": existing_impl.get("copilot_assignment") or {},
             "updated_at": existing_impl.get("updated_at") or now_iso(),
         }
