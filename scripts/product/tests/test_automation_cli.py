@@ -250,6 +250,47 @@ class AutomationCliTest(unittest.TestCase):
 			self.cli.cmd_bug_sync_fix_handoff = original
 		return rc, captured
 
+	def workflow_run_event(self, *, workflow_name: str, conclusion: str, branch: str = "master", event_name: str = "push", run_id: str = "1001", head_sha: str = "abc123def456", pull_requests=None, run_url: str | None = None) -> dict:
+		return {
+			"workflow_run": {
+				"name": workflow_name,
+				"conclusion": conclusion,
+				"event": event_name,
+				"id": run_id,
+				"html_url": run_url or f"https://github.com/example/repo/actions/runs/{run_id}",
+				"head_sha": head_sha,
+				"head_branch": branch,
+				"pull_requests": pull_requests if pull_requests is not None else [],
+			}
+		}
+
+	def ci_regression_metadata(self, *, workflow_name: str, branch: str = "master", conclusion: str = "failure", run_id: str = "1001", head_sha: str = "abc123def456", failed_job: str = "Fast test suite", failed_step: str = "Fast test suite: Run fast suite", log_excerpt: str = ":app:compileDebugKotlin FAILED", deterministic_work_executed: bool = True, event_name: str = "push") -> dict:
+		return {
+			"workflow_name": workflow_name,
+			"conclusion": conclusion,
+			"event": event_name,
+			"branch": branch,
+			"run_id": run_id,
+			"run_url": f"https://github.com/example/repo/actions/runs/{run_id}",
+			"head_sha": head_sha,
+			"failed_job": failed_job,
+			"failed_step": failed_step,
+			"log_excerpt": log_excerpt,
+			"deterministic_work_executed": deterministic_work_executed,
+		}
+
+	def run_ci_regression_intake(self, event: dict, metadata: dict | None = None, output_name: str = "ci-regression.json") -> dict:
+		event_file = self.root / "workflow-run-event.json"
+		meta_file = self.root / "ci-regression-meta.json"
+		output_file = self.root / output_name
+		self.write_json(event_file, event)
+		metadata_arg = None
+		if metadata is not None:
+			self.write_json(meta_file, metadata)
+			metadata_arg = str(meta_file)
+		self.assertEqual(0, self.cli.cmd_ci_regression_intake(str(event_file), metadata_arg, str(output_file)))
+		return self.read_json(output_file)
+
 	def test_regression_against_requirement_queues_fix(self):
 		bug_id = self.import_bug(
 			self.bug_issue_event(401, "[Blad LibreCare] Czas wzgledny", "Widoczny surowy ISO", "Naturalny czas", "1. Otworz dashboard")
@@ -586,6 +627,138 @@ class AutomationCliTest(unittest.TestCase):
 		duplicate = self.read_json(out)
 		self.assertEqual("DEDUPLICATED", duplicate["action"])
 
+	def test_android_ci_failure_on_master_routes_to_bug_intake(self):
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2001")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="2001")
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-master-android-ci.json")
+		self.assertTrue(result["routed"])
+		self.assertEqual("CI_REGRESSION", result["source"])
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("CI_REGRESSION", bug["source"])
+		self.assertIn("workflow=Android CI", bug["source_reference"])
+		self.assertIn("run_id=2001", bug["source_reference"])
+		self.assertIn("branch=master", bug["source_reference"])
+		self.assertIn(":app:compileDebugKotlin FAILED", bug["observed_behavior"])
+		self.assertEqual([], self.bug_impl_paths())
+
+	def test_android_apk_build_failure_on_master_routes_to_bug_intake(self):
+		event = self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="2002")
+		metadata = self.ci_regression_metadata(
+			workflow_name="Android APK Build",
+			run_id="2002",
+			failed_job="Build debug APK",
+			failed_step="Build debug APK: Fail if debug APK was not created",
+			log_excerpt=":app:compileDebugKotlin FAILED",
+		)
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-master-apk-build.json")
+		self.assertTrue(result["routed"])
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("CI_REGRESSION", bug["source"])
+		self.assertIn("workflow=Android APK Build", bug["source_reference"])
+
+	def test_successful_master_ci_does_not_create_bug(self):
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="success", branch="master", run_id="2003")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", conclusion="success", run_id="2003")
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-master-success.json")
+		self.assertFalse(result["routed"])
+		self.assertEqual("NON_FAILURE_CONCLUSION", result["reason"])
+		self.assertEqual([], list((self.root / "product" / "bugs").glob("BUG-*.json")))
+
+	def test_skipped_or_cancelled_master_ci_does_not_create_bug(self):
+		for conclusion in ["skipped", "cancelled"]:
+			result = self.run_ci_regression_intake(
+				self.workflow_run_event(workflow_name="Android CI", conclusion=conclusion, branch="master", run_id=f"2004-{conclusion}"),
+				self.ci_regression_metadata(workflow_name="Android CI", conclusion=conclusion, run_id=f"2004-{conclusion}"),
+				output_name=f"ci-master-{conclusion}.json",
+			)
+			self.assertFalse(result["routed"])
+			self.assertEqual("NON_FAILURE_CONCLUSION", result["reason"])
+		self.assertEqual([], list((self.root / "product" / "bugs").glob("BUG-*.json")))
+
+	def test_pr_ci_failure_does_not_create_unrelated_master_bug(self):
+		event = self.workflow_run_event(
+			workflow_name="Android CI",
+			conclusion="failure",
+			branch="master",
+			event_name="pull_request",
+			run_id="2005",
+			pull_requests=[{"number": 77}],
+		)
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", event_name="pull_request", run_id="2005")
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-pr-failure.json")
+		self.assertFalse(result["routed"])
+		self.assertEqual("PULL_REQUEST_CI", result["reason"])
+		self.assertEqual([], list((self.root / "product" / "bugs").glob("BUG-*.json")))
+
+	def test_duplicate_workflow_run_same_conclusion_is_idempotent(self):
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2006")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="2006")
+		first = self.run_ci_regression_intake(event, metadata, output_name="ci-dup-1.json")
+		second = self.run_ci_regression_intake(event, metadata, output_name="ci-dup-2.json")
+		self.assertTrue(first["routed"])
+		self.assertTrue(second["routed"])
+		self.assertEqual(first["bug_id"], second["bug_id"])
+		self.assertEqual("CREATED", first["action"])
+		self.assertEqual("DUPLICATED_SOURCE", second["action"])
+		self.assertEqual(1, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+
+	def test_same_root_cause_across_different_runs_deduplicates_bug(self):
+		first = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2007"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="2007", head_sha="sha2007"),
+			output_name="ci-root-1.json",
+		)
+		second = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2008"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="2008", head_sha="sha2008"),
+			output_name="ci-root-2.json",
+		)
+		self.assertEqual(first["bug_id"], second["bug_id"])
+		self.assertEqual("DUPLICATED_ROOT_CAUSE", second["action"])
+
+	def test_ci_regression_source_can_be_confirmed_defect_without_req_ids(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2009"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="2009"),
+			output_name="ci-triage-source.json",
+		)
+		self.triage_bug(
+			result["bug_id"],
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "To potwierdzona regresja deterministycznego CI na master.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
+		self.assertTrue(bug["triage_traceability"]["has_ci_regression_evidence"])
+
+	def test_ci_regression_new_behavior_or_safety_change_still_routes_to_product_decision(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2010"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="2010"),
+			output_name="ci-triage-needs-product.json",
+		)
+		self.triage_bug(
+			result["bug_id"],
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Naprawa wymaga zmiany semantyki produktu.",
+				"severity": "HIGH",
+				"safety_impact": "HIGH",
+				"requires_behavior_change": True,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("NEEDS_PRODUCT_DECISION", bug["status"])
+
 	def test_three_unique_ci_failures_stop_at_failed(self):
 		bug_id = self.import_bug(
 			self.bug_issue_event(409, "[Blad LibreCare] Limit", "Regresja", "Naprawa", "1. Otworz dashboard")
@@ -749,6 +922,9 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertNotIn('"agentLogin": COPILOT_AGENT_LOGIN', text)
 		self.assertNotIn('"instructions": instructions', text)
 		self.assertNotIn('"model": "Auto"', text)
+		self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS", text)
+		self.assertIn("def cmd_ci_regression_intake", text)
+		self.assertIn('"CI_REGRESSION"', text)
 
 
 class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):

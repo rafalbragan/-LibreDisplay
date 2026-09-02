@@ -6,7 +6,7 @@ on:
   pull_request:
     types: [opened, reopened, synchronize, edited, closed]
   workflow_run:
-    workflows: ["Android CI"]
+    workflows: ["Android CI", "Android APK Build"]
     types: [completed]
 
 concurrency:
@@ -199,6 +199,160 @@ jobs:
             git commit -m "product: track automation pr #${{ github.event.pull_request.number }}"
             git pull --rebase origin "${{ github.event.pull_request.base.ref }}"
             git push origin "HEAD:${{ github.event.pull_request.base.ref }}"
+          fi
+
+  master-ci-regression-intake:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.event != 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      copilot-requests: write
+      contents: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Collect master CI regression metadata
+        id: ci_regression
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const wr = context.payload.workflow_run || {};
+            const workflowName = String(wr.name || '');
+            const conclusion = String(wr.conclusion || '').toLowerCase();
+            const branch = String(wr.head_branch || '');
+            const triggeringEvent = String(wr.event || '').toLowerCase();
+            const recognized = new Set(['Android CI', 'Android APK Build']);
+            const deterministicSignals = {
+              'Android CI': ['Fast test suite', 'Run fast suite', 'Verify build environment'],
+              'Android APK Build': ['Build debug APK', 'Build release APK', 'Fail if debug APK was not created'],
+            };
+            const jobs = recognized.has(workflowName)
+              ? await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  run_id: Number(wr.id),
+                  per_page: 100,
+                })
+              : [];
+            const failedJobs = jobs.filter(job => String(job.conclusion || '').toLowerCase() === 'failure');
+            let failedStep = '';
+            for (const job of failedJobs) {
+              const step = (job.steps || []).find(s => String(s.conclusion || '').toLowerCase() === 'failure');
+              if (step) {
+                failedStep = `${job.name}: ${step.name}`;
+                break;
+              }
+            }
+            const signalList = deterministicSignals[workflowName] || [];
+            const deterministicWorkExecuted = jobs.some(job => {
+              const haystack = [job.name, ...(job.steps || []).map(step => step.name)].join('\n');
+              return signalList.some(signal => haystack.includes(signal));
+            });
+            const meta = {
+              workflow_name: workflowName,
+              conclusion,
+              event: triggeringEvent,
+              branch,
+              run_id: String(wr.id || ''),
+              run_url: String(wr.html_url || ''),
+              head_sha: String(wr.head_sha || ''),
+              failed_job: failedJobs[0] ? String(failedJobs[0].name || '') : '',
+              failed_step: failedStep,
+              log_excerpt: failedStep || (failedJobs[0] ? String(failedJobs[0].name || '') : ''),
+              deterministic_work_executed: deterministicWorkExecuted,
+            };
+            fs.writeFileSync('ci-regression-context.json', JSON.stringify(meta));
+            const shouldRoute = recognized.has(workflowName)
+              && conclusion === 'failure'
+              && ['master', 'main'].includes(branch)
+              && triggeringEvent !== 'pull_request'
+              && deterministicWorkExecuted;
+            core.setOutput('should_route', shouldRoute ? 'true' : 'false');
+
+      - name: Create canonical CI regression bug evidence
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          python scripts/product/automation_cli.py ci-regression-intake \
+            --event-file "$GITHUB_EVENT_PATH" \
+            --metadata-file ci-regression-context.json \
+            --output-file ci-regression-result.json
+
+      - name: Detect CI regression bug id
+        if: steps.ci_regression.outputs.should_route == 'true'
+        id: bug
+        run: |
+          python -c "import json; from pathlib import Path; data=json.loads(Path('ci-regression-result.json').read_text(encoding='utf-8')); Path('ci-regression-bug-id.txt').write_text(str(data.get('bug_id','')), encoding='utf-8')"
+          echo "bug_id=$(cat ci-regression-bug-id.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Install GitHub Copilot CLI
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          npm install -g @github/copilot
+
+      - name: Copilot CLI smoke check
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          copilot --version
+          copilot --help >/dev/null
+
+      - name: Build triage prompt for CI regression bug
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          python scripts/product/automation_cli.py bug-build-ai-prompt \
+            --bug-id "${{ steps.bug.outputs.bug_id }}" \
+            --output-file bug-ai-prompt.json
+
+      - name: Run Copilot bug triage (read-only)
+        if: steps.ci_regression.outputs.should_route == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          cat bug-ai-prompt.json | copilot \
+            -s \
+            --no-ask-user \
+            --disable-builtin-mcps \
+            --available-tools='view,grep,glob' \
+            --allow-tool='read' \
+            --deny-tool='write' \
+            --deny-tool='shell' \
+            > bug-ai-review-raw.txt
+
+      - name: Apply CI regression bug triage
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          python scripts/product/automation_cli.py bug-apply-ai-triage \
+            --bug-id "${{ steps.bug.outputs.bug_id }}" \
+            --ai-review-file bug-ai-review-raw.txt > bug-triage-result.json
+
+      - name: Persist CI regression automation records
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add product/bugs product/generated product/implementation
+          if git diff --cached --quiet; then
+            echo "No Product Foundation changes to commit."
+          else
+            git commit -m "product: record master ci regression run #${{ github.event.workflow_run.id }}"
+            git pull --rebase origin master
+            git push origin HEAD:master
           fi
 
   ci-repair-loop:

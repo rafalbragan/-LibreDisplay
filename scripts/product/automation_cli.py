@@ -34,6 +34,8 @@ BUG_SOURCES = {
     "CI_REGRESSION",
     "MANUAL",
 }
+MASTER_CI_REGRESSION_WORKFLOWS = {"Android CI", "Android APK Build"}
+MASTER_CI_BRANCHES = {"master", "main"}
 
 
 def now_iso() -> str:
@@ -43,6 +45,13 @@ def now_iso() -> str:
 def read_json(path: Path) -> dict:
     with path.open(encoding="utf-8") as fh:
         return json.load(fh)
+
+
+def read_json_if_exists(path: Path | None) -> dict:
+    if path is None or not path.exists():
+        return {}
+    payload = read_json(path)
+    return payload if isinstance(payload, dict) else {}
 
 
 def write_json(path: Path, payload: dict) -> None:
@@ -288,6 +297,88 @@ def create_or_deduplicate_bug(candidate: dict) -> tuple[dict, str]:
     candidate["dedup_signature"] = signature
     write_json(BUGS_DIR / f"{candidate['bug_id']}.json", candidate)
     return candidate, "CREATED"
+
+
+def extract_workflow_run_context(event: dict, metadata: dict | None = None) -> dict:
+    workflow_run = (event or {}).get("workflow_run") or {}
+    metadata = metadata or {}
+    return {
+        "workflow_name": str(workflow_run.get("name") or metadata.get("workflow_name") or "").strip(),
+        "conclusion": str(workflow_run.get("conclusion") or metadata.get("conclusion") or "").strip().lower(),
+        "event": str(workflow_run.get("event") or metadata.get("event") or "").strip().lower(),
+        "branch": str(workflow_run.get("head_branch") or metadata.get("branch") or "").strip(),
+        "run_id": str(workflow_run.get("id") or metadata.get("run_id") or "").strip(),
+        "run_url": str(workflow_run.get("html_url") or metadata.get("run_url") or "").strip(),
+        "head_sha": str(workflow_run.get("head_sha") or metadata.get("head_sha") or "").strip(),
+        "failed_job": str(metadata.get("failed_job") or "").strip(),
+        "failed_step": str(metadata.get("failed_step") or "").strip(),
+        "log_excerpt": str(metadata.get("log_excerpt") or "").strip(),
+        "deterministic_work_executed": bool(metadata.get("deterministic_work_executed", False)),
+        "pull_requests": list(workflow_run.get("pull_requests") or []),
+    }
+
+
+def classify_master_ci_regression_route(event: dict, metadata: dict | None = None) -> tuple[bool, str, dict]:
+    context = extract_workflow_run_context(event, metadata)
+    if context["workflow_name"] not in MASTER_CI_REGRESSION_WORKFLOWS:
+        return False, "UNRECOGNIZED_WORKFLOW", context
+    if context["conclusion"] != "failure":
+        return False, "NON_FAILURE_CONCLUSION", context
+    if context["event"] == "pull_request" or context["pull_requests"]:
+        return False, "PULL_REQUEST_CI", context
+    if context["branch"] not in MASTER_CI_BRANCHES:
+        return False, "NON_MASTER_BRANCH", context
+    if not context["deterministic_work_executed"]:
+        return False, "NO_DETERMINISTIC_WORK_EVIDENCE", context
+    return True, "MASTER_CI_REGRESSION", context
+
+
+def build_ci_regression_source_reference(context: dict) -> str:
+    parts = [
+        f"workflow={context.get('workflow_name') or 'unknown'}",
+        f"run_id={context.get('run_id') or 'unknown'}",
+        f"commit={context.get('head_sha') or 'unknown'}",
+        f"branch={context.get('branch') or 'unknown'}",
+        f"conclusion={context.get('conclusion') or 'unknown'}",
+    ]
+    if context.get("failed_job"):
+        parts.append(f"job={context['failed_job']}")
+    if context.get("failed_step"):
+        parts.append(f"step={context['failed_step']}")
+    return " | ".join(parts)
+
+
+def build_ci_regression_bug_candidate(context: dict) -> dict:
+    workflow_name = context.get("workflow_name") or "Nieznany workflow"
+    branch = context.get("branch") or "unknown"
+    failure_excerpt = context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "Deterministyczny build zakończył się błędem."
+    source_reference = build_ci_regression_source_reference(context)
+    bug = build_bug_record(
+        bug_id=next_bug_id(),
+        title=f"Regresja CI: {workflow_name} / {branch}",
+        source="CI_REGRESSION",
+        source_reference=source_reference,
+        source_issue_number=None,
+        source_issue_url=context.get("run_url") or "",
+        related_requirement_ids=[],
+        related_test_ids=[],
+        observed_behavior=f"Deterministyczny workflow {workflow_name} na gałęzi {branch} kończy się błędem: {failure_excerpt}",
+        expected_behavior=f"Gałąź {branch} powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+        reproduction=f"Uruchom deterministyczny workflow {workflow_name} na gałęzi {branch} i potwierdź powtarzalny błąd.",
+        severity="HIGH",
+        safety_impact="LOW",
+    )
+    bug["additional_context"] = "\n".join([
+        f"Workflow: {workflow_name}",
+        f"Run ID: {context.get('run_id') or 'unknown'}",
+        f"Run URL: {context.get('run_url') or 'n/a'}",
+        f"Commit: {context.get('head_sha') or 'unknown'}",
+        f"Branch: {branch}",
+        f"Failed job: {context.get('failed_job') or 'n/a'}",
+        f"Failed step: {context.get('failed_step') or 'n/a'}",
+        f"Failure excerpt: {failure_excerpt}",
+    ])
+    return bug
 
 
 def is_accepted_requirement(req_id: str) -> bool:
@@ -679,7 +770,8 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     bug["triage_reasoning"] = review.get("reasoning", "")
     accepted_related = [rid for rid in related if is_accepted_requirement(rid)]
     has_test_evidence = bool(bug.get("related_test_ids"))
-    traceable = bool(accepted_related) or has_test_evidence
+    has_ci_regression_evidence = str(bug.get("source", "")).upper() == "CI_REGRESSION"
+    traceable = bool(accepted_related) or has_test_evidence or has_ci_regression_evidence
     safety_impact = str(bug.get("safety_impact", "LOW")).upper()
     safety_requires_product = safety_impact in {"MEDIUM", "HIGH"}
     if cls == "CONFIRMED_DEFECT" and traceable and not requires_change and not safety_requires_product:
@@ -694,6 +786,7 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     bug["triage_traceability"] = {
         "accepted_related_requirement_ids": accepted_related,
         "has_test_evidence": has_test_evidence,
+        "has_ci_regression_evidence": has_ci_regression_evidence,
         "requires_behavior_change": requires_change,
         "safety_requires_product_decision": safety_requires_product,
     }
@@ -730,6 +823,49 @@ def cmd_bug_create(source: str, source_reference: str, title: str, observed_beha
     )
     bug, action = create_or_deduplicate_bug(bug)
     print(json.dumps({"bug_id": bug["bug_id"], "status": bug["status"], "action": action}, ensure_ascii=False))
+    return 0
+
+
+def cmd_ci_regression_intake(event_file: str, metadata_file: str | None = None, output_file: str | None = None) -> int:
+    event = read_json(Path(event_file))
+    metadata = read_json_if_exists(Path(metadata_file) if metadata_file else None)
+    should_route, reason, context = classify_master_ci_regression_route(event, metadata)
+    if not should_route:
+        payload = {
+            "routed": False,
+            "reason": reason,
+            "workflow_name": context.get("workflow_name"),
+            "conclusion": context.get("conclusion"),
+            "branch": context.get("branch"),
+            "run_id": context.get("run_id"),
+        }
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    bug = build_ci_regression_bug_candidate(context)
+    bug, action = create_or_deduplicate_bug(bug)
+    payload = {
+        "routed": True,
+        "reason": reason,
+        "bug_id": bug.get("bug_id"),
+        "status": bug.get("status"),
+        "action": action,
+        "source": bug.get("source"),
+        "source_reference": bug.get("source_reference"),
+        "workflow_name": context.get("workflow_name"),
+        "run_id": context.get("run_id"),
+        "branch": context.get("branch"),
+        "failed_job": context.get("failed_job"),
+        "failed_step": context.get("failed_step"),
+        "log_excerpt": context.get("log_excerpt"),
+    }
+    if output_file:
+        write_json(Path(output_file), payload)
+    else:
+        print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
@@ -910,6 +1046,11 @@ def main(argv: list[str] | None = None) -> int:
     bug_create.add_argument("--severity", default="MEDIUM")
     bug_create.add_argument("--safety-impact", default="LOW")
 
+    ci_regression = sub.add_parser("ci-regression-intake")
+    ci_regression.add_argument("--event-file", required=True)
+    ci_regression.add_argument("--metadata-file")
+    ci_regression.add_argument("--output-file")
+
     bug_triage = sub.add_parser("bug-apply-ai-triage")
     bug_triage.add_argument("--bug-id", required=True)
     bug_triage.add_argument("--ai-review-file", required=True)
@@ -962,6 +1103,8 @@ def main(argv: list[str] | None = None) -> int:
             severity=args.severity,
             safety_impact=args.safety_impact,
         )
+    if args.command == "ci-regression-intake":
+        return cmd_ci_regression_intake(args.event_file, args.metadata_file, args.output_file)
     if args.command == "bug-build-ai-prompt":
         _path, bug = find_bug(args.bug_id)
         if bug is None:
