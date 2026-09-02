@@ -115,6 +115,6 @@ implementation:
       status: ASSIGNMENT_FAILED
       error: Copilot assignee was not confirmed after GraphQL mutation; mutation_assignees=['Copilot'],
         issue_assignees=['Copilot']
-    updated_at: '2026-09-02T22:33:54Z'
+    updated_at: '2026-09-02T22:45:54Z'
   implementation_pr: {}
   copilot_handoff_allowed: true
