@@ -1045,6 +1045,129 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual("2026-09-02T11:00:00Z", item["updated_at"])
 
 
+class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
+    def setUp(self):
+        self.cli = load_cli_module()
+
+    def make_client(self):
+        return self.cli.GitHubIssueAutomationClient("rafalbragan", "-LibreDisplay", "token")
+
+    def test_add_assignees_payload_uses_supported_agent_assignment_fields(self):
+        client = self.make_client()
+        captured = []
+
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+
+        def fake_graphql(query: str, variables: dict | None = None):
+            captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
+            return {
+                "data": {
+                    "addAssigneesToAssignable": {
+                        "assignable": {
+                            "number": 7,
+                            "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                        }
+                    }
+                }
+            }
+
+        client._graphql = fake_graphql
+        result = client.assign_copilot(7, "master", "Instrukcje testowe")
+
+        payload = captured[0]["variables"]
+        agent_assignment = payload["agentAssignment"]
+        self.assertIn("assigneeIds", payload)
+        self.assertEqual(["BOT_NODE_ID"], payload["assigneeIds"])
+        self.assertEqual("BOT_NODE_ID", result["assignee_ids"][0])
+        self.assertEqual("assigneeIds", result["assignee_id_field"])
+        self.assertEqual("master", agent_assignment["baseRef"])
+        self.assertEqual("R_repo", agent_assignment["targetRepositoryId"])
+        self.assertEqual("Instrukcje testowe", agent_assignment["customInstructions"])
+        self.assertNotIn("agentLogin", agent_assignment)
+        self.assertNotIn("instructions", agent_assignment)
+
+    def test_replace_actors_fallback_uses_actor_ids_and_supported_agent_assignment_fields(self):
+        client = self.make_client()
+        captured = []
+
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+
+        def fake_graphql(query: str, variables: dict | None = None):
+            captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
+            if "addAssigneesToAssignable" in query:
+                return {"errors": [{"message": "preview mismatch"}]}
+            return {
+                "data": {
+                    "replaceActorsForAssignable": {
+                        "assignable": {
+                            "number": 7,
+                            "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                        }
+                    }
+                }
+            }
+
+        client._graphql = fake_graphql
+        result = client.assign_copilot(7, "master", "Instrukcje testowe")
+
+        payload = captured[1]["variables"]
+        agent_assignment = payload["agentAssignment"]
+        self.assertIn("actorIds", payload)
+        self.assertEqual(["BOT_NODE_ID"], payload["actorIds"])
+        self.assertEqual("actorIds", result["assignee_id_field"])
+        self.assertEqual("Instrukcje testowe", agent_assignment["customInstructions"])
+        self.assertNotIn("agentLogin", agent_assignment)
+        self.assertNotIn("instructions", agent_assignment)
+
+    def test_graphql_success_without_copilot_assignee_raises(self):
+        client = self.make_client()
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number: (False, ["someone-else"])
+        client._graphql = lambda query, variables=None: {
+            "data": {
+                "addAssigneesToAssignable": {
+                    "assignable": {
+                        "number": 7,
+                        "assignees": {"nodes": [{"login": "someone-else", "id": "OTHER"}]},
+                    }
+                }
+            }
+        }
+
+        with self.assertRaisesRegex(RuntimeError, "Copilot assignee was not confirmed"):
+            client.assign_copilot(7, "master", "Instrukcje testowe")
+
+    def test_graphql_success_with_confirmed_copilot_assignee_returns_assigned(self):
+        client = self.make_client()
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+        client._graphql = lambda query, variables=None: {
+            "data": {
+                "addAssigneesToAssignable": {
+                    "assignable": {
+                        "number": 7,
+                        "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                    }
+                }
+            }
+        }
+
+        result = client.assign_copilot(7, "master", "Instrukcje testowe")
+        self.assertEqual("ASSIGNED", result["status"])
+        self.assertEqual("GRAPHQL", result["method"])
+        self.assertEqual([self.cli.COPILOT_AGENT_LOGIN], result["verified_assignees"])
+
+
 class ProductInboxWorkflowStaticTest(unittest.TestCase):
     def test_workflow_has_permissions_and_copilot_install(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -1121,6 +1244,9 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("GraphQL-Features", text)
         self.assertIn("targetRepositoryId", text)
         self.assertIn("baseRef", text)
+        self.assertIn("customInstructions", text)
+        self.assertNotIn('"agentLogin": COPILOT_AGENT_LOGIN', text)
+        self.assertNotIn('"instructions": instructions', text)
 
     def test_workflows_use_safe_repo_argument_shape_for_leading_hyphen_names(self):
         inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")

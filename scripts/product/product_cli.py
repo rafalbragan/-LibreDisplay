@@ -1247,56 +1247,49 @@ class GitHubIssueAutomationClient:
                 "variables": {"assignableId": issue_id, "actorIds": [actor_id]},
             },
         ]
-        assignment_variants = [
-            {
-                "agentId": actor_id,
-                "targetRepositoryId": repository_id,
-                "baseRef": base_branch,
-                "instructions": instructions,
-            },
-            {
-                "agentLogin": COPILOT_AGENT_LOGIN,
-                "targetRepositoryId": repository_id,
-                "baseRef": base_branch,
-                "instructions": instructions,
-            },
-        ]
+        assignment_input = {
+            "targetRepositoryId": repository_id,
+            "baseRef": base_branch,
+            "customInstructions": instructions,
+        }
 
         last_error = None
         for spec in mutation_specs:
-            for assignment_input in assignment_variants:
-                try:
-                    variables = dict(spec["variables"])
-                    variables["agentAssignment"] = assignment_input
-                    response = self._graphql(spec["query"], variables)
-                    if response.get("errors"):
-                        last_error = f"GraphQL returned errors for {spec['name']}: {response['errors']}"
-                        continue
-                    payload = (response.get("data") or {}).get(spec["name"]) or {}
-                    assignable = payload.get("assignable") or {}
-                    assignees = ((assignable.get("assignees") or {}).get("nodes") or [])
-                    assignee_logins = [str((node or {}).get("login")) for node in assignees if (node or {}).get("login")]
-                    mutation_confirmed = COPILOT_AGENT_LOGIN in assignee_logins
-                    rest_confirmed, current_logins = self._copilot_assignee_confirmed(issue_number)
-                    if mutation_confirmed and rest_confirmed:
-                        return {
-                            "status": "ASSIGNED",
-                            "method": "GRAPHQL",
-                            "mutation": spec["name"],
-                            "issue_node_id": issue_id,
-                            "repository_node_id": repository_id,
-                            "actor_node_id": actor_id,
-                            "assignees": assignee_logins,
-                            "verified_assignees": current_logins,
-                            "response": response,
-                        }
-                    last_error = (
-                        "Copilot assignee was not confirmed after GraphQL mutation; "
-                        f"mutation_assignees={assignee_logins}, issue_assignees={current_logins}"
-                    )
-                except RuntimeError as exc:  # noqa: PERF203
-                    last_error = str(exc)
+            try:
+                variables = dict(spec["variables"])
+                variables["agentAssignment"] = dict(assignment_input)
+                response = self._graphql(spec["query"], variables)
+                if response.get("errors"):
+                    last_error = f"GraphQL returned errors for {spec['name']}: {response['errors']}"
                     continue
+                payload = (response.get("data") or {}).get(spec["name"]) or {}
+                assignable = payload.get("assignable") or {}
+                assignees = ((assignable.get("assignees") or {}).get("nodes") or [])
+                assignee_logins = [str((node or {}).get("login")) for node in assignees if (node or {}).get("login")]
+                mutation_confirmed = COPILOT_AGENT_LOGIN in assignee_logins
+                rest_confirmed, current_logins = self._copilot_assignee_confirmed(issue_number)
+                if mutation_confirmed and rest_confirmed:
+                    return {
+                        "status": "ASSIGNED",
+                        "method": "GRAPHQL",
+                        "mutation": spec["name"],
+                        "issue_node_id": issue_id,
+                        "repository_node_id": repository_id,
+                        "actor_node_id": actor_id,
+                        "agent_assignment_input": dict(assignment_input),
+                        "assignee_ids": list(spec["variables"].get("assigneeIds") or spec["variables"].get("actorIds") or []),
+                        "assignee_id_field": "assigneeIds" if "assigneeIds" in spec["variables"] else "actorIds",
+                        "assignees": assignee_logins,
+                        "verified_assignees": current_logins,
+                        "response": response,
+                    }
+                last_error = (
+                    "Copilot assignee was not confirmed after GraphQL mutation; "
+                    f"mutation_assignees={assignee_logins}, issue_assignees={current_logins}"
+                )
+            except RuntimeError as exc:  # noqa: PERF203
+                last_error = str(exc)
+                continue
         raise RuntimeError(last_error or "Copilot assignment failed")
 
 
