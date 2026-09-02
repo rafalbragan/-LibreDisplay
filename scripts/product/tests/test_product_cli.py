@@ -1,6 +1,5 @@
 import contextlib
 import importlib.util
-import io
 import json
 import shutil
 import tempfile
@@ -10,6 +9,8 @@ from pathlib import Path
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 CLI_PATH = WORKSPACE_ROOT / "scripts" / "product" / "product_cli.py"
+WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-inbox.yml"
+ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "product-inbox.yml"
 
 
 def load_cli_module():
@@ -20,7 +21,7 @@ def load_cli_module():
     return module
 
 
-class ProductCliTest(unittest.TestCase):
+class ProductCliInboxTest(unittest.TestCase):
     def setUp(self):
         self.cli = load_cli_module()
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -42,6 +43,12 @@ class ProductCliTest(unittest.TestCase):
             "REQUIREMENTS_DIR": self.cli.REQUIREMENTS_DIR,
             "DECISIONS_DIR": self.cli.DECISIONS_DIR,
             "EXAMPLES_DIR": self.cli.EXAMPLES_DIR,
+            "INBOX_DIR": self.cli.INBOX_DIR,
+            "REVIEW_DIR": self.cli.REVIEW_DIR,
+            "REVIEW_QUEUE_FILE": self.cli.REVIEW_QUEUE_FILE,
+            "GENERATED_DIR": self.cli.GENERATED_DIR,
+            "INBOX_REVIEW_RESULTS_FILE": self.cli.INBOX_REVIEW_RESULTS_FILE,
+            "INBOX_REVIEWS_DIR": self.cli.INBOX_REVIEWS_DIR,
         }
         try:
             self.cli.ROOT = self.root
@@ -53,228 +60,273 @@ class ProductCliTest(unittest.TestCase):
             self.cli.REQUIREMENTS_DIR = self.cli.PRODUCT / "requirements"
             self.cli.DECISIONS_DIR = self.cli.PRODUCT / "decisions"
             self.cli.EXAMPLES_DIR = self.cli.PRODUCT / "examples"
+            self.cli.INBOX_DIR = self.cli.PRODUCT / "inbox"
+            self.cli.REVIEW_DIR = self.cli.PRODUCT / "review"
+            self.cli.REVIEW_QUEUE_FILE = self.cli.REVIEW_DIR / "REVIEW_QUEUE.yaml"
+            self.cli.GENERATED_DIR = self.cli.PRODUCT / "generated"
+            self.cli.INBOX_REVIEW_RESULTS_FILE = self.cli.GENERATED_DIR / "INBOX_REVIEW_RESULTS.json"
+            self.cli.INBOX_REVIEWS_DIR = self.cli.GENERATED_DIR / "inbox-reviews"
             yield
         finally:
             for key, value in original.items():
                 setattr(self.cli, key, value)
 
-    def validate(self):
-        with self.patched_paths():
-            return self.cli.cmd_validate()
-
-    def summary_text(self):
-        buffer = io.StringIO()
-        with self.patched_paths(), contextlib.redirect_stdout(buffer):
-            code = self.cli.cmd_summary()
-        self.assertEqual(0, code)
-        return buffer.getvalue()
-
-    def write_json(self, path: Path, payload: dict):
+    def write_json(self, path: Path, payload):
         path.parent.mkdir(parents=True, exist_ok=True)
         with path.open("w", encoding="utf-8") as fh:
-            json.dump(payload, fh, indent=2)
+            json.dump(payload, fh, indent=2, ensure_ascii=False)
             fh.write("\n")
 
-    def valid_observation(self, obs_id: str = "OBS-TEST-0001"):
+    def make_issue_event(self, number: int, issue_type: str, notice: str, labels=None, updated_at="2026-09-02T10:00:00Z"):
+        labels = labels if labels is not None else [{"name": "product-inbox"}]
+        body = "\n".join([
+            "### TYPE",
+            issue_type,
+            "",
+            "### PERSONA",
+            "Opiekun",
+            "",
+            "### MODULE",
+            "Główna / Monitoring",
+            "",
+            "### WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?",
+            notice,
+            "",
+            "### WHY DOES IT MATTER?",
+            "Bo to ważne.",
+            "",
+            "### CONTEXT / EXAMPLE",
+            "Przykładowy kontekst.",
+        ])
         return {
-            "id": obs_id,
-            "created_at": "2026-08-26",
-            "source_type": "manual",
-            "source_reference": "unit-test",
-            "persona": "caregiver",
-            "mode": "caregiver",
-            "module": "Home / Monitoring",
-            "type": "bug",
-            "severity": "low",
-            "frequency": "rare",
-            "confidence": "high",
-            "evidence": ["test evidence"],
-            "problem_statement": "test problem",
-            "status": "new",
-            "linked_requirements": [],
+            "issue": {
+                "number": number,
+                "html_url": f"https://github.com/example/repo/issues/{number}",
+                "url": f"https://api.github.com/repos/example/repo/issues/{number}",
+                "created_at": "2026-09-02T09:00:00Z",
+                "updated_at": updated_at,
+                "title": f"[Product Inbox] Test {number}",
+                "body": body,
+                "labels": labels,
+                "user": {"login": "tester"},
+            }
         }
 
-    def valid_requirement(self, req_id: str = "REQ-TEST-0001"):
+    def make_comment_event(self, issue_event: dict, command: str, author: str = "repo-owner"):
         return {
-            "id": req_id,
-            "status": "CANDIDATE",
-            "problem": "test requirement problem",
-            "target_personas": ["caregiver"],
-            "target_modes": ["caregiver"],
-            "target_modules": ["Home / Monitoring"],
-            "linked_observations": ["OBS-EXAMPLE-0001"],
-            "user_outcome": "test user outcome",
-            "solution_options": [
-                {"id": "opt-a", "summary": "A", "pros": ["p"], "cons": ["c"]},
-                {"id": "opt-b", "summary": "B", "pros": ["p"], "cons": ["c"]},
-            ],
-            "recommended_option": "opt-a",
-            "counterargument": "test counterargument",
-            "scores": {
-                "safety": 5,
-                "caregiver_value": 5,
-                "senior_value": 5,
-                "clinician_value": 5,
-                "frequency": 5,
-                "confidence": 5,
-                "complexity": 5,
-                "strategy_alignment": 5,
-            },
-            "safety_implications": "test safety",
-            "acceptance_criteria": ["criterion"],
-            "test_plan": ["test"],
-            "human_decision": "PENDING",
-            "related_decisions": ["DEC-0001"],
+            "repository": {"owner": {"login": "repo-owner"}},
+            "issue": issue_event["issue"],
+            "comment": {"body": command, "user": {"login": author}},
         }
 
-    def valid_test_run(self, run_id: str = "TESTRUN-2026-901"):
+    def run_import(self, event: dict) -> int:
+        event_file = self.root / "event.json"
+        self.write_json(event_file, event)
+        with self.patched_paths():
+            return self.cli.cmd_inbox_import(str(event_file))
+
+    def run_apply_ai(self, issue_number: int, payload) -> int:
+        ai_file = self.root / "ai.json"
+        if isinstance(payload, str):
+            ai_file.write_text(payload, encoding="utf-8")
+        else:
+            self.write_json(ai_file, payload)
+        with self.patched_paths():
+            return self.cli.cmd_inbox_apply_ai_review(issue_number, str(ai_file))
+
+    def run_decision(self, event: dict) -> int:
+        event_file = self.root / "comment-event.json"
+        self.write_json(event_file, event)
+        with self.patched_paths():
+            return self.cli.cmd_inbox_handle_decision(str(event_file))
+
+    def req_ids(self):
+        reqs = set()
+        for p in (self.root / "product" / "requirements").glob("REQ-*.json"):
+            reqs.add(p.stem)
+        return reqs
+
+    def ai_payload(self, issue_number: int, classification: str, decision: str = "HOLD") -> dict:
         return {
-            "id": run_id,
-            "created_at": "2026-08-26",
-            "source": "firebase_app_testing_agent",
-            "test_case": "Caregiver — assess current glucose situation",
-            "persona": "caregiver",
-            "mode": "caregiver",
-            "module": "Home / Monitoring",
-            "result": "PASS",
-            "environment": {
-                "device": "Medium Phone, 6.4in/16cm (Arm)",
-                "api": 30,
-                "orientation": "portrait",
-                "locale": "English",
-                "app_version": "2.11.1",
-                "version_code": 36
-            },
-            "scenario": "NORMAL",
-            "actions": ["Launched demo mode."],
-            "agent_summary": "No urgent issues.",
-            "positive_evidence": ["Current glucose is discoverable."],
-            "potential_issues": ["May over-rely on in-range status."],
-            "linked_observations": [],
-            "review_status": "unreviewed"
+            "inbox_id": f"INBOX-GH-{issue_number:06d}",
+            "classification": classification,
+            "summary": "Analiza AI",
+            "evidence_available": ["E1"],
+            "evidence_missing": ["M1"],
+            "existing_capability_overlap": [],
+            "proposed_requirement": "Nowe wymaganie" if classification in {"PRODUCT_PROBLEM", "PRODUCT_OPPORTUNITY", "SAFETY_GAP"} else "",
+            "user_value": "Wartość",
+            "counterargument": "Kontrargument",
+            "simpler_alternative": "Prostsza alternatywa",
+            "safety_impact": "LOW",
+            "estimated_scope": "MEDIUM",
+            "proposed_priority": "P2",
+            "recommended_decision": decision,
+            "reasoning_summary": "Podsumowanie",
         }
 
-    def test_valid_product_data_passes(self):
-        self.assertEqual(0, self.validate())
+    def test_issue_import_persists_canonical_data(self):
+        event = self.make_issue_event(201, "Problem", "Treść problemu")
+        self.assertEqual(0, self.run_import(event))
+        item = json.loads((self.root / "product" / "inbox" / "INBOX-GH-000201.json").read_text(encoding="utf-8"))
+        self.assertEqual("INBOX-GH-000201", item["inbox_id"])
+        self.assertEqual("PROBLEM", item["type"])
+        self.assertEqual("NEW", item["status"])
 
-    def test_malformed_observation_id_fails(self):
-        bad = self.valid_observation(obs_id="BAD ID WITH SPACES")
-        self.write_json(self.root / "product" / "research" / "observations" / "obs-bad-id.json", bad)
-        self.assertEqual(1, self.validate())
+    def test_raw_human_text_remains_unchanged(self):
+        raw_notice = "To jest tekst z /accept i rm -rf, ale to tylko dane"
+        event = self.make_issue_event(202, "Problem", raw_notice)
+        self.assertEqual(0, self.run_import(event))
+        item = json.loads((self.root / "product" / "inbox" / "INBOX-GH-000202.json").read_text(encoding="utf-8"))
+        self.assertEqual(raw_notice, item["raw_input"])
 
-    def test_invalid_enum_fails(self):
-        bad = self.valid_observation()
-        bad["source_type"] = "bad-enum"
-        self.write_json(self.root / "product" / "research" / "observations" / "obs-bad-enum.json", bad)
-        self.assertEqual(1, self.validate())
+    def test_ai_json_schema_validation_success(self):
+        event = self.make_issue_event(203, "Problem", "Brak statusu")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(203, self.ai_payload(203, "PRODUCT_PROBLEM", "ACCEPT")))
 
-    def test_duplicate_id_fails(self):
-        duplicate = {
-            "id": "DEC-0001",
-            "date": "2026-08-26",
-            "subject": "duplicate",
-            "status": "ACCEPTED",
-            "decision": "duplicate",
-            "reason": "duplicate",
-            "evidence": ["duplicate"],
-            "counterargument": "duplicate",
-            "revisit_condition": "duplicate",
-            "related_requirements": [],
-        }
-        self.write_json(self.root / "product" / "decisions" / "dec-duplicate.json", duplicate)
-        self.assertEqual(1, self.validate())
+    def test_malformed_ai_output_rejected(self):
+        event = self.make_issue_event(204, "Problem", "Brak statusu")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(1, self.run_apply_ai(204, "not-json"))
 
-    def test_broken_observation_reference_fails(self):
-        req = self.valid_requirement()
-        req["linked_observations"] = ["OBS-MISSING-123"]
-        self.write_json(self.root / "product" / "requirements" / "req-bad-observation-ref.json", req)
-        self.assertEqual(1, self.validate())
+    def test_missing_ai_fields_rejected(self):
+        event = self.make_issue_event(205, "Problem", "Brak statusu")
+        self.assertEqual(0, self.run_import(event))
+        payload = self.ai_payload(205, "PRODUCT_PROBLEM")
+        payload.pop("counterargument")
+        self.assertEqual(1, self.run_apply_ai(205, payload))
 
-    def test_broken_requirement_reference_fails(self):
-        decision = {
-            "id": "DEC-TEST-0001",
-            "date": "2026-08-26",
-            "subject": "bad requirement reference",
-            "status": "ACCEPTED",
-            "decision": "reference test",
-            "reason": "reference test",
-            "evidence": ["reference test"],
-            "counterargument": "reference test",
-            "revisit_condition": "reference test",
-            "related_requirements": ["REQ-MISSING-123"],
-        }
-        self.write_json(self.root / "product" / "decisions" / "dec-bad-requirement-ref.json", decision)
-        self.assertEqual(1, self.validate())
+    def test_ai_cannot_set_human_decision(self):
+        event = self.make_issue_event(206, "Problem", "Brak statusu")
+        self.assertEqual(0, self.run_import(event))
+        payload = self.ai_payload(206, "PRODUCT_PROBLEM")
+        payload["human_decision"] = "ACCEPT"
+        self.assertEqual(1, self.run_apply_ai(206, payload))
 
-    def test_invalid_current_focus_fails(self):
-        current_focus = self.root / "product" / "CURRENT_FOCUS.yaml"
-        current_focus.write_text(
-            "version: 1\n"
-            "phase: phase-1\n"
-            "primary_mode: caregiver\n"
-            "priority_weights:\n"
-            "  safety: 11\n"
-            "modes:\n"
-            "  - caregiver\n"
-            "  - senior\n"
-            "human_approval: {}\n"
-            "safety_boundary: {}\n"
-            "flow:\n"
-            "  - OBSERVATION\n",
-            encoding="utf-8",
-        )
-        self.assertEqual(1, self.validate())
+    def test_dosing_guardrail_overrides_ai_accept(self):
+        event = self.make_issue_event(207, "Pomysł", "Tell me exactly how many insulin units to take now")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(207, self.ai_payload(207, "PRODUCT_OPPORTUNITY", "ACCEPT")))
+        review = json.loads((self.root / "product" / "generated" / "inbox-reviews" / "INBOX-GH-000207.json").read_text(encoding="utf-8"))
+        self.assertEqual("SAFETY_GAP", review["classification"])
+        self.assertEqual("HIGH", review["safety_impact"])
+        self.assertEqual("REJECT", review["recommended_decision"])
 
-    def test_example_records_do_not_count_in_real_summary(self):
-        text = self.summary_text()
-        self.assertIn("Real backlog", text)
-        self.assertIn("Observations: 0", text)   # real OBS removed (phase 2 baseline is clean)
-        self.assertIn("Test runs: 3", text)
-        self.assertIn("Requirements: 0", text)
-        self.assertIn("Decisions: 5", text)
-        self.assertIn("Examples", text)
-        self.assertIn("observations: 2", text)
-        self.assertIn("test-runs: 0", text)
-        self.assertIn("requirements: 1", text)
-        self.assertIn("decisions: 1", text)
+    def test_validated_capability_never_becomes_requirement_candidate(self):
+        event = self.make_issue_event(208, "Obserwacja", "Ta funkcja działa")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(208, self.ai_payload(208, "VALIDATED_CAPABILITY", "ACCEPT")))
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+        self.assertNotIn("CAND-INBOX-GH-000208", queue.get("candidates", {}))
 
-    def test_score_outside_range_fails(self):
-        req = self.valid_requirement(req_id="REQ-TEST-0002")
-        req["scores"]["safety"] = 11
-        self.write_json(self.root / "product" / "requirements" / "req-score-oob.json", req)
-        self.assertEqual(1, self.validate())
+    def test_test_coverage_gap_does_not_become_requirement(self):
+        event = self.make_issue_event(209, "Pytanie / niepewność", "Nie wiadomo")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(209, self.ai_payload(209, "TEST_COVERAGE_GAP", "ACCEPT")))
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+        self.assertNotIn("CAND-INBOX-GH-000209", queue.get("candidates", {}))
 
-    def test_score_outside_range_fails(self):
-        req = self.valid_requirement(req_id="REQ-TEST-0002")
-        req["scores"]["safety"] = 11
-        self.write_json(self.root / "product" / "requirements" / "req-score-oob.json", req)
-        self.assertEqual(1, self.validate())
+    def test_product_problem_can_enter_human_review(self):
+        event = self.make_issue_event(210, "Problem", "Realny problem")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(210, self.ai_payload(210, "PRODUCT_PROBLEM", "ACCEPT")))
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+        self.assertIn("CAND-INBOX-GH-000210", queue.get("candidates", {}))
 
-    def test_malformed_test_run_id_fails(self):
-        bad_run = self.valid_test_run(run_id="BAD ID")
-        self.write_json(self.root / "product" / "research" / "test-runs" / "test-bad-id.json", bad_run)
-        self.assertEqual(1, self.validate())
+    def test_product_opportunity_can_enter_human_review(self):
+        event = self.make_issue_event(211, "Pomysł", "Szansa")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(211, self.ai_payload(211, "PRODUCT_OPPORTUNITY", "HOLD")))
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+        self.assertIn("CAND-INBOX-GH-000211", queue.get("candidates", {}))
 
-    def test_invalid_test_run_enum_fails(self):
-        bad_run = self.valid_test_run()
-        bad_run["result"] = "UNKNOWN"
-        self.write_json(self.root / "product" / "research" / "test-runs" / "test-bad-enum.json", bad_run)
-        self.assertEqual(1, self.validate())
+    def test_accept_creates_one_canonical_requirement_and_is_idempotent(self):
+        event = self.make_issue_event(212, "Problem", "Nowe wymaganie")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(212, self.ai_payload(212, "PRODUCT_PROBLEM", "ACCEPT")))
+        before = self.req_ids()
+        cmd_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(cmd_event))
+        first_after = self.req_ids()
+        self.assertEqual(len(before) + 1, len(first_after))
+        self.assertEqual(0, self.run_decision(cmd_event))
+        self.assertEqual(first_after, self.req_ids())
 
-    def test_test_run_broken_observation_reference_fails(self):
-        bad_run = self.valid_test_run()
-        bad_run["linked_observations"] = ["OBS-MISSING-123"]
-        self.write_json(self.root / "product" / "research" / "test-runs" / "test-bad-link.json", bad_run)
-        self.assertEqual(1, self.validate())
+    def test_hold_creates_no_requirement(self):
+        event = self.make_issue_event(213, "Problem", "Wstrzymaj")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(213, self.ai_payload(213, "PRODUCT_PROBLEM", "HOLD")))
+        before = self.req_ids()
+        self.assertEqual(0, self.run_decision(self.make_comment_event(event, "/hold", author="repo-owner")))
+        self.assertEqual(before, self.req_ids())
 
-    def test_example_test_run_does_not_count_as_real_backlog(self):
-        example = self.valid_test_run(run_id="TESTRUN-2026-999")
-        self.write_json(self.root / "product" / "examples" / "test-run-example.json", example)
-        text = self.summary_text()
-        self.assertIn("Test runs: 3", text)
-        self.assertIn("test-runs: 1", text)
+    def test_reject_creates_no_requirement(self):
+        event = self.make_issue_event(214, "Pomysł", "Odrzuć")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(214, self.ai_payload(214, "PRODUCT_OPPORTUNITY", "HOLD")))
+        before = self.req_ids()
+        self.assertEqual(0, self.run_decision(self.make_comment_event(event, "/reject", author="repo-owner")))
+        self.assertEqual(before, self.req_ids())
+
+    def test_non_owner_decision_ignored(self):
+        event = self.make_issue_event(215, "Problem", "Owner only")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(215, self.ai_payload(215, "PRODUCT_PROBLEM", "ACCEPT")))
+        before = self.req_ids()
+        self.assertEqual(0, self.run_decision(self.make_comment_event(event, "/accept", author="random-user")))
+        self.assertEqual(before, self.req_ids())
+
+    def test_issue_edit_updates_same_inbox_item(self):
+        event_v1 = self.make_issue_event(216, "Problem", "Wersja 1", updated_at="2026-09-02T10:00:00Z")
+        event_v2 = self.make_issue_event(216, "Problem", "Wersja 2", updated_at="2026-09-02T11:00:00Z")
+        self.assertEqual(0, self.run_import(event_v1))
+        self.assertEqual(0, self.run_import(event_v2))
+        item = json.loads((self.root / "product" / "inbox" / "INBOX-GH-000216.json").read_text(encoding="utf-8"))
+        self.assertEqual("Wersja 2", item["raw_input"])
+        self.assertEqual("2026-09-02T11:00:00Z", item["updated_at"])
+
+
+class ProductInboxWorkflowStaticTest(unittest.TestCase):
+    def test_workflow_has_permissions_and_copilot_install(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("copilot-requests: write", text)
+        self.assertIn("contents: write", text)
+        self.assertIn("issues: write", text)
+        self.assertIn("npm install -g @github/copilot", text)
+
+    def test_workflow_ai_invocation_is_read_only(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("copilot --version", text)
+        self.assertIn("copilot --help >/dev/null", text)
+        self.assertIn("--available-tools='view,grep,glob'", text)
+        self.assertIn("--allow-tool='read'", text)
+        self.assertIn("--deny-tool='write'", text)
+        self.assertIn("--deny-tool='shell'", text)
+        self.assertIn("--disable-builtin-mcps", text)
+        self.assertIn("--no-ask-user", text)
+        self.assertIn("-s", text)
+        self.assertNotIn("copilot chat", text)
+        self.assertNotIn("--input-file", text)
+        self.assertNotIn("--yolo", text)
+        self.assertNotIn("--allow-all", text)
+
+    def test_workflow_has_persistence_and_concurrency(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("concurrency:", text)
+        self.assertIn("group: product-inbox-state", text)
+        self.assertIn("git add product/inbox product/generated product/review product/research", text)
+        self.assertIn("product: process inbox issue", text)
+        self.assertIn("product: apply inbox decision issue", text)
+
+    def test_issue_form_has_product_inbox_prefix(self):
+        text = ISSUE_FORM_PATH.read_text(encoding="utf-8")
+        self.assertIn("title: \"[Product Inbox] \"", text)
 
 
 if __name__ == "__main__":
     unittest.main()
-

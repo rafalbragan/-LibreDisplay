@@ -1,0 +1,25 @@
+{
+  "id": "DEC-0006",
+  "date": "2026-09-01",
+  "subject": "Human acceptance of REQ-0001: Caregiver Home — prioritize monitored people who require attention",
+  "status": "ACCEPTED",
+  "decision": "ACCEPT the requirement to implement visual prioritization of monitored people based on glucose attention states.",
+  "reason": "This feature directly addresses a critical caregiver workflow gap identified in Product Discovery (TESTRUN-2026-001). It reuses existing LibreCare glucose classification and safety semantics, carries no new medical rules, and delivers high user value with low implementation complexity.",
+  "evidence": [
+    "TESTRUN-2026-001: Caregiver multi-person switching is discoverable but does not surface priority",
+    "Product Strategy: Caregiver is the primary mode/perspective",
+    "SAFETY_GUARDRAILS.md: Feature reuses existing classifications (G1-G7)",
+    "Product Discovery v3: Caregiver persona shows strong need for rapid attention identification in multi-person scenarios"
+  ],
+  "counterargument": "Users might habituate to warning sections. Mitigation: 'Wymaga uwagi' only appears when genuinely needed; no false positives.",
+  "revisit_condition": "Revisit if user testing shows habituation or if attention-state classification becomes unreliable.",
+  "related_requirements": [
+    "REQ-0001"
+  ],
+  "related_decisions": [
+    "DEC-0002",
+    "DEC-0004"
+  ]
+}
+
+

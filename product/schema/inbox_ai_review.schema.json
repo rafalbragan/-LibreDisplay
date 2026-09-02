@@ -1,0 +1,92 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "LibreCare Inbox AI Review",
+  "type": "object",
+  "required": [
+    "inbox_id",
+    "classification",
+    "summary",
+    "evidence_available",
+    "evidence_missing",
+    "existing_capability_overlap",
+    "proposed_requirement",
+    "user_value",
+    "counterargument",
+    "simpler_alternative",
+    "safety_impact",
+    "estimated_scope",
+    "proposed_priority",
+    "recommended_decision",
+    "reasoning_summary"
+  ],
+  "properties": {
+    "inbox_id": {
+      "type": "string",
+      "pattern": "^INBOX-GH-[0-9]{6}$"
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "VALIDATED_CAPABILITY",
+        "PRODUCT_PROBLEM",
+        "PRODUCT_OPPORTUNITY",
+        "TEST_COVERAGE_GAP",
+        "SAFETY_GAP",
+        "INCONCLUSIVE"
+      ]
+    },
+    "summary": {
+      "type": "string"
+    },
+    "evidence_available": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "evidence_missing": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "existing_capability_overlap": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "proposed_requirement": {
+      "type": "string"
+    },
+    "user_value": {
+      "type": "string"
+    },
+    "counterargument": {
+      "type": "string"
+    },
+    "simpler_alternative": {
+      "type": "string"
+    },
+    "safety_impact": {
+      "type": "string",
+      "enum": ["NONE", "LOW", "MEDIUM", "HIGH"]
+    },
+    "estimated_scope": {
+      "type": "string",
+      "enum": ["SMALL", "MEDIUM", "LARGE"]
+    },
+    "proposed_priority": {
+      "type": "string",
+      "enum": ["P0", "P1", "P2", "P3"]
+    },
+    "recommended_decision": {
+      "type": "string",
+      "enum": ["ACCEPT", "HOLD", "REJECT"]
+    },
+    "reasoning_summary": {
+      "type": "string"
+    }
+  }
+}
+

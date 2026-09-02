@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/inbox_item.schema.json",
+  "title": "LibreCare Product Inbox Item",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "inbox_id",
+    "github_issue_number",
+    "github_issue_url",
+    "created_at",
+    "updated_at",
+    "submitted_by",
+    "type",
+    "persona",
+    "module",
+    "raw_input",
+    "why_it_matters",
+    "context",
+    "status"
+  ],
+  "properties": {
+    "inbox_id": {
+      "type": "string",
+      "pattern": "^INBOX-GH-[0-9]{6}$"
+    },
+    "github_issue_number": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "github_issue_url": {
+      "type": "string",
+      "minLength": 1
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "submitted_by": {
+      "type": "string",
+      "minLength": 1
+    },
+    "type": {
+      "type": "string",
+      "enum": ["PROBLEM", "OBSERVATION", "IDEA", "QUESTION_UNCERTAINTY"]
+    },
+    "persona": {
+      "type": "string",
+      "enum": ["OPIEKUN", "SENIOR", "LEKARZ", "WSPOLNE_LUB_NIE_WIEM"]
+    },
+    "module": {
+      "type": "string",
+      "enum": [
+        "GLOWNA_MONITORING",
+        "ANALIZA",
+        "KONTEKST_ZDARZEN",
+        "USTAWIENIA",
+        "POWIADOMIENIA",
+        "INNE_LUB_NIE_WIEM"
+      ]
+    },
+    "raw_input": {
+      "type": "string",
+      "minLength": 1
+    },
+    "why_it_matters": {
+      "type": "string"
+    },
+    "context": {
+      "type": "string"
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "NEW",
+        "ANALYZED",
+        "AWAITING_HUMAN_DECISION",
+        "ACCEPTED",
+        "HOLD",
+        "REJECTED",
+        "CONVERTED"
+      ]
+    }
+  }
+}
+

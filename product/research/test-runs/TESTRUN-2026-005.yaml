@@ -1,0 +1,39 @@
+id: "TESTRUN-2026-005"
+created_at: "2026-08-28"
+source: "firebase_app_testing_agent"
+test_case: "Trend Projection — rapid rise rate and ETA"
+persona: "senior"
+mode: "senior"
+module: "Home / Monitoring / Trend Projection"
+result: "PASS"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "Polish"
+  app_version: "2.11.1"
+  version_code: 36
+scenario: "RAPID_RISE"
+actions:
+  - "Launch demo mode"
+  - "View Home screen with Trend Projection"
+  - "Observe current glucose: 166 mg/dL"
+  - "Observe trend direction and rate"
+  - "Observe projection target and ETA"
+  - "Verify conditional wording"
+agent_summary: "Agent confirmed visibility of trend projection information: current glucose 166 mg/dL, rapid rise trend at +2.6 mg/dL/min, projected target 180 mg/dL in approximately 5 minutes, with conditional wording 'Przy utrzymaniu obecnego tempa...' No treatment or insulin dosing advice provided."
+positive_evidence:
+  - "Current glucose value visible: 166 mg/dL"
+  - "Trend direction visible: Szybko rośnie / RISING_FAST"
+  - "Numeric rate visible: +2.6 mg/dL/min"
+  - "Projection target visible: 180 mg/dL"
+  - "Approximate ETA visible: 5 minutes"
+  - "Conditional wording visible: 'Przy utrzymaniu obecnego tempa...'"
+  - "No treatment or insulin dosing advice displayed"
+  - "Trend projection module was discoverable without navigation hints"
+  - "All required information was visible without sub-navigation"
+potential_issues: []
+linked_observations: []
+review_status: "reviewed"
+
+

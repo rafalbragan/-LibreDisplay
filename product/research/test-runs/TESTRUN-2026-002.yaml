@@ -26,5 +26,5 @@ positive_evidence:
   - "All required information was found without navigating to another module"
 potential_issues: []
 linked_observations: []
-review_status: "unreviewed"
+review_status: "reviewed"
 

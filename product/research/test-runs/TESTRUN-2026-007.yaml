@@ -1,0 +1,41 @@
+id: "TESTRUN-2026-007"
+created_at: "2026-09-02"
+source: "firebase_app_testing_agent"
+test_case: "Caregiver — identify which monitored person needs attention"
+persona: "caregiver"
+mode: "caregiver"
+module: "Home / Monitoring"
+result: "PASS"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "Polish"
+  app_version: "2.15.1-debug"
+  version_code: 42
+scenario: "MULTIPLE_PATIENTS_ONE_AT_RISK"
+actions:
+  - "Launch demo mode"
+  - "Select scenario: Kilka osób – jedna w ryzyku"
+  - "Observe Home screen before any manual person selection"
+  - "Confirm sections and person placement"
+  - "Optionally tap Anna to open detailed monitoring state"
+agent_summary: "Immediately after selecting the scenario and before manual person selection, Home showed Wymaga uwagi with Anna Kowalska (48 mg/dL) and Pozostali with Jan Kowalski (112 mg/dL). Caregiver could identify who required attention without checking each person manually. Tapping Anna afterward opened her detailed state as expected."
+positive_evidence:
+  - "Wymaga uwagi visible immediately after scenario selection"
+  - "Anna Kowalska visible under Wymaga uwagi with 48 mg/dL"
+  - "Pozostali visible immediately after scenario selection"
+  - "Jan Kowalski visible under Pozostali with 112 mg/dL"
+  - "No manual pre-selection required to identify at-risk person"
+  - "Manual tap on Anna opens/updates detailed monitoring state as expected"
+potential_issues: []
+linked_observations: []
+review_status: "reviewed"
+classification: "IMPLEMENTATION_VALIDATION_PASS"
+linked_requirements:
+  - "REQ-0001"
+linked_test_runs:
+  - "TESTRUN-2026-006"
+implementation_fix_reference:
+  - "caregiver-attention-v3-report.md"
+

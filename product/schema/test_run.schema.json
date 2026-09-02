@@ -95,7 +95,7 @@
         "MULTIPLE_PATIENTS_ONE_AT_RISK",
         "UNKNOWN"
       ],
-      "description": "Synthetic demo data scenario."
+      "description": "Synthetic demo data scenario. Runtime controlled-demo status: POST_MEAL_RISE is NOT_YET_SUPPORTED until context-event injection is implemented."
     },
     "actions": {
       "type": "array",

@@ -1,0 +1,120 @@
+id: "REQ-0001"
+status: "ACCEPTED"
+
+problem: >
+  When a caregiver monitors multiple people, the Home screen should clearly indicate
+  who currently requires attention. The caregiver should not need to manually inspect
+  every monitored person to discover the most important current situation.
+
+target_personas:
+  - "caregiver"
+target_modes:
+  - "caregiver"
+target_modules:
+  - "Home / Monitoring"
+
+linked_observations: []
+linked_test_runs:
+  - "TESTRUN-2026-006"
+  - "TESTRUN-2026-007"
+
+implementation_acceptance:
+  latest_status: "PASS"
+  latest_testrun_id: "TESTRUN-2026-007"
+  previous_failed_testrun_id: "TESTRUN-2026-006"
+
+user_outcome: >
+  Caregiver can quickly identify which monitored people need immediate attention
+  by glancing at the Home screen, reducing cognitive load and response time for
+  critical glucose situations.
+
+solution_options:
+  - id: "opt-primary"
+    summary: >
+      Visually separate monitored people into two groups:
+      "Wymaga uwagi" (Requires Attention) for people in concerning glucose states,
+      and "Pozostali" (Remaining) for others. Use existing LibreCare glucose state
+      classifications (low, rapid fall, stale data, etc.) to determine priority.
+    pros:
+      - "Uses existing glucose classification logic; no new medical rules"
+      - "Clearly scannable interface"
+      - "Does not redesign single-person view"
+      - "Preserves existing safety semantics"
+    cons:
+      - "Requires careful UX for empty 'Wymaga uwagi' to avoid false alarms"
+      - "Ordering within groups must be deterministic"
+  - id: "opt-alert-overlay"
+    summary: >
+      Use a floating alert/badge overlay showing number of people requiring attention.
+      Separate detailed view only on demand.
+    pros:
+      - "Minimally intrusive"
+      - "Doesn't clutter multi-person view"
+    cons:
+      - "Requires additional gesture/action to see full list"
+      - "May miss updates if alert is dismissed"
+
+recommended_option: "opt-primary"
+counterargument: >
+  Users might ignore sections if they become habituated to seeing them.
+  Mitigation: "Wymaga uwagi" section only appears when someone truly needs attention;
+  no empty warnings.
+
+scores:
+  safety: 8
+  caregiver_value: 9
+  senior_value: 0
+  clinician_value: 2
+  frequency: 8
+  confidence: 9
+  complexity: 4
+  strategy_alignment: 9
+
+safety_implications: >
+  This feature reuses existing LibreCare glucose classification (SAFETY_GUARDRAILS.md G1-G7).
+  No new treatment or insulin advice is provided. The feature aids rapid identification of
+  risky states but does not alter clinical decision support. Reduces human attention error
+  in multi-person scenarios.
+
+acceptance_criteria:
+  - >
+    Given a caregiver with 2+ monitored people and at least one in an attention-requiring state
+    (low glucose, rapid fall, stale data, etc.), when the Caregiver Home screen is loaded,
+    then a "Wymaga uwagi" section appears showing affected people first.
+  - >
+    Given a caregiver with 2+ monitored people and nobody in attention states, when the
+    Caregiver Home screen is loaded, then no "Wymaga uwagi" section appears.
+  - >
+    Given a caregiver with 1 monitored person, when the Caregiver Home screen is loaded,
+    then the existing single-person view behavior is unchanged.
+  - >
+    Given a caregiver viewing the Home screen, when they tap a person in either section,
+    then that person's monitoring view opens as usual.
+  - >
+    Given a caregiver with multiple people in attention states, when the "Wymaga uwagi"
+    section is displayed, then people are ordered consistently (by priority/severity).
+
+test_plan:
+  - "Unit test: Multiple people, none at risk -> no section"
+  - "Unit test: Multiple people, one at risk -> at-risk person in section"
+  - "Unit test: Multiple people, one at risk -> normal person accessible in Pozostali"
+  - "Unit test: Multiple people with different attention states -> deterministic ordering"
+  - "Unit test: Single monitored person -> existing behavior preserved"
+  - "Unit test: Stale data classification -> consistent with LibreCare rules"
+  - "Unit test: Person switching -> works correctly"
+  - "UI test: MULTIPLE_PATIENTS_ONE_AT_RISK scenario shows at-risk person first"
+  - "Lint check: No safety/treatment advice provided"
+
+human_decision: "ACCEPT"
+human_decision_date: "2026-09-01"
+human_decision_maker: "Product Manager"
+human_decision_reason: "Addresses critical caregiver workflow gap. Reuses existing safety semantics. Low complexity, high value."
+
+related_decisions:
+  - "DEC-0002"
+  - "DEC-0004"
+  - "DEC-0006"
+
+created_at: "2026-09-01"
+
+

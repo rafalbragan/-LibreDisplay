@@ -1,0 +1,68 @@
+name: LibreCare Product Inbox
+description: "Zgłoś obserwację, problem lub pomysł dotyczący LibreCare."
+title: "[Product Inbox] "
+labels:
+  - product-inbox
+body:
+  - type: dropdown
+    id: type
+    attributes:
+      label: TYPE
+      options:
+        - Problem
+        - Obserwacja
+        - Pomysł
+        - Pytanie / niepewność
+    validations:
+      required: true
+
+  - type: dropdown
+    id: persona
+    attributes:
+      label: PERSONA
+      options:
+        - Opiekun
+        - Senior
+        - Lekarz
+        - Wspólne / nie wiem
+    validations:
+      required: true
+
+  - type: dropdown
+    id: module
+    attributes:
+      label: MODULE
+      options:
+        - Główna / Monitoring
+        - Analiza
+        - Kontekst zdarzeń
+        - Ustawienia
+        - Powiadomienia
+        - Inne / nie wiem
+    validations:
+      required: false
+
+  - type: textarea
+    id: notice
+    attributes:
+      label: WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?
+      placeholder: "Opisz co zauważyłeś(-aś) albo czego potrzebujesz."
+    validations:
+      required: true
+
+  - type: textarea
+    id: why
+    attributes:
+      label: WHY DOES IT MATTER?
+      placeholder: "Dlaczego to jest ważne dla Ciebie lub użytkownika?"
+    validations:
+      required: false
+
+  - type: textarea
+    id: context
+    attributes:
+      label: CONTEXT / EXAMPLE
+      placeholder: "Przykład, ekran, sytuacja, kiedy to się pojawia."
+    validations:
+      required: false
+

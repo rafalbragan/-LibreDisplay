@@ -1,0 +1,39 @@
+id: "TESTRUN-2026-006"
+created_at: "2026-09-02"
+source: "firebase_app_testing_agent"
+test_case: "Caregiver — identify which monitored person needs attention"
+persona: "caregiver"
+mode: "caregiver"
+module: "Home / Monitoring"
+result: "FAIL"
+environment:
+  device: "Medium Phone, 6.4in/16cm (Arm)"
+  api: 30
+  orientation: "portrait"
+  locale: "Polish"
+  app_version: "2.15.0-debug"
+  version_code: 41
+scenario: "MULTIPLE_PATIENTS_ONE_AT_RISK"
+actions:
+  - "Launch demo mode"
+  - "Select scenario: Kilka osób – jedna w ryzyku"
+  - "Observe Home screen after scenario refresh"
+  - "Verify if Wymaga uwagi and Pozostali sections are visible without person switching"
+agent_summary: "Controlled scenario selection succeeded, but Home remained on legacy Jan/Anna tab UI. Initially Jan showed normal state (~112 mg/dL, Bez zmian, Glikemia w zakresie). Wymaga uwagi and Pozostali sections were not visible until manual person tap. Only after tapping Anna did severe low state (~48 mg/dL, Szybko spada, -3.1 mg/dL/min) become visible."
+positive_evidence:
+  - "Controlled scenario selected successfully: MULTIPLE_PATIENTS_ONE_AT_RISK"
+  - "Multiple monitored people were visible on Home"
+  - "After manual Anna selection, severe low state became visible (~48 mg/dL, rapidly falling)"
+potential_issues:
+  - "Old Jan/Anna tab UI remained after scenario activation"
+  - "Wymaga uwagi section not visible on initial Home load"
+  - "Pozostali section not visible on initial Home load"
+  - "Jan initially displayed as normal (~112 mg/dL) despite one-person-at-risk scenario"
+  - "Manual tap on Anna was required to discover risk"
+linked_observations: []
+review_status: "reviewed"
+classification: "IMPLEMENTATION_ACCEPTANCE_FAILURE"
+linked_requirements:
+  - "REQ-0001"
+requirement: "REQ-0001"
+

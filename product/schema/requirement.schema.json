@@ -67,7 +67,7 @@
     },
     "linked_observations": {
       "type": "array",
-      "minItems": 1,
+      "minItems": 0,
       "items": { "type": "string", "pattern": "^OBS-[0-9A-Za-z._-]+$" }
     },
     "user_outcome": {

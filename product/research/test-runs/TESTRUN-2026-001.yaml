@@ -27,5 +27,5 @@ positive_evidence:
   - "Test did not require navigation hints"
 potential_issues: []
 linked_observations: []
-review_status: "unreviewed"
+review_status: "reviewed"
 

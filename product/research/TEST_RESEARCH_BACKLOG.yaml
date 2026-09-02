@@ -1,0 +1,21 @@
+# LibreCare Test & Research Backlog
+#
+# Items tracked here are validation gaps, not feature requirements.
+# These activities reduce uncertainty about existing or proposed capabilities.
+
+version: 1
+updated: "2026-09-02"
+
+items:
+
+  TESTRUN-2026-003:
+    title: "Coverage Gap: Clinician — assess recent glucose control"
+    persona: "clinician"
+    module: "Analysis"
+    source_ids:
+      - "TESTRUN-2026-003"
+    reason: "Demo data is unusually benign with 100% TIR and no low/high episodes; clinically significant episodes should be tested separately"
+    risk: "MEDIUM"
+    priority: "P1"
+    recommended_test_or_research: "Create clinician-focused test scenarios with diverse glucose patterns and edge cases"
+    status: "OPEN"
