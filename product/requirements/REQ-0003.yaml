@@ -117,6 +117,6 @@ implementation:
         ''FORBIDDEN'', ''path'': [''replaceActorsForAssignable''], ''locations'':
         [{''line'': 7, ''column'': 19}], ''message'': ''Copilot agent is not enabled
         in this repository.''}]'
-    updated_at: '2026-09-02T22:15:59Z'
+    updated_at: '2026-09-02T22:22:57Z'
   implementation_pr: {}
   copilot_handoff_allowed: true
