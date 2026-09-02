@@ -142,8 +142,8 @@ jobs:
         run: |
           python scripts/product/automation_cli.py bug-sync-fix-handoff \
             --bug-id "${{ steps.bug.outputs.bug_id }}" \
-            --repo-owner "${{ github.repository_owner }}" \
-            --repo-name "${{ github.event.repository.name }}" \
+            --repo-owner="${{ github.repository_owner }}" \
+            --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
             --base-branch master \
             --output-file bug-handoff.json || true
@@ -227,7 +227,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -c "import json, os, subprocess, sys; from pathlib import Path; payload=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')); wr=payload.get('workflow_run') or {}; prs=wr.get('pull_requests') or []; pr_number=(prs[0].get('number') if prs else None); print('No pull request linked to workflow run.') if pr_number is None else None; sys.exit(0) if pr_number is None else None; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number',str(pr_number),'--workflow-name',str(wr.get('name','Android CI')),'--conclusion',str(wr.get('conclusion','unknown')),'--run-id',str(wr.get('id','unknown')),'--run-url',str(wr.get('html_url','')),'--repo-owner','${{ github.repository_owner }}','--repo-name','${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+          python -c "import json, os, subprocess, sys; from pathlib import Path; payload=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')); wr=payload.get('workflow_run') or {}; prs=wr.get('pull_requests') or []; pr_number=(prs[0].get('number') if prs else None); print('No pull request linked to workflow run.') if pr_number is None else None; sys.exit(0) if pr_number is None else None; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number',str(pr_number),'--workflow-name',str(wr.get('name','Android CI')),'--conclusion',str(wr.get('conclusion','unknown')),'--run-id',str(wr.get('id','unknown')),'--run-url',str(wr.get('html_url','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
 
       - name: Persist automation records
         run: |

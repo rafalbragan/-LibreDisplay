@@ -263,8 +263,8 @@ jobs:
           # (`agent_assignment`, with `agentAssignment` fallback only for compatibility)
           python scripts/product/product_cli.py inbox-sync-implementation-handoff \
             --event-file github-event.json \
-            --repo-owner "${{ github.repository_owner }}" \
-            --repo-name "${{ github.event.repository.name }}" \
+            --repo-owner="${{ github.repository_owner }}" \
+            --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
             --base-branch master \
             --output-file handoff-result.json
@@ -492,7 +492,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -c "import json, subprocess; from pathlib import Path; meta=json.loads(Path('ci-meta.json').read_text(encoding='utf-8')); cmd=['python','scripts/product/product_cli.py','record-ci-result','--pr-number',str(meta['pr_number']),'--workflow-name',str(meta.get('workflow_name','Android CI')),'--conclusion',str(meta.get('conclusion','unknown')),'--run-id',str(meta.get('run_id','unknown')),'--run-url',str(meta.get('run_url','')),'--failing-step',str(meta.get('failing_step','')),'--failing-tests',str(meta.get('failing_tests','')),'--log-excerpt',str(meta.get('log_excerpt','')),'--repo-owner','${{ github.repository_owner }}','--repo-name','${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+          python -c "import json, subprocess; from pathlib import Path; meta=json.loads(Path('ci-meta.json').read_text(encoding='utf-8')); cmd=['python','scripts/product/product_cli.py','record-ci-result','--pr-number',str(meta['pr_number']),'--workflow-name',str(meta.get('workflow_name','Android CI')),'--conclusion',str(meta.get('conclusion','unknown')),'--run-id',str(meta.get('run_id','unknown')),'--run-url',str(meta.get('run_url','')),'--failing-step',str(meta.get('failing_step','')),'--failing-tests',str(meta.get('failing_tests','')),'--log-excerpt',str(meta.get('log_excerpt','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
 
       - name: Product validation
         if: steps.ci_meta.outputs.has_pr == 'true'

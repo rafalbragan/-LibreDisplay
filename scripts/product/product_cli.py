@@ -378,6 +378,30 @@ def find_requirement_by_source_issue(issue_number: int) -> tuple[Path | None, di
     return None, None
 
 
+def find_requirement_for_candidate(candidate_id: str, candidate: dict) -> tuple[Path | None, dict | None]:
+    """Best-effort lookup used to keep /accept idempotent across partial workflow failures."""
+    issue_number = candidate.get("github_issue_number")
+    if isinstance(issue_number, int):
+        req_path, requirement = find_requirement_by_source_issue(issue_number)
+        if req_path is not None and requirement is not None:
+            return req_path, requirement
+
+    inbox_id = candidate.get("inbox_id")
+    for path in iter_requirement_paths():
+        record, _problem, _is_error = load_record(path)
+        if not isinstance(record, dict):
+            continue
+        implementation = record.get("implementation") or {}
+        if record.get("source_candidate_id") == candidate_id:
+            return path, record
+        if inbox_id and (
+            record.get("source_inbox_id") == inbox_id
+            or implementation.get("source_inbox_id") == inbox_id
+        ):
+            return path, record
+    return None, None
+
+
 def find_requirement_by_implementation_issue(issue_number: int) -> tuple[Path | None, dict | None]:
     for path in iter_requirement_paths():
         record, _problem, _is_error = load_record(path)
@@ -2772,6 +2796,16 @@ def cmd_apply_review() -> int:
             already_created = cand_data.get("applied_requirement_id")
             if already_created:
                 applied.append((cand_id, f"ACCEPTED_ALREADY -> {already_created}"))
+                continue
+
+            existing_req_path, existing_requirement = find_requirement_for_candidate(cand_id, cand_data)
+            if existing_req_path is not None and existing_requirement is not None:
+                existing_req_id = str(existing_requirement.get("id") or existing_req_path.stem)
+                cand_data["applied_requirement_id"] = existing_req_id
+                candidates[cand_id] = cand_data
+                ensure_requirement_implementation_record(existing_requirement, existing_req_path)
+                existing_ids.add(existing_req_id)
+                applied.append((cand_id, f"ACCEPTED_REUSED -> {existing_req_id}"))
                 continue
 
             # Generate REQ ID (simple increment)

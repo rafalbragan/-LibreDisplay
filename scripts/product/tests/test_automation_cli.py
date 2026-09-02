@@ -207,6 +207,34 @@ class AutomationCliTest(unittest.TestCase):
 			"Naprawa implementacji",
 		])
 
+	def parse_bug_handoff_args(self, repo_name: str) -> tuple[int, dict]:
+		captured = {}
+		original = self.cli.cmd_bug_sync_fix_handoff
+
+		def fake_cmd(*args):
+			captured.update({
+				"bug_id": args[0],
+				"repo_owner": args[1],
+				"repo_name": args[2],
+				"github_token": args[3],
+			})
+			return 0
+
+		self.cli.cmd_bug_sync_fix_handoff = fake_cmd
+		try:
+			rc = self.cli.main([
+				"bug-sync-fix-handoff",
+				"--bug-id",
+				"BUG-0001",
+				"--repo-owner=rafalbragan",
+				f"--repo-name={repo_name}",
+				"--github-token",
+				"token",
+			])
+		finally:
+			self.cli.cmd_bug_sync_fix_handoff = original
+		return rc, captured
+
 	def test_regression_against_requirement_queues_fix(self):
 		bug_id = self.import_bug(
 			self.bug_issue_event(401, "[Blad LibreCare] Czas wzgledny", "Widoczny surowy ISO", "Naturalny czas", "1. Otworz dashboard")
@@ -404,6 +432,18 @@ class AutomationCliTest(unittest.TestCase):
 		impl = self.read_json(self.root / "product" / "implementation" / f"IMP-{bug_id}.json")
 		self.assertIsNone(impl["source_inbox_id"])
 		self.assertEqual(407, impl["source_issue_number"])
+
+	def test_bug_handoff_cli_parses_repo_name_without_hyphen(self):
+		rc, captured = self.parse_bug_handoff_args("LibreDisplay")
+		self.assertEqual(0, rc)
+		self.assertEqual("rafalbragan", captured["repo_owner"])
+		self.assertEqual("LibreDisplay", captured["repo_name"])
+
+	def test_bug_handoff_cli_parses_repo_name_with_leading_hyphen(self):
+		rc, captured = self.parse_bug_handoff_args("-LibreDisplay")
+		self.assertEqual(0, rc)
+		self.assertEqual("rafalbragan", captured["repo_owner"])
+		self.assertEqual("-LibreDisplay", captured["repo_name"])
 
 	def test_non_confirmed_triage_removes_preexisting_bug_impl_record(self):
 		bug_id = self.import_bug(

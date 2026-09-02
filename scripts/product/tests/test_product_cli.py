@@ -245,6 +245,29 @@ class ProductCliInboxTest(unittest.TestCase):
         with self.patched_paths():
             return self.cli.cmd_validate()
 
+    def parse_handoff_args(self, repo_name: str) -> tuple[int, dict]:
+        captured = {}
+        original = self.cli.cmd_inbox_sync_implementation_handoff
+
+        def fake_cmd(**kwargs):
+            captured.update(kwargs)
+            return 0
+
+        self.cli.cmd_inbox_sync_implementation_handoff = fake_cmd
+        try:
+            rc = self.cli.main([
+                "inbox-sync-implementation-handoff",
+                "--event-file",
+                "dummy-event.json",
+                "--repo-owner=rafalbragan",
+                f"--repo-name={repo_name}",
+                "--github-token",
+                "token",
+            ])
+        finally:
+            self.cli.cmd_inbox_sync_implementation_handoff = original
+        return rc, captured
+
     def req_ids(self):
         reqs = set()
         for p in (self.root / "product" / "requirements").glob("REQ-*.json"):
@@ -465,6 +488,29 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(first_after, self.req_ids())
         self.assertEqual(impl_before | {f"IMP-{req_id}"}, self.implementation_ids())
 
+    def test_accept_retry_reuses_existing_requirement_when_queue_marker_missing(self):
+        event = self.make_issue_event(230, "Problem", "Retry bez duplikatow")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(230, self.ai_payload(230, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        first_req_ids = self.req_ids()
+        req_id = sorted([rid for rid in first_req_ids if rid.startswith("REQ-")])[-1]
+        first_impl_ids = self.implementation_ids()
+
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+            queue["candidates"]["CAND-INBOX-GH-000230"].pop("applied_requirement_id", None)
+            self.cli.save_yaml(self.cli.REVIEW_QUEUE_FILE, queue)
+
+        self.assertEqual(0, self.run_decision(decision_event))
+        self.assertEqual(first_req_ids, self.req_ids())
+        self.assertEqual(first_impl_ids, self.implementation_ids())
+        with self.patched_paths():
+            queue = self.cli.load_yaml(self.cli.REVIEW_QUEUE_FILE)
+        self.assertEqual(req_id, queue["candidates"]["CAND-INBOX-GH-000230"]["applied_requirement_id"])
+
     def test_accept_creates_one_implementation_issue_and_assignment_once(self):
         event = self.make_issue_event(217, "Problem", "Naturalny czas świeżości")
         self.assertEqual(0, self.run_import(event))
@@ -484,6 +530,24 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual("AGENT_ASSIGNED", implementation["status"])
         self.assertEqual(first["implementation_issue_number"], implementation["implementation_issue_number"])
         self.assertEqual("ASSIGNED", implementation["copilot_assignment"]["status"])
+
+    def test_handoff_cli_parses_repo_name_without_hyphen(self):
+        rc, captured = self.parse_handoff_args("LibreDisplay")
+        self.assertEqual(0, rc)
+        self.assertEqual("rafalbragan", captured["repo_owner"])
+        self.assertEqual("LibreDisplay", captured["repo_name"])
+
+    def test_handoff_cli_parses_repo_name_with_leading_hyphen(self):
+        rc, captured = self.parse_handoff_args("-LibreDisplay")
+        self.assertEqual(0, rc)
+        self.assertEqual("rafalbragan", captured["repo_owner"])
+        self.assertEqual("-LibreDisplay", captured["repo_name"])
+
+    def test_owner_and_repo_name_extract_correctly_from_full_repository(self):
+        full_repository = "rafalbragan/-LibreDisplay"
+        owner, repo_name = full_repository.split("/", 1)
+        self.assertEqual("rafalbragan", owner)
+        self.assertEqual("-LibreDisplay", repo_name)
 
     def test_hold_and_reject_do_not_start_implementation_handoff(self):
         hold_event = self.make_issue_event(218, "Problem", "Wstrzymane")
@@ -877,6 +941,20 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product/implementation", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_workflows_use_safe_repo_argument_shape_for_leading_hyphen_names(self):
+        inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        bug_text = BUG_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('--repo-name="${{ github.event.repository.name }}"', inbox_text)
+        self.assertIn("'--repo-name=${{ github.event.repository.name }}'", inbox_text)
+        self.assertNotIn('--repo-name "${{ github.event.repository.name }}"', inbox_text)
+        self.assertNotIn("'--repo-name','${{ github.event.repository.name }}'", inbox_text)
+
+        self.assertIn('--repo-name="${{ github.event.repository.name }}"', bug_text)
+        self.assertIn("'--repo-name=${{ github.event.repository.name }}'", bug_text)
+        self.assertNotIn('--repo-name "${{ github.event.repository.name }}"', bug_text)
+        self.assertNotIn("'--repo-name','${{ github.event.repository.name }}'", bug_text)
 
     def test_workflow_decision_fallback_comment_is_polish(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
