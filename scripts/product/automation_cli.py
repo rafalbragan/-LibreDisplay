@@ -22,6 +22,10 @@ TECH_VALIDATIONS_DIR = GENERATED_DIR / "technical-validations"
 MAX_AUTOMATIC_REPAIR_ATTEMPTS = 3
 COPILOT_AGENT_LOGIN = "copilot-swe-agent[bot]"
 DEFAULT_BASE_BRANCH = "master"
+COPILOT_GRAPHQL_FEATURE_FLAGS = [
+    "copilot_agent_assignment_api",
+    "copilot_workspace_assignments",
+]
 BUG_SOURCES = {
     "GITHUB_BUG_ISSUE",
     "FAILED_ACCEPTANCE_TESTRUN",
@@ -363,13 +367,17 @@ class GitHubClient:
         self.repo = repo
         self.token = token
 
-    def _request(self, method: str, path: str, payload: dict | None = None):
+    def _request(self, method: str, path: str, payload: dict | None = None, extra_headers: dict[str, str] | None = None):
         url = f"https://api.github.com{path}"
         data = None if payload is None else json.dumps(payload).encode("utf-8")
         req = urllib_request.Request(url, data=data, method=method)
         req.add_header("Accept", "application/vnd.github+json")
         req.add_header("Authorization", f"Bearer {self.token}")
         req.add_header("User-Agent", "LibreCare-Automation")
+        req.add_header("X-GitHub-Api-Version", "2022-11-28")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                req.add_header(key, value)
         if payload is not None:
             req.add_header("Content-Type", "application/json")
         try:
@@ -390,19 +398,167 @@ class GitHubClient:
     def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
         return self._request("POST", f"/repos/{self.owner}/{self.repo}/issues", {"title": title, "body": body, "labels": labels})
 
+    def get_issue(self, issue_number: int) -> dict:
+        return self._request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
+
+    def _graphql(self, query: str, variables: dict | None = None) -> dict:
+        payload = {"query": query, "variables": variables or {}}
+        features = ",".join(COPILOT_GRAPHQL_FEATURE_FLAGS)
+        return self._request("POST", "/graphql", payload, extra_headers={"GraphQL-Features": features})
+
+    def _copilot_assignee_confirmed(self, issue_number: int) -> tuple[bool, list[str]]:
+        issue = self.get_issue(issue_number)
+        logins = [str((a or {}).get("login")) for a in (issue.get("assignees") or []) if (a or {}).get("login")]
+        return COPILOT_AGENT_LOGIN in logins, logins
+
+    def _get_repository_node_id(self) -> str:
+        query = """
+        query RepoId($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            id
+          }
+        }
+        """
+        data = self._graphql(query, {"owner": self.owner, "name": self.repo})
+        if data.get("errors"):
+            raise RuntimeError(f"GitHub GraphQL repository lookup failed: {data['errors']}")
+        repo_id = (((data.get("data") or {}).get("repository") or {}).get("id"))
+        if not repo_id:
+            raise RuntimeError("GitHub GraphQL repository lookup returned empty repository id")
+        return str(repo_id)
+
+    def _get_issue_node_id(self, issue_number: int) -> str:
+        query = """
+        query IssueId($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            issue(number: $number) {
+              id
+            }
+          }
+        }
+        """
+        data = self._graphql(query, {"owner": self.owner, "name": self.repo, "number": int(issue_number)})
+        if data.get("errors"):
+            raise RuntimeError(f"GitHub GraphQL issue lookup failed: {data['errors']}")
+        issue_id = (((((data.get("data") or {}).get("repository") or {}).get("issue") or {}).get("id")) )
+        if not issue_id:
+            raise RuntimeError(f"GitHub GraphQL issue lookup returned empty issue id for issue #{issue_number}")
+        return str(issue_id)
+
+    def _get_actor_node_id(self, login: str) -> str:
+        encoded = urllib_parse.quote(login, safe="")
+        user = self._request("GET", f"/users/{encoded}")
+        node_id = user.get("node_id")
+        if not node_id:
+            raise RuntimeError(f"GitHub user lookup returned empty node_id for {login}")
+        return str(node_id)
+
     def assign_copilot(self, issue_number: int, base_branch: str, instructions: str) -> dict:
-        payloads = [
-            {"assignees": [COPILOT_AGENT_LOGIN], "agent_assignment": {"agent": COPILOT_AGENT_LOGIN, "base_branch": base_branch, "instructions": instructions}},
-            {"assignees": [COPILOT_AGENT_LOGIN], "agentAssignment": {"agent": COPILOT_AGENT_LOGIN, "baseBranch": base_branch, "instructions": instructions}},
+        repository_id = self._get_repository_node_id()
+        issue_id = self._get_issue_node_id(issue_number)
+        actor_id = self._get_actor_node_id(COPILOT_AGENT_LOGIN)
+
+        mutation_specs = [
+            {
+                "name": "addAssigneesToAssignable",
+                "query": """
+                mutation AssignCopilot(
+                  $assignableId: ID!,
+                  $assigneeIds: [ID!]!,
+                  $agentAssignment: AgentAssignmentInput
+                ) {
+                  addAssigneesToAssignable(input: {
+                    assignableId: $assignableId,
+                    assigneeIds: $assigneeIds,
+                    agentAssignment: $agentAssignment
+                  }) {
+                    assignable {
+                      ... on Issue {
+                        number
+                        assignees(first: 20) { nodes { login id } }
+                      }
+                    }
+                  }
+                }
+                """,
+                "variables": {"assignableId": issue_id, "assigneeIds": [actor_id]},
+            },
+            {
+                "name": "replaceActorsForAssignable",
+                "query": """
+                mutation AssignCopilot(
+                  $assignableId: ID!,
+                  $actorIds: [ID!]!,
+                  $agentAssignment: AgentAssignmentInput
+                ) {
+                  replaceActorsForAssignable(input: {
+                    assignableId: $assignableId,
+                    actorIds: $actorIds,
+                    agentAssignment: $agentAssignment
+                  }) {
+                    assignable {
+                      ... on Issue {
+                        number
+                        assignees(first: 20) { nodes { login id } }
+                      }
+                    }
+                  }
+                }
+                """,
+                "variables": {"assignableId": issue_id, "actorIds": [actor_id]},
+            },
         ]
-        for method, endpoint in [("POST", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/assignees"), ("PATCH", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")]:
-            for payload in payloads:
+        assignment_variants = [
+            {
+                "agentId": actor_id,
+                "targetRepositoryId": repository_id,
+                "baseRef": base_branch,
+                "instructions": instructions,
+            },
+            {
+                "agentLogin": COPILOT_AGENT_LOGIN,
+                "targetRepositoryId": repository_id,
+                "baseRef": base_branch,
+                "instructions": instructions,
+            },
+        ]
+
+        last_error = None
+        for spec in mutation_specs:
+            for assignment_input in assignment_variants:
                 try:
-                    response = self._request(method, endpoint, payload)
-                    return {"status": "ASSIGNED", "method": method, "endpoint": endpoint, "response": response}
-                except RuntimeError:
+                    variables = dict(spec["variables"])
+                    variables["agentAssignment"] = assignment_input
+                    response = self._graphql(spec["query"], variables)
+                    if response.get("errors"):
+                        last_error = f"GraphQL returned errors for {spec['name']}: {response['errors']}"
+                        continue
+                    payload = (response.get("data") or {}).get(spec["name"]) or {}
+                    assignable = payload.get("assignable") or {}
+                    assignees = ((assignable.get("assignees") or {}).get("nodes") or [])
+                    assignee_logins = [str((node or {}).get("login")) for node in assignees if (node or {}).get("login")]
+                    mutation_confirmed = COPILOT_AGENT_LOGIN in assignee_logins
+                    rest_confirmed, current_logins = self._copilot_assignee_confirmed(issue_number)
+                    if mutation_confirmed and rest_confirmed:
+                        return {
+                            "status": "ASSIGNED",
+                            "method": "GRAPHQL",
+                            "mutation": spec["name"],
+                            "issue_node_id": issue_id,
+                            "repository_node_id": repository_id,
+                            "actor_node_id": actor_id,
+                            "assignees": assignee_logins,
+                            "verified_assignees": current_logins,
+                            "response": response,
+                        }
+                    last_error = (
+                        "Copilot assignee was not confirmed after GraphQL mutation; "
+                        f"mutation_assignees={assignee_logins}, issue_assignees={current_logins}"
+                    )
+                except RuntimeError as exc:
+                    last_error = str(exc)
                     continue
-        raise RuntimeError("Copilot assignment failed")
+        raise RuntimeError(last_error or "Copilot assignment failed")
 
 
 GITHUB_CLIENT_FACTORY = GitHubClient
@@ -596,6 +752,32 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
             print(json.dumps(summary, ensure_ascii=False))
         return 0
     client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+    if issue.get("number"):
+        confirmed, _assignees = client._copilot_assignee_confirmed(int(issue["number"]))
+        if confirmed:
+            issue["assigned_agent"] = COPILOT_AGENT_LOGIN
+            issue["updated_at"] = now_iso()
+            bug["implementation_issue"] = issue
+            bug["status"] = "IN_PROGRESS"
+            bug["updated_at"] = now_iso()
+            write_json(bug_path, bug)
+            ensure_bug_impl(bug)
+            upsert_impl({
+                "implementation_id": f"IMP-{bug_id}",
+                "status": "AGENT_ASSIGNED",
+                "implementation_issue_number": int(issue["number"]),
+                "implementation_issue_url": issue.get("url"),
+                "copilot_assignment": issue.get("agent_assignment") or {},
+            })
+            summary = {"bug_id": bug_id, "status": bug.get("status"), "implementation_issue_number": int(issue["number"]), "implementation_issue_url": issue.get("url"), "blocked": False, "copilot_real_assignee_confirmed": True}
+            if output_file:
+                write_json(Path(output_file), summary)
+            else:
+                print(json.dumps(summary, ensure_ascii=False))
+            return 0
+        issue.pop("assigned_agent", None)
+        issue["updated_at"] = now_iso()
+        bug["implementation_issue"] = issue
     client.ensure_label("bugfix", "d73a4a", "Naprawy bledow LibreCare")
     client.ensure_label(bug_id, "b60205", f"Sledzenie bledu {bug_id}")
     safe_title = sanitize_user_text(bug.get("title", "Naprawa bledu"), limit=180)
@@ -615,17 +797,31 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
         f"## POWIAZANE_REQ\n{', '.join(bug.get('related_requirement_ids', [])) or 'BRAK'}",
         f"## POWIAZANE_TESTY\n{', '.join(bug.get('related_test_ids', [])) or 'BRAK'}",
     ])
-    issue_resp = client.create_issue(title=f"[Naprawa] {bug_id} — {safe_title or 'Naprawa bledu'}", body=issue_body, labels=["bugfix", bug_id])
-    assignment = client.assign_copilot(int(issue_resp["number"]), base_branch=base_branch, instructions=f"Napraw wylacznie kanoniczny regresyjny blad {bug_id} na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.")
-    bug["implementation_issue"] = {"number": int(issue_resp["number"]), "url": issue_resp.get("html_url") or issue_resp.get("url"), "assigned_agent": COPILOT_AGENT_LOGIN, "agent_assignment": assignment, "updated_at": now_iso()}
+    issue_resp = {"number": issue.get("number"), "html_url": issue.get("url")} if issue.get("number") else client.create_issue(title=f"[Naprawa] {bug_id} — {safe_title or 'Naprawa bledu'}", body=issue_body, labels=["bugfix", bug_id])
+    assignment_error = None
+    try:
+        assignment = client.assign_copilot(int(issue_resp["number"]), base_branch=base_branch, instructions=f"Napraw wylacznie kanoniczny regresyjny blad {bug_id} na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.")
+    except RuntimeError as exc:
+        assignment = {"status": "ASSIGNMENT_FAILED", "error": str(exc)}
+        assignment_error = str(exc)
+    bug["implementation_issue"] = {
+        "number": int(issue_resp["number"]),
+        "url": issue_resp.get("html_url") or issue_resp.get("url"),
+        "agent_assignment": assignment,
+        "updated_at": now_iso(),
+    }
+    if assignment.get("status") == "ASSIGNED":
+        bug["implementation_issue"]["assigned_agent"] = COPILOT_AGENT_LOGIN
     bug["implementation_issue_number"] = int(issue_resp["number"])
     bug["implementation_issue_url"] = issue_resp.get("html_url") or issue_resp.get("url")
-    bug["status"] = "IN_PROGRESS"
+    bug["status"] = "IN_PROGRESS" if assignment.get("status") == "ASSIGNED" else "CONFIRMED_DEFECT"
     bug["updated_at"] = now_iso()
     write_json(bug_path, bug)
     ensure_bug_impl(bug)
-    upsert_impl({"implementation_id": f"IMP-{bug_id}", "status": "AGENT_ASSIGNED", "implementation_issue_number": int(issue_resp["number"]), "implementation_issue_url": issue_resp.get("html_url") or issue_resp.get("url"), "copilot_assignment": assignment})
-    summary = {"bug_id": bug_id, "status": bug["status"], "implementation_issue_number": int(issue_resp["number"]), "implementation_issue_url": issue_resp.get("html_url") or issue_resp.get("url"), "blocked": False}
+    upsert_impl({"implementation_id": f"IMP-{bug_id}", "status": "AGENT_ASSIGNED" if assignment.get("status") == "ASSIGNED" else "QUEUED", "implementation_issue_number": int(issue_resp["number"]), "implementation_issue_url": issue_resp.get("html_url") or issue_resp.get("url"), "copilot_assignment": assignment})
+    summary = {"bug_id": bug_id, "status": bug["status"], "implementation_issue_number": int(issue_resp["number"]), "implementation_issue_url": issue_resp.get("html_url") or issue_resp.get("url"), "blocked": False, "copilot_real_assignee_confirmed": assignment.get("status") == "ASSIGNED"}
+    if assignment_error:
+        summary["assignment_error"] = assignment_error
     if output_file:
         write_json(Path(output_file), summary)
     else:

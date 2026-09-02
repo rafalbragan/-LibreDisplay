@@ -40,6 +40,8 @@ class ProductCliInboxTest(unittest.TestCase):
             assigned = []
             labels = []
             next_issue_number = 500
+            issue_assignees = {}
+            assign_should_fail = False
 
             def __init__(self, owner: str, repo: str, token: str):
                 self.owner = owner
@@ -70,14 +72,26 @@ class ProductCliInboxTest(unittest.TestCase):
                     "response": response,
                     "req_id": re.search(r"REQ-[0-9A-Za-z._-]+", title).group(0),
                 })
+                self.__class__.issue_assignees.setdefault(issue_number, [])
                 return response
 
+            def _copilot_assignee_confirmed(self, issue_number: int):
+                logins = list(self.__class__.issue_assignees.get(issue_number, []))
+                return "copilot-swe-agent[bot]" in logins, logins
+
             def assign_copilot(self, issue_number: int, base_branch: str, instructions: str):
+                if self.__class__.assign_should_fail:
+                    raise RuntimeError("GraphQL assignment failed: missing feature preview")
+                logins = set(self.__class__.issue_assignees.get(issue_number, []))
+                logins.add("copilot-swe-agent[bot]")
+                self.__class__.issue_assignees[issue_number] = sorted(logins)
                 payload = {
                     "issue_number": issue_number,
                     "base_branch": base_branch,
                     "instructions": instructions,
                     "status": "ASSIGNED",
+                    "method": "GRAPHQL",
+                    "mutation": "addAssigneesToAssignable",
                     "field": "agent_assignment",
                 }
                 self.__class__.assigned.append(payload)
@@ -85,6 +99,12 @@ class ProductCliInboxTest(unittest.TestCase):
 
         self.fake_client = FakeGitHubClient
         self.cli.GITHUB_CLIENT_FACTORY = FakeGitHubClient
+        self.fake_client.created_issues = []
+        self.fake_client.assigned = []
+        self.fake_client.labels = []
+        self.fake_client.next_issue_number = 500
+        self.fake_client.issue_assignees = {}
+        self.fake_client.assign_should_fail = False
 
     def tearDown(self):
         self.cli.GITHUB_CLIENT_FACTORY = self.original_client_factory
@@ -531,6 +551,69 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(first["implementation_issue_number"], implementation["implementation_issue_number"])
         self.assertEqual("ASSIGNED", implementation["copilot_assignment"]["status"])
 
+    def test_label_without_real_assignee_is_not_treated_as_assigned(self):
+        event = self.make_issue_event(240, "Problem", "Weryfikacja realnego przypisania")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(240, self.ai_payload(240, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        req_id = sorted(self.req_ids())[-1]
+        req_path = self.root / "product" / "requirements" / f"{req_id}.yaml"
+        requirement = self.cli.load_yaml(req_path)
+        requirement["implementation"]["implementation_issue"] = {
+            "number": 7,
+            "url": "https://github.com/example/repo/issues/7",
+            "title": "[Implementacja] test",
+            "assigned_agent": "copilot-swe-agent[bot]",
+            "agent_assignment": {"status": "ASSIGNED"},
+        }
+        requirement["implementation"]["implementation_status"] = "AGENT_ASSIGNED"
+        self.cli.save_yaml(req_path, requirement)
+
+        self.fake_client.issue_assignees[7] = []
+        self.fake_client.assign_should_fail = True
+        summary = self.run_handoff(decision_event, output_name="handoff-unassigned.json")
+
+        self.assertEqual("QUEUED", summary["status"])
+        self.assertFalse(summary["copilot_real_assignee_confirmed"])
+        self.assertIn("LIBRECARE_COPILOT_ASSIGNMENT_STATUS", summary.get("comment_markdown", ""))
+        refreshed = self.cli.load_yaml(req_path)
+        self.assertEqual("QUEUED", refreshed["implementation"]["implementation_status"])
+        self.assertNotIn("assigned_agent", refreshed["implementation"].get("implementation_issue", {}))
+
+    def test_repeated_handoff_after_failed_assignment_reuses_issue(self):
+        event = self.make_issue_event(241, "Problem", "Retry po błędzie assignment")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(241, self.ai_payload(241, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        self.fake_client.assign_should_fail = True
+        first = self.run_handoff(decision_event, output_name="handoff-fail-1.json")
+        self.assertEqual("QUEUED", first["status"])
+        issue_number = first["implementation_issue_number"]
+        self.assertEqual(1, len(self.fake_client.created_issues))
+
+        second = self.run_handoff(decision_event, output_name="handoff-fail-2.json")
+        self.assertEqual(issue_number, second["implementation_issue_number"])
+        self.assertEqual(1, len(self.fake_client.created_issues))
+
+    def test_repeated_successful_handoff_creates_no_duplicate_issue_or_assignment(self):
+        event = self.make_issue_event(242, "Problem", "Ponowienie po sukcesie")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(242, self.ai_payload(242, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        first = self.run_handoff(decision_event, output_name="handoff-success-1.json")
+        second = self.run_handoff(decision_event, output_name="handoff-success-2.json")
+        self.assertTrue(first["copilot_real_assignee_confirmed"])
+        self.assertTrue(second["copilot_real_assignee_confirmed"])
+        self.assertEqual(first["implementation_issue_number"], second["implementation_issue_number"])
+        self.assertEqual(1, len(self.fake_client.created_issues))
+        self.assertEqual(1, len(self.fake_client.assigned))
+
     def test_handoff_cli_parses_repo_name_without_hyphen(self):
         rc, captured = self.parse_handoff_args("LibreDisplay")
         self.assertEqual(0, rc)
@@ -941,6 +1024,14 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product/implementation", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_product_cli_uses_graphql_assignment_mutations(self):
+        text = CLI_PATH.read_text(encoding="utf-8")
+        self.assertIn("addAssigneesToAssignable", text)
+        self.assertIn("replaceActorsForAssignable", text)
+        self.assertIn("GraphQL-Features", text)
+        self.assertIn("targetRepositoryId", text)
+        self.assertIn("baseRef", text)
 
     def test_workflows_use_safe_repo_argument_shape_for_leading_hyphen_names(self):
         inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")

@@ -22,6 +22,8 @@ class FakeGitHubClient:
 	assignments = []
 	labels = []
 	next_issue_number = 700
+	issue_assignees = {}
+	assign_should_fail = False
 
 	def __init__(self, owner: str, repo: str, token: str):
 		self.owner = owner
@@ -42,14 +44,25 @@ class FakeGitHubClient:
 			"labels": labels,
 		}
 		self.__class__.created_issues.append(response)
+		self.__class__.issue_assignees.setdefault(issue_number, [])
 		return response
 
+	def _copilot_assignee_confirmed(self, issue_number: int):
+		logins = list(self.__class__.issue_assignees.get(issue_number, []))
+		return "copilot-swe-agent[bot]" in logins, logins
+
 	def assign_copilot(self, issue_number: int, base_branch: str, instructions: str) -> dict:
+		if self.__class__.assign_should_fail:
+			raise RuntimeError("GraphQL assignment failed")
+		logins = set(self.__class__.issue_assignees.get(issue_number, []))
+		logins.add("copilot-swe-agent[bot]")
+		self.__class__.issue_assignees[issue_number] = sorted(logins)
 		payload = {
 			"issue_number": issue_number,
 			"base_branch": base_branch,
 			"instructions": instructions,
 			"status": "ASSIGNED",
+			"method": "GRAPHQL",
 		}
 		self.__class__.assignments.append(payload)
 		return payload
@@ -82,6 +95,8 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.assignments = []
 		FakeGitHubClient.labels = []
 		FakeGitHubClient.next_issue_number = 700
+		FakeGitHubClient.issue_assignees = {}
+		FakeGitHubClient.assign_should_fail = False
 
 		self.accepted_req_id = "REQ-9999"
 		self.write_json(
@@ -433,6 +448,62 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertIsNone(impl["source_inbox_id"])
 		self.assertEqual(407, impl["source_issue_number"])
 
+	def test_bug_assignment_error_does_not_fake_assigned_state(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(420, "[Blad LibreCare] Assignment fail", "ISO", "Naturalny czas", "1. Otworz dashboard")
+		)
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Regresja potwierdzona.",
+				"severity": "MEDIUM",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0012"],
+			},
+		)
+		FakeGitHubClient.assign_should_fail = True
+		out = self.root / "bug-handoff-fail.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(out)))
+		summary = self.read_json(out)
+		self.assertFalse(summary["copilot_real_assignee_confirmed"])
+		self.assertEqual("CONFIRMED_DEFECT", summary["status"])
+		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
+		self.assertNotIn("assigned_agent", bug["implementation_issue"])
+
+	def test_bug_retry_after_failed_assignment_reuses_same_issue(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(421, "[Blad LibreCare] Retry assignment", "ISO", "Naturalny czas", "1. Otworz dashboard")
+		)
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Regresja potwierdzona.",
+				"severity": "MEDIUM",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0013"],
+			},
+		)
+		FakeGitHubClient.assign_should_fail = True
+		first_out = self.root / "bug-handoff-retry-1.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(first_out)))
+		first = self.read_json(first_out)
+		self.assertEqual(1, len(FakeGitHubClient.created_issues))
+
+		FakeGitHubClient.assign_should_fail = False
+		second_out = self.root / "bug-handoff-retry-2.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(second_out)))
+		second = self.read_json(second_out)
+		self.assertEqual(first["implementation_issue_number"], second["implementation_issue_number"])
+		self.assertEqual(1, len(FakeGitHubClient.created_issues))
+		self.assertEqual(1, len(FakeGitHubClient.assignments))
+		self.assertTrue(second["copilot_real_assignee_confirmed"])
+
 	def test_bug_handoff_cli_parses_repo_name_without_hyphen(self):
 		rc, captured = self.parse_bug_handoff_args("LibreDisplay")
 		self.assertEqual(0, rc)
@@ -662,6 +733,14 @@ class AutomationCliTest(unittest.TestCase):
 			)
 		bug_files = sorted((self.root / "product" / "bugs").glob("BUG-*.json"))
 		self.assertEqual(4, len(bug_files))
+
+	def test_automation_cli_contains_graphql_assignment_flow(self):
+		text = (WORKSPACE_ROOT / "scripts" / "product" / "automation_cli.py").read_text(encoding="utf-8")
+		self.assertIn("addAssigneesToAssignable", text)
+		self.assertIn("replaceActorsForAssignable", text)
+		self.assertIn("GraphQL-Features", text)
+		self.assertIn("targetRepositoryId", text)
+		self.assertIn("baseRef", text)
 
 
 if __name__ == "__main__":
