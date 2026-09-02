@@ -1,0 +1,55 @@
+name: LibreCare — zgłoszenie błędu
+description: "Zgłoś regresję lub defekt w działaniu LibreCare."
+title: "[Blad LibreCare] "
+labels:
+  - bug
+  - librecare-bug
+body:
+  - type: textarea
+    id: observed
+    attributes:
+      label: Co się stało?
+      placeholder: "Opisz, co dokładnie dzieje się teraz."
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: Jakiego zachowania oczekiwałeś?
+      placeholder: "Opisz oczekiwane działanie aplikacji."
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Jak odtworzyć problem?
+      placeholder: "1. ...\n2. ...\n3. ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: location
+    attributes:
+      label: Gdzie występuje?
+      placeholder: "Np. ekran główny, historia, widget, ustawienia."
+    validations:
+      required: true
+
+  - type: textarea
+    id: history
+    attributes:
+      label: Czy problem występował wcześniej?
+      placeholder: "Np. nie, pojawił się po ostatniej aktualizacji / tak, od wersji ..."
+    validations:
+      required: true
+
+  - type: textarea
+    id: context
+    attributes:
+      label: Dodatkowy kontekst
+      placeholder: "Np. zrzuty, logi, dane środowiska, dodatkowe uwagi."
+    validations:
+      required: false
+

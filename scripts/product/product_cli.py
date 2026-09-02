@@ -17,6 +17,9 @@ import sys
 from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
+from urllib import error as urllib_error
+from urllib import parse as urllib_parse
+from urllib import request as urllib_request
 
 try:
     import yaml  # type: ignore
@@ -40,9 +43,76 @@ REVIEW_QUEUE_FILE = REVIEW_DIR / "REVIEW_QUEUE.yaml"
 GENERATED_DIR = PRODUCT / "generated"
 INBOX_REVIEW_RESULTS_FILE = GENERATED_DIR / "INBOX_REVIEW_RESULTS.json"
 INBOX_REVIEWS_DIR = GENERATED_DIR / "inbox-reviews"
+IMPLEMENTATION_HANDOFFS_DIR = GENERATED_DIR / "implementation-handoffs"
+BUG_REVIEWS_DIR = GENERATED_DIR / "bug-reviews"
+TECHNICAL_VALIDATIONS_DIR = GENERATED_DIR / "technical-validations"
+IMPLEMENTATION_DIR = PRODUCT / "implementation"
+BUGS_DIR = PRODUCT / "bugs"
+
+COPILOT_AGENT_LOGIN = "copilot-swe-agent[bot]"
+DEFAULT_BASE_BRANCH = "master"
+
+POLISH_CLASSIFICATION_LABELS = {
+    "PRODUCT_PROBLEM": "Problem produktowy",
+    "PRODUCT_OPPORTUNITY": "Szansa produktowa",
+    "SAFETY_GAP": "Luka bezpieczeństwa",
+    "VALIDATED_CAPABILITY": "Potwierdzona istniejąca funkcja",
+    "TEST_COVERAGE_GAP": "Luka w pokryciu testami",
+    "INCONCLUSIVE": "Wniosek niejednoznaczny",
+}
+
+POLISH_DECISION_LABELS = {
+    "ACCEPT": "ZAAKCEPTOWANE",
+    "HOLD": "WSTRZYMANE",
+    "REJECT": "ODRZUCONE",
+    "PENDING": "OCZEKUJE",
+}
+
+POLISH_SCOPE_LABELS = {
+    "SMALL": "Mały",
+    "MEDIUM": "Średni",
+    "LARGE": "Duży",
+}
+
+POLISH_SAFETY_LABELS = {
+    "NONE": "Brak",
+    "LOW": "Niski",
+    "MEDIUM": "Średni",
+    "HIGH": "Wysoki",
+}
+
+ISSUE_FORM_SECTION_ALIASES = {
+    "TYPE": "TYPE",
+    "TYP ZGŁOSZENIA": "TYPE",
+    "PERSONA": "PERSONA",
+    "PERSONA UŻYTKOWNIKA": "PERSONA",
+    "MODULE": "MODULE",
+    "MODUŁ": "MODULE",
+    "WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?": "WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?",
+    "CO ZAUWAŻYŁEŚ(-AŚ) / CZEGO POTRZEBUJESZ?": "WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?",
+    "CO ZAUWAŻYŁEŚ(-AŚ) / CZEGO POTRZEBUJESZ": "WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?",
+    "WHY DOES IT MATTER?": "WHY DOES IT MATTER?",
+    "DLACZEGO TO WAŻNE?": "WHY DOES IT MATTER?",
+    "CONTEXT / EXAMPLE": "CONTEXT / EXAMPLE",
+    "KONTEKST / PRZYKŁAD": "CONTEXT / EXAMPLE",
+}
 
 # Maximum value allowed for requirement score fields.
 MAX_SCORE = 10
+
+LEGACY_IMPLEMENTATION_STATUS_MAP = {
+    "IMPLEMENTATION_QUEUED": "QUEUED",
+    "IMPLEMENTATION_IN_PROGRESS": "IN_PROGRESS",
+}
+
+TERMINAL_IMPLEMENTATION_STATUSES = {
+    "MERGED",
+    "VALIDATION_PENDING",
+    "VALIDATED",
+    "FAILED",
+}
+
+MAX_AUTOMATIC_REPAIR_ATTEMPTS = 3
 
 # ----------------------------------------------------------------------------- helpers
 
@@ -228,6 +298,234 @@ def load_yaml(path: Path) -> dict:
         return yaml.safe_load(fh) or {}
 
 
+def save_record(path: Path, payload: dict) -> None:
+    if path.suffix.lower() == ".json":
+        write_json(path, payload)
+        return
+    save_yaml(path, payload)
+
+
+def iter_requirement_paths():
+    yield from sorted(REQUIREMENTS_DIR.glob("REQ-*.json"))
+    yield from sorted(REQUIREMENTS_DIR.glob("REQ-*.yaml"))
+    yield from sorted(REQUIREMENTS_DIR.glob("REQ-*.yml"))
+
+
+def iter_implementation_paths():
+    yield from sorted(IMPLEMENTATION_DIR.glob("IMP-*.json"))
+
+
+def implementation_record_path(implementation_id: str) -> Path:
+    return IMPLEMENTATION_DIR / f"{implementation_id}.json"
+
+
+def normalize_implementation_status(status: str | None) -> str:
+    if not status:
+        return "QUEUED"
+    return LEGACY_IMPLEMENTATION_STATUS_MAP.get(status, status)
+
+
+def load_implementation_record(implementation_id: str) -> dict | None:
+    path = implementation_record_path(implementation_id)
+    if not path.exists():
+        return None
+    payload = load_json(path)
+    return payload if isinstance(payload, dict) else None
+
+
+def upsert_implementation_record(payload: dict) -> dict:
+    implementation_id = payload["implementation_id"]
+    path = implementation_record_path(implementation_id)
+    existing = load_implementation_record(implementation_id) if path.exists() else None
+    record = dict(existing or {})
+    for key, value in payload.items():
+        if key not in record or value is not None:
+            record[key] = value
+    record.setdefault("created_at", payload.get("created_at") or now_iso())
+    record["updated_at"] = payload.get("updated_at") or now_iso()
+    IMPLEMENTATION_DIR.mkdir(parents=True, exist_ok=True)
+    write_json(path, record)
+    return record
+
+
+def find_requirement_path(req_id: str) -> Path | None:
+    for path in iter_requirement_paths():
+        if path.stem == req_id:
+            return path
+    return None
+
+
+def load_requirement_by_id(req_id: str) -> tuple[Path | None, dict | None]:
+    path = find_requirement_path(req_id)
+    if path is None:
+        return None, None
+    record, problem, _is_error = load_record(path)
+    if not isinstance(record, dict):
+        raise RuntimeError(f"Could not load requirement {req_id}: {problem}")
+    return path, record
+
+
+def find_requirement_by_source_issue(issue_number: int) -> tuple[Path | None, dict | None]:
+    for path in iter_requirement_paths():
+        record, _problem, _is_error = load_record(path)
+        if not isinstance(record, dict):
+            continue
+        if record.get("source_github_issue_number") == issue_number:
+            return path, record
+        implementation = record.get("implementation") or {}
+        if implementation.get("source_inbox_issue_number") == issue_number:
+            return path, record
+    return None, None
+
+
+def find_requirement_by_implementation_issue(issue_number: int) -> tuple[Path | None, dict | None]:
+    for path in iter_requirement_paths():
+        record, _problem, _is_error = load_record(path)
+        if not isinstance(record, dict):
+            continue
+        implementation = record.get("implementation") or {}
+        issue_info = implementation.get("implementation_issue") or {}
+        if issue_info.get("number") == issue_number:
+            return path, record
+    return None, None
+
+
+def find_requirement_by_pr_number(pr_number: int) -> tuple[Path | None, dict | None]:
+    for path in iter_requirement_paths():
+        record, _problem, _is_error = load_record(path)
+        if not isinstance(record, dict):
+            continue
+        implementation = record.get("implementation") or {}
+        pr_info = implementation.get("implementation_pr") or {}
+        if pr_info.get("number") == pr_number:
+            return path, record
+    return None, None
+
+
+def ensure_requirement_implementation_block(requirement: dict) -> dict:
+    implementation = requirement.get("implementation")
+    if not isinstance(implementation, dict):
+        implementation = {}
+    implementation.setdefault("implementation_id", f"IMP-{requirement.get('id', 'REQ-UNKNOWN')}")
+    implementation.setdefault("implementation_status", "QUEUED")
+    implementation.setdefault("validation_state", "PENDING")
+    implementation.setdefault("implementation_issue", {})
+    implementation.setdefault("implementation_pr", {})
+    requirement["implementation"] = implementation
+    return implementation
+
+
+def ensure_requirement_implementation_record(requirement: dict, req_path: Path | None = None) -> dict:
+    implementation = ensure_requirement_implementation_block(requirement)
+    implementation_id = implementation.get("implementation_id") or f"IMP-{requirement['id']}"
+    implementation["implementation_id"] = implementation_id
+    issue_info = implementation.get("implementation_issue") or {}
+    pr_info = implementation.get("implementation_pr") or {}
+    assignment = issue_info.get("agent_assignment") or {}
+    status = normalize_implementation_status(implementation.get("implementation_status"))
+    existing = load_implementation_record(implementation_id) or {}
+    created_at = existing.get("created_at") or implementation.get("created_at") or requirement.get("created_at") or now_iso()
+
+    record = {
+        "implementation_id": implementation_id,
+        "requirement_id": requirement["id"],
+        "bug_id": None,
+        "source_inbox_id": implementation.get("source_inbox_id") or requirement.get("source_inbox_id"),
+        "source_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+        "implementation_issue_number": issue_info.get("number"),
+        "implementation_issue_url": issue_info.get("url"),
+        "copilot_assignment": assignment,
+        "branch": pr_info.get("head_ref"),
+        "pull_request_number": pr_info.get("number"),
+        "pull_request_url": pr_info.get("url"),
+        "status": status,
+        "created_at": created_at,
+        "attempt_count": existing.get("attempt_count", 0),
+        "last_ci_result": existing.get("last_ci_result", "UNKNOWN"),
+        "validation_state": implementation.get("validation_state", "PENDING"),
+        "acceptance_test_ids": requirement.get("acceptance_test_ids", []) or existing.get("acceptance_test_ids", []),
+        "ci_failures": existing.get("ci_failures", []),
+    }
+    if implementation.get("copilot_handoff_allowed") is False and not issue_info.get("number"):
+        record["bootstrap_note"] = implementation.get("handoff_blocked_reason") or implementation.get("completed_via") or existing.get("bootstrap_note")
+    elif existing.get("bootstrap_note"):
+        record["bootstrap_note"] = existing.get("bootstrap_note")
+
+    saved = upsert_implementation_record(record)
+    if req_path is not None:
+        save_record(req_path, requirement)
+    return saved
+
+
+def polish_label(mapping: dict[str, str], key: str, default: str) -> str:
+    return mapping.get(key, default)
+
+
+def normalize_requirement_title(value: str) -> str:
+    cleaned = re.sub(r"\s+", " ", (value or "").strip())
+    cleaned = cleaned.rstrip(".")
+    if not cleaned:
+        return "Wymaganie bez tytułu"
+    if len(cleaned) <= 120:
+        return cleaned
+    return cleaned[:117].rstrip() + "..."
+
+
+def derive_requirement_title(candidate: dict) -> str:
+    return normalize_requirement_title(
+        candidate.get("proposed_requirement")
+        or candidate.get("problem_or_opportunity")
+        or candidate.get("title")
+        or "Wymaganie z Product Inbox"
+    )
+
+
+def source_issue_reference(requirement: dict) -> str:
+    implementation = requirement.get("implementation") or {}
+    issue_number = implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number")
+    issue_url = implementation.get("source_inbox_issue_url") or requirement.get("source_github_issue_url")
+    if issue_number and issue_url:
+        return f"Issue #{issue_number} ({issue_url})"
+    if issue_number:
+        return f"Issue #{issue_number}"
+    return "Brak powiązanego Issue"
+
+
+def related_source_lines(requirement: dict) -> list[str]:
+    lines = []
+    req_path = find_requirement_path(requirement["id"])
+    if req_path is not None:
+        lines.append(f"- Wymaganie kanoniczne: {rel(req_path)}")
+    lines.append(f"- Product Inbox: {source_issue_reference(requirement)}")
+    for source_id in requirement.get("source_ids", []) or []:
+        lines.append(f"- Identyfikator źródła: {source_id}")
+    for decision_id in requirement.get("related_decisions", []) or []:
+        lines.append(f"- Powiązana decyzja: {decision_id}")
+    if len(lines) == 1 and lines[0].endswith("Brak powiązanego Issue"):
+        lines.append("- Brak dodatkowych źródeł kanonicznych")
+    return lines
+
+
+def implementation_out_of_scope_lines(requirement: dict) -> list[str]:
+    lines = [
+        "- Nie rozszerzaj zakresu poza zaakceptowane wymaganie kanoniczne.",
+        "- Nie używaj surowego tekstu z Product Inbox jako źródła prawdy dla zakresu implementacji.",
+        "- Nie zmieniaj logiki leczenia, bezpieczeństwa ani innych niepowiązanych funkcji, jeśli REQ nie wymaga tego wprost.",
+        "- Nie uruchamiaj Firebase automatycznie, chyba że kanoniczne wymaganie wyraźnie tego wymaga.",
+    ]
+    if requirement.get("id") == "REQ-0002":
+        lines.insert(1, "- Nie twórz retrospektywnie nowej implementacji dla bootstrapowego REQ-0002.")
+    return lines
+
+
+def canonical_requirement_title(requirement: dict) -> str:
+    return normalize_requirement_title(
+        requirement.get("title")
+        or (requirement.get("solution_options") or [{}])[0].get("summary", "")
+        or requirement.get("problem", "")
+    )
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).replace(microsecond=0).isoformat().replace("+00:00", "Z")
 
@@ -260,7 +558,7 @@ def parse_issue_form_sections(body: str) -> dict:
     for key, values in sections.items():
         text = "\n".join(values).strip()
         text = text.replace("_No response_", "").strip()
-        normalized[key] = text
+        normalized[ISSUE_FORM_SECTION_ALIASES.get(key, key)] = text
     return normalized
 
 
@@ -563,6 +861,470 @@ def update_inbox_status(inbox_id: str, status: str) -> None:
     write_json(path, item)
 
 
+def update_inbox_traceability(inbox_id: str, **fields) -> None:
+    path = inbox_item_path(inbox_id)
+    if not path.exists():
+        return
+    item = load_json(path)
+    item.update({k: v for k, v in fields.items() if v is not None})
+    item["updated_at"] = now_iso()
+    write_json(path, item)
+
+
+def build_requirement_record(candidate_id: str, candidate: dict, req_id: str) -> dict:
+    human_decision_date = datetime.now(timezone.utc).date().isoformat()
+    title = derive_requirement_title(candidate)
+    inbox_id = candidate.get("inbox_id")
+    source_issue_number = candidate.get("github_issue_number")
+    source_issue_url = candidate.get("github_issue_url")
+    return {
+        "id": req_id,
+        "title": title,
+        "status": "ACCEPTED",
+        "problem": candidate.get("problem_or_opportunity", ""),
+        "target_personas": [candidate.get("persona", "unknown")],
+        "target_modes": [candidate.get("persona", "unknown")],
+        "target_modules": [candidate.get("module", "unknown")],
+        "linked_observations": [],
+        "user_outcome": candidate.get("expected_user_value", ""),
+        "solution_options": [
+            {
+                "id": "opt-primary",
+                "summary": candidate.get("proposed_requirement", title),
+                "pros": ["Bezpośrednio adresuje zaakceptowany problem z Product Inbox"],
+                "cons": [candidate.get("counterargument", "Wymaga implementacji i walidacji")],
+            },
+            {
+                "id": "opt-minimal",
+                "summary": candidate.get("alternative", "Prostsza alternatywa z analizy AI"),
+                "pros": ["Potencjalnie mniejszy koszt implementacji"],
+                "cons": ["Może nie rozwiązać w pełni zaakceptowanego problemu"],
+            },
+        ],
+        "recommended_option": "opt-primary",
+        "counterargument": candidate.get("counterargument", ""),
+        "scores": {
+            "safety": 5,
+            "caregiver_value": 7 if candidate.get("persona") == "caregiver" else 3,
+            "senior_value": 7 if candidate.get("persona") == "senior" else 3,
+            "clinician_value": 7 if candidate.get("persona") == "clinician" else 3,
+            "frequency": 5,
+            "confidence": 5,
+            "complexity": 5,
+            "strategy_alignment": 6,
+        },
+        "safety_implications": candidate.get("safety_impact", "LOW"),
+        "acceptance_criteria": [
+            candidate.get("proposed_requirement", "Zaimplementowano zaakceptowany zakres wymagania."),
+            "Nie rozszerzono zakresu poza kanoniczne wymaganie.",
+            "Dodano lub zaktualizowano testy oraz utrzymano brak regresji.",
+        ],
+        "test_plan": [
+            "python scripts/product/product_cli.py validate",
+            "python scripts/product/product_cli.py summary",
+            "./gradlew testDebugUnitTest --rerun-tasks",
+            "./gradlew lintDebug",
+            "./gradlew assembleDebug",
+            "./gradlew assembleDebugAndroidTest",
+        ],
+        "human_decision": "ACCEPT",
+        "human_decision_date": human_decision_date,
+        "human_decision_maker": candidate.get("human_decision_by", "Repository owner via /accept"),
+        "human_decision_reason": candidate.get("human_decision_reason") or candidate.get("problem_or_opportunity", ""),
+        "source_ids": candidate.get("source_ids", []),
+        "source_candidate_id": candidate_id,
+        "source_inbox_id": inbox_id,
+        "source_github_issue_number": source_issue_number,
+        "source_github_issue_url": source_issue_url,
+        "related_decisions": [],
+        "created_at": human_decision_date,
+        "implementation": {
+            "implementation_id": f"IMP-{req_id}",
+            "source_inbox_id": inbox_id,
+            "source_inbox_issue_number": source_issue_number,
+            "source_inbox_issue_url": source_issue_url,
+            "implementation_status": "QUEUED",
+            "validation_state": "PENDING",
+            "implementation_issue": {},
+            "implementation_pr": {},
+            "copilot_handoff_allowed": True,
+        },
+    }
+
+
+def implementation_issue_title(requirement: dict) -> str:
+    return f"[Implementacja] {requirement['id']} — {canonical_requirement_title(requirement)}"
+
+
+def build_implementation_issue_body(requirement: dict) -> str:
+    implementation = requirement.get("implementation") or {}
+    source_lines = related_source_lines(requirement)
+
+    related_features = []
+    for module in requirement.get("target_modules", []):
+        related_features.append(f"- Moduł: {module}")
+    for decision_id in requirement.get("related_decisions", []):
+        related_features.append(f"- Decyzja: {decision_id}")
+    if not related_features:
+        related_features.append("- Brak dodatkowych wpisów kanonicznych")
+
+    lines = [
+        f"<!-- LIBRECARE_REQUIREMENT_ID: {requirement['id']} -->",
+        f"<!-- LIBRECARE_SOURCE_INBOX_ISSUE: {implementation.get('source_inbox_issue_number') or requirement.get('source_github_issue_number') or 'UNKNOWN'} -->",
+        "# LibreCare — zadanie implementacyjne",
+        "",
+        "## WYMAGANIE",
+        f"REQ ID: {requirement['id']}",
+        f"Tytuł: {canonical_requirement_title(requirement)}",
+        "",
+        "## CEL UŻYTKOWNIKA",
+        requirement.get("user_outcome", "Brak opisu celu użytkownika."),
+        "",
+        "## ZAKRES",
+        requirement.get("solution_options", [{}])[0].get("summary", requirement.get("problem", "Brak zakresu.")),
+        "",
+        "## POZA ZAKRESEM",
+        *implementation_out_of_scope_lines(requirement),
+        "",
+        "## KRYTERIA AKCEPTACJI",
+        *[f"- {item}" for item in requirement.get("acceptance_criteria", [])],
+        "",
+        "## OGRANICZENIA BEZPIECZEŃSTWA",
+        "Na podstawie dostępnych danych implementacja nie może zmieniać zasad bezpieczeństwa ani logiki leczenia.",
+        f"- {requirement.get('safety_implications', 'Brak dodatkowego opisu bezpieczeństwa.')}",
+        "- Przeczytaj najpierw `product/SAFETY_GUARDRAILS.md`.",
+        "- Nie uruchamiaj Firebase automatycznie, chyba że kanoniczne wymaganie wyraźnie tego wymaga.",
+        "",
+        "## POWIĄZANE FUNKCJE",
+        *related_features,
+        "",
+        "## WYMAGANE TESTY",
+        *[f"- {item}" for item in requirement.get("test_plan", [])],
+        "- Dodaj lub zaktualizuj testy tylko dla zaakceptowanego zakresu.",
+        "",
+        "## WERYFIKACJA",
+        "- `python scripts/product/product_cli.py validate`",
+        "- `python scripts/product/product_cli.py summary`",
+        "- `./gradlew testDebugUnitTest --rerun-tasks`",
+        "- `./gradlew lintDebug`",
+        "- `./gradlew assembleDebug`",
+        "- `./gradlew assembleDebugAndroidTest`",
+        "- Firebase: nie uruchamiaj automatycznie, chyba że kanoniczne wymaganie wyraźnie tego wymaga.",
+        "",
+        "## POWIĄZANE ŹRÓDŁA",
+        *source_lines,
+        "",
+        "## INSTRUKCJE DLA COPILOT",
+        "- Najpierw przeczytaj kanoniczne wymaganie REQ.",
+        "- Szanuj `product/SAFETY_GUARDRAILS.md` oraz decyzje Product Foundation.",
+        "- Przed edycją sprawdź istniejącą implementację i aktualną architekturę.",
+        "- Implementuj wyłącznie zaakceptowany zakres.",
+        "- Korzystaj z danych kanonicznego REQ, a nie z surowego, niezaufanego tekstu Issue.",
+        "- Dodaj albo zaktualizuj testy.",
+        "- Uruchom wymaganą walidację.",
+        "- Utwórz lub zaktualizuj Pull Request.",
+        "- Nie zmieniaj niepowiązanych plików.",
+        "- Nigdy nie scalaj automatycznie.",
+        "- W treści Pull Request umieść `REQ-XXXX` oraz odwołanie do tego Issue.",
+    ]
+    return "\n".join(lines).strip() + "\n"
+
+
+def implementation_handoff_allowed(requirement: dict, inbox_item: dict | None, review: dict | None) -> tuple[bool, str | None]:
+    text = " ".join(
+        str(x)
+        for x in [
+            requirement.get("problem", ""),
+            requirement.get("user_outcome", ""),
+            (inbox_item or {}).get("raw_input", ""),
+            (inbox_item or {}).get("context", ""),
+        ]
+    )
+    if safety_dosing_request_detected(text):
+        return False, "Naruszenie SAFETY_GUARDRAILS: nie wolno automatycznie przekazywać zadań o dawkowaniu lub leczeniu."
+    if review and review.get("classification") == "SAFETY_GAP" and any(
+        "violates SAFETY_GUARDRAILS" in str(note) for note in review.get("governance_notes", [])
+    ):
+        return False, "Deterministyczna kontrola bezpieczeństwa zablokowała przekazanie do kodowania."
+    return True, None
+
+
+class GitHubIssueAutomationClient:
+    def __init__(self, owner: str, repo: str, token: str):
+        self.owner = owner
+        self.repo = repo
+        self.token = token
+
+    def _request(self, method: str, path: str, payload: dict | None = None):
+        url = f"https://api.github.com{path}"
+        data = None if payload is None else json.dumps(payload).encode("utf-8")
+        req = urllib_request.Request(url, data=data, method=method)
+        req.add_header("Accept", "application/vnd.github+json")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("User-Agent", "LibreCare-Product-Automation")
+        if payload is not None:
+            req.add_header("Content-Type", "application/json")
+        try:
+            with urllib_request.urlopen(req) as response:
+                raw = response.read().decode("utf-8")
+                return json.loads(raw) if raw else {}
+        except urllib_error.HTTPError as exc:  # noqa: PERF203
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"GitHub API {method} {path} failed: HTTP {exc.code}: {body}") from exc
+
+    def ensure_label(self, name: str, color: str, description: str) -> None:
+        encoded = urllib_parse.quote(name, safe="")
+        try:
+            self._request("GET", f"/repos/{self.owner}/{self.repo}/labels/{encoded}")
+        except RuntimeError:
+            self._request(
+                "POST",
+                f"/repos/{self.owner}/{self.repo}/labels",
+                {"name": name, "color": color, "description": description},
+            )
+
+    def find_existing_implementation_issue(self, req_id: str, expected_title: str) -> dict | None:
+        issues = self._request(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/issues?state=all&labels={urllib_parse.quote(req_id + ',implementation')}&per_page=100",
+        )
+        for issue in issues:
+            if issue.get("pull_request"):
+                continue
+            if issue.get("title") == expected_title or req_id in str(issue.get("title", "")):
+                return issue
+        return None
+
+    def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
+        return self._request(
+            "POST",
+            f"/repos/{self.owner}/{self.repo}/issues",
+            {"title": title, "body": body, "labels": labels},
+        )
+
+    def assign_copilot(self, issue_number: int, base_branch: str, instructions: str) -> dict:
+        payloads = [
+            {
+                "assignees": [COPILOT_AGENT_LOGIN],
+                "agent_assignment": {
+                    "agent": COPILOT_AGENT_LOGIN,
+                    "base_branch": base_branch,
+                    "instructions": instructions,
+                },
+            },
+            {
+                "assignees": [COPILOT_AGENT_LOGIN],
+                "agentAssignment": {
+                    "agent": COPILOT_AGENT_LOGIN,
+                    "baseBranch": base_branch,
+                    "instructions": instructions,
+                },
+            },
+        ]
+        endpoints = [
+            ("POST", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}/assignees"),
+            ("PATCH", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}"),
+        ]
+        last_error = None
+        for method, endpoint in endpoints:
+            for payload in payloads:
+                try:
+                    response = self._request(method, endpoint, payload)
+                    return {
+                        "status": "ASSIGNED",
+                        "method": method,
+                        "endpoint": endpoint,
+                        "field": "agent_assignment" if "agent_assignment" in payload else "agentAssignment",
+                        "response": response,
+                    }
+                except RuntimeError as exc:  # noqa: PERF203
+                    last_error = str(exc)
+        raise RuntimeError(last_error or "Copilot assignment failed")
+
+
+GITHUB_CLIENT_FACTORY = GitHubIssueAutomationClient
+
+
+def sync_requirement_handoff(
+    requirement: dict,
+    req_path: Path,
+    repo_owner: str,
+    repo_name: str,
+    github_token: str,
+    base_branch: str = DEFAULT_BASE_BRANCH,
+) -> dict:
+    implementation = ensure_requirement_implementation_block(requirement)
+    ensure_requirement_implementation_record(requirement, req_path)
+    inbox_id = implementation.get("source_inbox_id") or requirement.get("source_inbox_id")
+    inbox_item = load_json(inbox_item_path(inbox_id)) if inbox_id and inbox_item_path(inbox_id).exists() else None
+    review = load_inbox_ai_review(inbox_id) if inbox_id else None
+    allowed, reason = implementation_handoff_allowed(requirement, inbox_item, review)
+    implementation["copilot_handoff_allowed"] = allowed
+    if not allowed:
+        implementation["handoff_blocked_reason"] = reason
+        implementation["implementation_status"] = normalize_implementation_status(implementation.get("implementation_status"))
+        save_record(req_path, requirement)
+        ensure_requirement_implementation_record(requirement, req_path)
+        return {"req_id": requirement["id"], "implementation_id": implementation.get("implementation_id"), "status": implementation.get("implementation_status"), "blocked": True, "reason": reason}
+
+    title = implementation_issue_title(requirement)
+    body = build_implementation_issue_body(requirement)
+    labels = ["implementation", "copilot", requirement["id"]]
+    issue_info = implementation.get("implementation_issue") or {}
+    existing_impl = load_implementation_record(implementation.get("implementation_id")) or {}
+    if existing_impl.get("implementation_issue_number") and existing_impl.get("copilot_assignment") and issue_info.get("number") is None:
+        implementation["implementation_issue"] = {
+            "number": existing_impl.get("implementation_issue_number"),
+            "url": existing_impl.get("implementation_issue_url"),
+            "title": title,
+            "assigned_agent": COPILOT_AGENT_LOGIN,
+            "agent_assignment": existing_impl.get("copilot_assignment") or {},
+            "updated_at": existing_impl.get("updated_at") or now_iso(),
+        }
+        issue_info = implementation.get("implementation_issue") or {}
+    if issue_info.get("number") and issue_info.get("assigned_agent") == COPILOT_AGENT_LOGIN:
+        implementation["implementation_status"] = "AGENT_ASSIGNED"
+        save_record(req_path, requirement)
+        ensure_requirement_implementation_record(requirement, req_path)
+        return {
+            "req_id": requirement["id"],
+            "implementation_id": implementation.get("implementation_id"),
+            "status": implementation.get("implementation_status", "AGENT_ASSIGNED"),
+            "implementation_issue_number": int(issue_info["number"]),
+            "implementation_issue_url": issue_info.get("url"),
+            "blocked": False,
+        }
+
+    client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+    client.ensure_label("implementation", "1f6feb", "Zadania implementacyjne LibreCare")
+    client.ensure_label("copilot", "8250df", "Zadanie przekazane do GitHub Copilot")
+    client.ensure_label(requirement["id"], "0e8a16", f"Śledzenie wymagania {requirement['id']}")
+
+    github_issue = None
+    if issue_info.get("number"):
+        github_issue = {"number": issue_info.get("number"), "html_url": issue_info.get("url")}
+    else:
+        github_issue = client.find_existing_implementation_issue(requirement["id"], title)
+        if github_issue is None:
+            github_issue = client.create_issue(title=title, body=body, labels=labels)
+
+    instructions = "\n".join([
+        f"Najpierw przeczytaj kanoniczne wymaganie {requirement['id']}.",
+        "Szanuj product/SAFETY_GUARDRAILS.md i decyzje Product Foundation.",
+        "Przed edycją sprawdź istniejącą implementację i architekturę.",
+        "Implementuj wyłącznie zaakceptowany zakres.",
+        "Korzystaj z danych kanonicznego REQ, a nie z surowego tekstu Issue.",
+        "Dodaj lub zaktualizuj testy.",
+        "Uruchom wymaganą walidację.",
+        "Utwórz lub zaktualizuj Pull Request względem master.",
+        "Nigdy nie scalaj automatycznie.",
+        "Nie uruchamiaj Firebase, jeśli wymaganie nie żąda tego wprost.",
+        "Nie zmieniaj niepowiązanych plików.",
+    ])
+    assignment = client.assign_copilot(int(github_issue["number"]), base_branch=base_branch, instructions=instructions)
+
+    implementation["implementation_issue"] = {
+        "number": int(github_issue["number"]),
+        "url": github_issue.get("html_url") or github_issue.get("url"),
+        "title": github_issue.get("title") or title,
+        "assigned_agent": COPILOT_AGENT_LOGIN,
+        "agent_assignment": assignment,
+        "updated_at": now_iso(),
+    }
+    implementation["implementation_status"] = "AGENT_ASSIGNED"
+    save_record(req_path, requirement)
+    ensure_requirement_implementation_record(requirement, req_path)
+    if inbox_id:
+        update_inbox_traceability(
+            inbox_id,
+            accepted_requirement_id=requirement["id"],
+            implementation_issue_number=int(github_issue["number"]),
+            implementation_issue_url=github_issue.get("html_url") or github_issue.get("url"),
+        )
+    return {
+        "req_id": requirement["id"],
+        "implementation_id": implementation.get("implementation_id"),
+        "status": implementation["implementation_status"],
+        "implementation_issue_number": int(github_issue["number"]),
+        "implementation_issue_url": github_issue.get("html_url") or github_issue.get("url"),
+        "blocked": False,
+    }
+
+
+def find_requirement_for_pr(pr: dict) -> tuple[Path | None, dict | None]:
+    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
+    req_match = re.search(r"REQ-[0-9A-Za-z._-]+", text)
+    if req_match:
+        return load_requirement_by_id(req_match.group(0))
+    for issue_ref in re.findall(r"#(\d+)", text):
+        path, record = find_requirement_by_implementation_issue(int(issue_ref))
+        if path is not None:
+            return path, record
+    return None, None
+
+
+def build_implementation_status_comment(summary: dict) -> str:
+    status_text = {
+        "PR_READY": "Gotowe do przeglądu",
+        "READY_FOR_HUMAN_REVIEW": "Gotowe do przeglądu",
+        "MERGED": "Scalone",
+        "VALIDATION_PENDING": "Oczekuje na walidację",
+        "IN_PROGRESS": "Implementacja w toku",
+        "AGENT_ASSIGNED": "Agent przypisany",
+        "REPAIRING": "Automatyczna naprawa w toku",
+        "FAILED": "Wymaga interwencji człowieka",
+        "CI_FAILED": "Błąd CI",
+    }.get(summary.get("status"), summary.get("status", "Nieznany"))
+    return "\n".join([
+        "<!-- LIBRECARE_IMPLEMENTATION_STATUS -->",
+        "## LibreCare — status implementacji",
+        "",
+        "Wymaganie:",
+        str(summary.get("req_id", "brak")),
+        "",
+        "Pull Request:",
+        f"#{summary.get('pr_number')}" if summary.get("pr_number") else "Brak Pull Request",
+        "",
+        "Status:",
+        status_text,
+        "",
+        "Decyzja:",
+        "Wymagany przegląd człowieka przed scaleniem.",
+    ]) + "\n"
+
+
+def build_repair_limit_comment(req_id: str, attempts: int, last_error: str) -> str:
+    return "\n".join([
+        "<!-- LIBRECARE_IMPLEMENTATION_ATTENTION -->",
+        "## LibreCare — implementacja wymaga uwagi",
+        "",
+        "Wymaganie:",
+        req_id,
+        "",
+        "Automatyczne próby naprawy:",
+        str(attempts),
+        "",
+        "Ostatni błąd:",
+        last_error or "Brak szczegółów błędu.",
+        "",
+        "Status:",
+        "Automatyczna naprawa została zatrzymana.",
+        "",
+        "Wymagana interwencja człowieka.",
+    ]) + "\n"
+
+
+def update_requirement_implementation_state(
+    req_path: Path,
+    requirement: dict,
+    implementation_record: dict,
+) -> None:
+    implementation = ensure_requirement_implementation_block(requirement)
+    implementation["implementation_status"] = implementation_record.get("status", implementation.get("implementation_status", "QUEUED"))
+    implementation["validation_state"] = implementation_record.get("validation_state", implementation.get("validation_state", "PENDING"))
+    save_record(req_path, requirement)
+
+
 # ----------------------------------------------------------------------------- CURRENT_FOCUS validation
 
 def validate_current_focus(errors: list) -> None:
@@ -603,12 +1365,17 @@ def cmd_validate() -> int:
     test_run_schema = load_schema("test_run.schema.json")
     inbox_schema = load_schema("inbox_item.schema.json")
     inbox_ai_review_schema = load_schema("inbox_ai_review.schema.json")
+    implementation_schema = load_schema("implementation.schema.json")
 
     real_observations, example_observations = collect_split(OBSERVATIONS_DIR, "observation")
     real_requirements, example_requirements = collect_split(REQUIREMENTS_DIR, "requirement")
     real_decisions, example_decisions = collect_split(DECISIONS_DIR, "decision")
     real_test_runs, example_test_runs = collect_split(TEST_RUNS_DIR, "test-run")
     real_inbox_items, example_inbox_items = collect_split(INBOX_DIR, "inbox-item")
+    real_implementations = []
+    for path in iter_implementation_paths():
+        record, problem, is_error = load_record(path)
+        real_implementations.append((path, record, problem, is_error))
 
     all_observations = real_observations + example_observations
     all_requirements = real_requirements + example_requirements
@@ -644,6 +1411,20 @@ def cmd_validate() -> int:
     process(all_decisions, dec_schema, dec_ids)
     process(all_test_runs, test_run_schema, test_run_ids)
     process(all_inbox_items, inbox_schema, inbox_ids)
+    for _path, record, _problem, _is_error in all_inbox_items:
+        if isinstance(record, dict) and isinstance(record.get("inbox_id"), str):
+            inbox_ids.add(record["inbox_id"])
+    for path, record, problem, is_error in real_implementations:
+        if record is None:
+            if is_error and problem:
+                errors.append(f"{rel(path)}: {problem}")
+            elif problem:
+                notes.append(f"{rel(path)}: {problem}")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"{rel(path)}: top-level record must be an object")
+            continue
+        validate_value(implementation_schema, record, rel(path), errors)
 
     if INBOX_REVIEWS_DIR.exists():
         for path in sorted(INBOX_REVIEWS_DIR.glob("INBOX-GH-*.json")):
@@ -713,11 +1494,26 @@ def cmd_validate() -> int:
             if oid not in obs_ids:
                 errors.append(f"{rel(path)}: linked_observations references unknown observation '{oid}'")
 
+    # cross-references: implementations -> requirements / inbox items
+    for path, record, _problem, _is_error in real_implementations:
+        if not isinstance(record, dict):
+            continue
+        req_id = record.get("requirement_id")
+        if req_id and req_id not in req_ids:
+            errors.append(f"{rel(path)}: requirement_id references unknown requirement '{req_id}'")
+        source_inbox_id = record.get("source_inbox_id")
+        if source_inbox_id and source_inbox_id not in inbox_ids:
+            errors.append(f"{rel(path)}: source_inbox_id references unknown inbox item '{source_inbox_id}'")
+        status = normalize_implementation_status(record.get("status"))
+        if status != record.get("status"):
+            errors.append(f"{rel(path)}: uses legacy implementation status '{record.get('status')}'")
+
     n_real_obs = sum(1 for _, r, _, _ in real_observations if isinstance(r, dict))
     n_real_reqs = sum(1 for _, r, _, _ in real_requirements if isinstance(r, dict))
     n_real_decs = sum(1 for _, r, _, _ in real_decisions if isinstance(r, dict))
     n_real_runs = sum(1 for _, r, _, _ in real_test_runs if isinstance(r, dict))
     n_real_inbox = sum(1 for _, r, _, _ in real_inbox_items if isinstance(r, dict))
+    n_real_impl = sum(1 for _, r, _, _ in real_implementations if isinstance(r, dict))
 
     for note in notes:
         print(f"note: {note}")
@@ -736,7 +1532,8 @@ def cmd_validate() -> int:
         f"requirements={n_real_reqs} "
         f"decisions={n_real_decs} "
         f"test_runs={n_real_runs} "
-        f"inbox_items={n_real_inbox}"
+        f"inbox_items={n_real_inbox} "
+        f"implementations={n_real_impl}"
     )
     return 0
 
@@ -948,40 +1745,40 @@ def build_issue_review_comment(analysis: dict) -> str:
     proposed_requirement = analysis.get("proposed_requirement", "") or "(brak - nie rekomendowano nowego wymagania)"
     return "\n".join([
         "<!-- LIBRECARE_PRODUCT_REVIEW -->",
-        "## LibreCare Product Review",
+        "## LibreCare — analiza produktu",
         "",
-        "Classification:",
-        f"{analysis.get('classification', 'INCONCLUSIVE')}",
+        "Klasyfikacja:",
+        polish_label(POLISH_CLASSIFICATION_LABELS, analysis.get('classification', 'INCONCLUSIVE'), analysis.get('classification', 'INCONCLUSIVE')),
         "",
-        f"What I understood:\n{analysis.get('summary', '')}",
+        f"Jak rozumiem problem:\n{analysis.get('summary', '')}",
         "",
-        "Evidence available:",
+        "Dostępne dowody:",
         evidence_text,
         "",
-        "Evidence missing:",
+        "Brakujące dowody:",
         missing_text,
         "",
-        f"Existing capability overlap:\n{overlap}",
+        f"Powiązanie z istniejącymi funkcjami:\n{overlap}",
         "",
-        f"Proposed requirement:\n{proposed_requirement}",
+        f"Proponowane wymaganie:\n{proposed_requirement}",
         "",
-        f"Why it may be useful:\n{analysis.get('user_value', '')}",
+        f"Dlaczego może być wartościowe:\n{analysis.get('user_value', '')}",
         "",
-        f"Counterargument:\n{analysis.get('counterargument', '')}",
+        f"Kontrargument:\n{analysis.get('counterargument', '')}",
         "",
-        f"Simpler alternative:\n{analysis.get('simpler_alternative', '')}",
+        f"Prostsza alternatywa:\n{analysis.get('simpler_alternative', '')}",
         "",
-        f"Safety impact:\n{analysis.get('safety_impact', 'LOW')}",
+        f"Wpływ na bezpieczeństwo:\n{polish_label(POLISH_SAFETY_LABELS, analysis.get('safety_impact', 'LOW'), analysis.get('safety_impact', 'LOW'))}",
         "",
-        f"Estimated scope:\n{analysis.get('estimated_scope', 'MEDIUM')}",
+        f"Szacowany zakres:\n{polish_label(POLISH_SCOPE_LABELS, analysis.get('estimated_scope', 'MEDIUM'), analysis.get('estimated_scope', 'MEDIUM'))}",
         "",
-        f"Proposed priority:\n{analysis.get('proposed_priority', 'P2')}",
+        f"Proponowany priorytet:\n{analysis.get('proposed_priority', 'P2')}",
         "",
-        f"AI recommendation:\n{analysis.get('recommended_decision', 'HOLD')}",
+        f"Rekomendacja AI:\n{polish_label(POLISH_DECISION_LABELS, analysis.get('recommended_decision', 'HOLD'), analysis.get('recommended_decision', 'HOLD'))}",
         "",
-        "Human decision:\nPENDING",
+        "Decyzja człowieka:\nOCZEKUJE",
         "",
-        "To decide, comment exactly:",
+        "Aby podjąć decyzję, wpisz dokładnie:",
         "",
         "/accept",
         "/hold",
@@ -1010,22 +1807,22 @@ def cmd_inbox_handle_decision(event_file: str, repo_owner: str | None = None) ->
     issue = event.get("issue")
     comment = event.get("comment")
     if not isinstance(issue, dict) or not isinstance(comment, dict):
-        print("SKIP: not an issue_comment event payload")
+        print("POMINIĘTO: payload nie jest zdarzeniem issue_comment")
         return 0
     if not issue_has_label(issue, "product-inbox"):
-        print(f"SKIP: issue #{issue.get('number')} has no product-inbox label")
+        print(f"POMINIĘTO: issue #{issue.get('number')} nie ma etykiety product-inbox")
         return 0
 
     command = (comment.get("body") or "").strip()
     mapping = {"/accept": "ACCEPT", "/hold": "HOLD", "/reject": "REJECT"}
     if command not in mapping:
-        print("SKIP: no decision command found")
+        print("POMINIĘTO: brak komendy decyzyjnej")
         return 0
 
     owner = repo_owner or (((event.get("repository") or {}).get("owner") or {}).get("login"))
     actor = ((comment.get("user") or {}).get("login"))
     if not owner or actor != owner:
-        print(f"SKIP: decision command ignored (author={actor}, owner={owner})")
+        print(f"POMINIĘTO: komenda decyzyjna zignorowana (autor={actor}, owner={owner})")
         return 0
 
     item = normalize_issue_form(issue)
@@ -1046,10 +1843,12 @@ def cmd_inbox_handle_decision(event_file: str, repo_owner: str | None = None) ->
             candidate = candidates.get(candidate_id)
     if candidate is None:
         update_inbox_status(inbox_id, "ANALYZED")
-        print(f"DECISION RESULT: issue=#{issue.get('number')} command={command} no-candidate")
+        print(f"WYNIK DECYZJI: issue=#{issue.get('number')} komenda={command} brak-kandydata")
         return 0
 
     decision = mapping[command]
+    candidate["human_decision_by"] = actor
+    candidate["human_decision_reason"] = candidate.get("problem_or_opportunity", "")
     candidate["human_decision"] = decision
     candidates[candidate_id] = candidate
     queue["candidates"] = candidates
@@ -1063,15 +1862,346 @@ def cmd_inbox_handle_decision(event_file: str, repo_owner: str | None = None) ->
         refreshed = load_yaml(REVIEW_QUEUE_FILE)
         created_req = ((refreshed.get("candidates") or {}).get(candidate_id) or {}).get("applied_requirement_id")
         update_inbox_status(inbox_id, "CONVERTED" if created_req else "ACCEPTED")
+        update_inbox_traceability(inbox_id, accepted_requirement_id=created_req)
+        if created_req:
+            req_path, requirement = load_requirement_by_id(created_req)
+            if req_path is not None and requirement is not None:
+                ensure_requirement_implementation_record(requirement, req_path)
     elif decision == "HOLD":
         update_inbox_status(inbox_id, "HOLD")
     elif decision == "REJECT":
         update_inbox_status(inbox_id, "REJECTED")
 
-    print(
-        f"DECISION RESULT: issue=#{issue.get('number')} command={command} "
-        f"human_decision={decision} requirement_id={created_req or 'NONE'}"
+    status_line = {
+        "ACCEPT": "Zaakceptowano wymaganie. Oczekuje na przekazanie do implementacji przez Copilot.",
+        "HOLD": "Wymaganie pozostaje wstrzymane. Nie przekazano do implementacji.",
+        "REJECT": "Wymaganie zostało odrzucone. Nie przekazano do implementacji.",
+    }[decision]
+    print("## LibreCare — decyzja produktowa")
+    print("")
+    print("Decyzja:")
+    print(polish_label(POLISH_DECISION_LABELS, decision, decision))
+    print("")
+    print("Utworzone wymaganie:")
+    print(created_req or "BRAK")
+    print("")
+    print("Status:")
+    print(status_line)
+    return 0
+
+
+def cmd_inbox_sync_implementation_handoff(
+    event_file: str,
+    repo_owner: str,
+    repo_name: str,
+    github_token: str,
+    base_branch: str = DEFAULT_BASE_BRANCH,
+    output_file: str | None = None,
+) -> int:
+    event = load_json(Path(event_file))
+    issue = event.get("issue") or {}
+    comment = event.get("comment") or {}
+    if (comment.get("body") or "").strip() != "/accept":
+        print("SKIP: brak /accept dla przekazania implementacji")
+        return 0
+    issue_number = int(issue.get("number"))
+    req_path, requirement = find_requirement_by_source_issue(issue_number)
+    if req_path is None or requirement is None:
+        print(f"ERROR: nie znaleziono kanonicznego wymagania dla Issue #{issue_number}", file=sys.stderr)
+        return 1
+    IMPLEMENTATION_HANDOFFS_DIR.mkdir(parents=True, exist_ok=True)
+    handoff_file = IMPLEMENTATION_HANDOFFS_DIR / f"{requirement['id']}.json"
+    if handoff_file.exists():
+        existing_summary = load_json(handoff_file)
+        if existing_summary.get("implementation_issue_number") and not existing_summary.get("blocked"):
+            if output_file:
+                write_json(Path(output_file), existing_summary)
+            print(json.dumps(existing_summary, ensure_ascii=False))
+            return 0
+    implementation = ensure_requirement_implementation_block(requirement)
+    ensure_requirement_implementation_record(requirement, req_path)
+    issue_info = implementation.get("implementation_issue") or {}
+    if issue_info.get("number") and issue_info.get("assigned_agent") == COPILOT_AGENT_LOGIN:
+        summary = {
+            "req_id": requirement["id"],
+            "implementation_id": implementation.get("implementation_id"),
+            "status": implementation.get("implementation_status", "AGENT_ASSIGNED"),
+            "implementation_issue_number": int(issue_info["number"]),
+            "implementation_issue_url": issue_info.get("url"),
+            "blocked": False,
+        }
+        if output_file:
+            write_json(Path(output_file), summary)
+        print(json.dumps(summary, ensure_ascii=False))
+        return 0
+    summary = sync_requirement_handoff(
+        requirement=requirement,
+        req_path=req_path,
+        repo_owner=repo_owner,
+        repo_name=repo_name,
+        github_token=github_token,
+        base_branch=base_branch,
     )
+    handoff_file = IMPLEMENTATION_HANDOFFS_DIR / f"{summary['req_id']}.json"
+    write_json(handoff_file, summary)
+    if output_file:
+        write_json(Path(output_file), summary)
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0
+
+
+def cmd_track_implementation_pr(event_file: str, output_file: str | None = None) -> int:
+    event = load_json(Path(event_file))
+    pr = event.get("pull_request")
+    if not isinstance(pr, dict):
+        print("SKIP: not a pull_request payload")
+        return 0
+    req_path, requirement = find_requirement_for_pr(pr)
+    if req_path is None or requirement is None:
+        print("SKIP: pull request is not linked to a canonical requirement")
+        return 0
+
+    implementation = ensure_requirement_implementation_block(requirement)
+    pr_info = implementation.get("implementation_pr") or {}
+    pr_info.update({
+        "number": int(pr["number"]),
+        "url": pr.get("html_url"),
+        "title": pr.get("title"),
+        "head_ref": (pr.get("head") or {}).get("ref"),
+        "state": pr.get("state"),
+        "updated_at": now_iso(),
+    })
+    implementation["implementation_pr"] = pr_info
+    implementation["implementation_status"] = "MERGED" if pr.get("merged") else ("IN_PROGRESS" if pr.get("draft") else "PR_READY")
+    if pr.get("merged"):
+        implementation["validation_state"] = "VALIDATION_PENDING"
+    save_record(req_path, requirement)
+    impl_record = ensure_requirement_implementation_record(requirement, req_path)
+    canonical_status = "MERGED" if pr.get("merged") else ("IN_PROGRESS" if pr.get("draft") else "PR_READY")
+    impl_record = upsert_implementation_record({
+        "implementation_id": implementation.get("implementation_id"),
+        "requirement_id": requirement["id"],
+        "source_inbox_id": implementation.get("source_inbox_id") or requirement.get("source_inbox_id"),
+        "source_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+        "implementation_issue_number": (implementation.get("implementation_issue") or {}).get("number") or impl_record.get("implementation_issue_number"),
+        "implementation_issue_url": (implementation.get("implementation_issue") or {}).get("url") or impl_record.get("implementation_issue_url"),
+        "copilot_assignment": (implementation.get("implementation_issue") or {}).get("agent_assignment") or impl_record.get("copilot_assignment") or {},
+        "branch": (pr.get("head") or {}).get("ref"),
+        "pull_request_number": int(pr["number"]),
+        "pull_request_url": pr.get("html_url"),
+        "status": canonical_status,
+        "validation_state": implementation.get("validation_state", "PENDING"),
+    })
+
+    inbox_id = implementation.get("source_inbox_id") or requirement.get("source_inbox_id")
+    if inbox_id:
+        update_inbox_traceability(
+            inbox_id,
+            implementation_pr_number=int(pr["number"]),
+            implementation_pr_url=pr.get("html_url"),
+        )
+
+    summary = {
+        "req_id": requirement["id"],
+        "implementation_id": implementation.get("implementation_id"),
+        "status": impl_record["status"],
+        "pr_number": int(pr["number"]),
+        "pr_url": pr.get("html_url"),
+        "branch": (pr.get("head") or {}).get("ref"),
+        "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+        "comment_markdown": build_implementation_status_comment({
+            "req_id": requirement["id"],
+            "status": impl_record["status"],
+            "pr_number": int(pr["number"]),
+        }),
+    }
+    if output_file:
+        write_json(Path(output_file), summary)
+    else:
+        print(json.dumps(summary, ensure_ascii=False))
+    return 0
+
+
+def cmd_record_ci_result(
+    pr_number: int,
+    workflow_name: str,
+    conclusion: str,
+    run_id: str,
+    run_url: str,
+    failing_step: str = "",
+    failing_tests: str = "",
+    log_excerpt: str = "",
+    repo_owner: str | None = None,
+    repo_name: str | None = None,
+    github_token: str | None = None,
+    output_file: str | None = None,
+) -> int:
+    req_path, requirement = find_requirement_by_pr_number(pr_number)
+    if req_path is None or requirement is None:
+        print("SKIP: no canonical requirement linked to PR")
+        return 0
+
+    implementation = ensure_requirement_implementation_block(requirement)
+    implementation_record = ensure_requirement_implementation_record(requirement, req_path)
+    implementation_id = implementation_record["implementation_id"]
+
+    correlation = f"{run_id}:{str(conclusion).lower()}"
+    failures = list(implementation_record.get("ci_failures", []))
+    if correlation in failures:
+        payload = {
+            "entity": "REQUIREMENT",
+            "req_id": requirement["id"],
+            "implementation_id": implementation_id,
+            "status": implementation_record.get("status"),
+            "action": "DEDUPLICATED",
+            "attempt_count": int(implementation_record.get("attempt_count", 0)),
+            "auto_merge": False,
+        }
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    if implementation_record.get("status") == "FAILED" and str(conclusion).lower() != "success":
+        payload = {
+            "entity": "REQUIREMENT",
+            "req_id": requirement["id"],
+            "implementation_id": implementation_id,
+            "status": "FAILED",
+            "action": "STOPPED_TERMINAL",
+            "attempt_count": int(implementation_record.get("attempt_count", 0)),
+            "auto_merge": False,
+        }
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    TECHNICAL_VALIDATIONS_DIR.mkdir(parents=True, exist_ok=True)
+    evidence = {
+        "requirement_id": requirement["id"],
+        "implementation_id": implementation_id,
+        "failing_workflow": workflow_name,
+        "failing_step": failing_step,
+        "failing_test_names": failing_tests,
+        "failure_output": log_excerpt,
+        "attempt_number": int(implementation_record.get("attempt_count", 0)) + (0 if str(conclusion).lower() == "success" else 1),
+        "run_id": run_id,
+        "run_url": run_url,
+        "conclusion": conclusion,
+        "recorded_at": now_iso(),
+    }
+    write_json(TECHNICAL_VALIDATIONS_DIR / f"{implementation_id}-{run_id}.json", evidence)
+
+    if str(conclusion).lower() == "success":
+        implementation_record = upsert_implementation_record({
+            "implementation_id": implementation_id,
+            "status": "READY_FOR_HUMAN_REVIEW",
+            "last_ci_result": "PASS",
+            "ci_failures": failures + [correlation],
+        })
+        update_requirement_implementation_state(req_path, requirement, implementation_record)
+        payload = {
+            "entity": "REQUIREMENT",
+            "req_id": requirement["id"],
+            "implementation_id": implementation_id,
+            "status": "READY_FOR_HUMAN_REVIEW",
+            "action": "UPDATED",
+            "repair_attempted": False,
+            "attempt_count": int(implementation_record.get("attempt_count", 0)),
+            "comment_markdown": build_implementation_status_comment({
+                "req_id": requirement["id"],
+                "status": "READY_FOR_HUMAN_REVIEW",
+                "pr_number": pr_number,
+            }),
+            "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+            "auto_merge": False,
+        }
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    attempts = int(implementation_record.get("attempt_count", 0)) + 1
+    if attempts >= MAX_AUTOMATIC_REPAIR_ATTEMPTS:
+        implementation_record = upsert_implementation_record({
+            "implementation_id": implementation_id,
+            "status": "FAILED",
+            "last_ci_result": "FAIL",
+            "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS,
+            "ci_failures": failures + [correlation],
+        })
+        update_requirement_implementation_state(req_path, requirement, implementation_record)
+        human_comment = build_repair_limit_comment(
+            req_id=requirement["id"],
+            attempts=MAX_AUTOMATIC_REPAIR_ATTEMPTS,
+            last_error=log_excerpt or failing_tests or failing_step or workflow_name,
+        )
+        payload = {
+            "entity": "REQUIREMENT",
+            "req_id": requirement["id"],
+            "implementation_id": implementation_id,
+            "status": "FAILED",
+            "action": "UPDATED",
+            "repair_attempted": False,
+            "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS,
+            "comment_markdown": human_comment,
+            "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+            "auto_merge": False,
+        }
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+
+    issue_number = (implementation.get("implementation_issue") or {}).get("number") or implementation_record.get("implementation_issue_number")
+    repair_attempted = False
+    if issue_number and repo_owner and repo_name and github_token:
+        client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+        repair_prompt = "\n".join([
+            f"Napraw wyłącznie defekt implementacyjny dla {requirement['id']} ({implementation_id}).",
+            "Nie rozszerzaj zaakceptowanego zakresu wymagania.",
+            "Zachowaj działające zachowania i testy.",
+            "Aktualizuj testy tylko tam, gdzie to wymagane przez defekt.",
+            "Nie zmieniaj kanonicznego zakresu produktu, aby przejść testy.",
+            f"Workflow CI: {workflow_name}",
+            f"Failing step: {failing_step or 'unknown'}",
+            f"Failing tests: {failing_tests or 'unknown'}",
+            f"Failure output: {log_excerpt or 'n/a'}",
+            f"Attempt: {attempts}/{MAX_AUTOMATIC_REPAIR_ATTEMPTS}",
+            f"Run URL: {run_url}",
+        ])
+        client.assign_copilot(int(issue_number), base_branch=DEFAULT_BASE_BRANCH, instructions=repair_prompt)
+        repair_attempted = True
+
+    implementation_record = upsert_implementation_record({
+        "implementation_id": implementation_id,
+        "status": "REPAIRING",
+        "last_ci_result": "FAIL",
+        "attempt_count": attempts,
+        "ci_failures": failures + [correlation],
+    })
+    update_requirement_implementation_state(req_path, requirement, implementation_record)
+    payload = {
+        "entity": "REQUIREMENT",
+        "req_id": requirement["id"],
+        "implementation_id": implementation_id,
+        "status": "REPAIRING",
+        "action": "UPDATED",
+        "repair_attempted": repair_attempted,
+        "attempt_count": attempts,
+        "evidence": evidence,
+        "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+        "auto_merge": False,
+    }
+    if output_file:
+        write_json(Path(output_file), payload)
+    else:
+        print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
@@ -1643,75 +2773,21 @@ def cmd_apply_review() -> int:
             if already_created:
                 applied.append((cand_id, f"ACCEPTED_ALREADY -> {already_created}"))
                 continue
-            # Create actual requirement record
-            cand_title = cand_data.get("title", "Untitled")
-            cand_persona = cand_data.get("persona", "unknown")
-            cand_module = cand_data.get("module", "unknown")
-            source_ids = cand_data.get("source_ids", [])
-            
+
             # Generate REQ ID (simple increment)
             next_req_id = _next_requirement_id(real_requirements)
-            
+
             # Check for duplicates
             if next_req_id in existing_ids:
                 print(f"WARNING: {next_req_id} already exists, skipping {cand_id}", file=sys.stderr)
                 continue
-            
-            # Build requirement record
-            req_record = {
-                "id": next_req_id,
-                "status": "CANDIDATE",
-                "problem": cand_data.get("problem_or_opportunity", ""),
-                "target_personas": [cand_persona],
-                "target_modes": [cand_persona],  # Use persona as mode for now
-                "target_modules": [cand_module],
-                "linked_observations": [],
-                "user_outcome": cand_data.get("expected_user_value", ""),
-                "solution_options": [
-                    {
-                        "id": "opt-primary",
-                        "summary": cand_data.get("proposed_requirement", "Primary solution"),
-                        "pros": ["Directly addresses the reported issue"],
-                        "cons": ["May require implementation effort"],
-                    },
-                    {
-                        "id": "opt-alternative",
-                        "summary": cand_data.get("alternative", "Alternative approach if available"),
-                        "pros": ["Potentially lower implementation cost"],
-                        "cons": ["May provide smaller user impact"],
-                    },
-                ],
-                "recommended_option": "opt-primary",
-                "counterargument": cand_data.get("counterargument", ""),
-                "scores": {
-                    "safety": 5,
-                    "caregiver_value": 7 if cand_persona == "caregiver" else 3,
-                    "senior_value": 7 if cand_persona == "senior" else 3,
-                    "clinician_value": 7 if cand_persona == "clinician" else 3,
-                    "frequency": 5,
-                    "confidence": 5,
-                    "complexity": 5,
-                    "strategy_alignment": 6,
-                },
-                "safety_implications": cand_data.get("safety_impact", "LOW"),
-                "acceptance_criteria": [
-                    "Feature implemented as designed",
-                    "Tests pass",
-                    "No regressions",
-                ],
-                "test_plan": ["TBD - to be refined during design"],
-                "human_decision": "ACCEPT",
-                "source_ids": source_ids,
-                "source_candidate_id": cand_id,
-                "source_inbox_id": cand_data.get("inbox_id"),
-                "source_github_issue_number": cand_data.get("github_issue_number"),
-                "source_github_issue_url": cand_data.get("github_issue_url"),
-            }
-            
+
+            req_record = build_requirement_record(cand_id, cand_data, next_req_id)
+
             # Write requirement record
-            req_file = req_dir / f"{next_req_id}.json"
-            with req_file.open("w", encoding="utf-8") as fh:
-                json.dump(req_record, fh, indent=2)
+            req_file = req_dir / f"{next_req_id}.yaml"
+            save_yaml(req_file, req_record)
+            ensure_requirement_implementation_record(req_record, req_file)
 
             cand_data["applied_requirement_id"] = next_req_id
             candidates[cand_id] = cand_data
@@ -1762,6 +2838,32 @@ def main(argv=None) -> int:
     inbox_decision.add_argument("--event-file", required=True, help="Path to GitHub issue_comment event JSON payload.")
     inbox_decision.add_argument("--repo-owner", required=False, help="Repository owner login (overrides payload)")
 
+    inbox_handoff = sub.add_parser("inbox-sync-implementation-handoff", help="Create or reuse one implementation issue and assign Copilot after human /accept.")
+    inbox_handoff.add_argument("--event-file", required=True, help="Path to GitHub issue_comment event JSON payload.")
+    inbox_handoff.add_argument("--repo-owner", required=True, help="GitHub repository owner")
+    inbox_handoff.add_argument("--repo-name", required=True, help="GitHub repository name")
+    inbox_handoff.add_argument("--github-token", required=True, help="GitHub token with issue write permission")
+    inbox_handoff.add_argument("--base-branch", required=False, default=DEFAULT_BASE_BRANCH, help="Base branch for Copilot implementation work")
+    inbox_handoff.add_argument("--output-file", required=False, help="Optional JSON output path")
+
+    pr_tracking = sub.add_parser("track-implementation-pr", help="Record implementation Pull Request links and status for canonical requirements.")
+    pr_tracking.add_argument("--event-file", required=True, help="Path to GitHub pull_request event JSON payload.")
+    pr_tracking.add_argument("--output-file", required=False, help="Optional JSON output path")
+
+    ci_result = sub.add_parser("record-ci-result", help="Record CI outcome for one implementation PR and run bounded automatic repair logic.")
+    ci_result.add_argument("--pr-number", required=True, type=int)
+    ci_result.add_argument("--workflow-name", required=True)
+    ci_result.add_argument("--conclusion", required=True)
+    ci_result.add_argument("--run-id", required=True)
+    ci_result.add_argument("--run-url", required=True)
+    ci_result.add_argument("--failing-step", default="")
+    ci_result.add_argument("--failing-tests", default="")
+    ci_result.add_argument("--log-excerpt", default="")
+    ci_result.add_argument("--repo-owner")
+    ci_result.add_argument("--repo-name")
+    ci_result.add_argument("--github-token")
+    ci_result.add_argument("--output-file")
+
     args = parser.parse_args(argv)
     if args.command == "validate":
         return cmd_validate()
@@ -1781,6 +2883,32 @@ def main(argv=None) -> int:
         return cmd_inbox_issue_review(issue_number=args.issue_number, output_file=args.output_file)
     if args.command == "inbox-handle-decision":
         return cmd_inbox_handle_decision(event_file=args.event_file, repo_owner=args.repo_owner)
+    if args.command == "inbox-sync-implementation-handoff":
+        return cmd_inbox_sync_implementation_handoff(
+            event_file=args.event_file,
+            repo_owner=args.repo_owner,
+            repo_name=args.repo_name,
+            github_token=args.github_token,
+            base_branch=args.base_branch,
+            output_file=args.output_file,
+        )
+    if args.command == "track-implementation-pr":
+        return cmd_track_implementation_pr(event_file=args.event_file, output_file=args.output_file)
+    if args.command == "record-ci-result":
+        return cmd_record_ci_result(
+            pr_number=args.pr_number,
+            workflow_name=args.workflow_name,
+            conclusion=args.conclusion,
+            run_id=args.run_id,
+            run_url=args.run_url,
+            failing_step=args.failing_step,
+            failing_tests=args.failing_tests,
+            log_excerpt=args.log_excerpt,
+            repo_owner=args.repo_owner,
+            repo_name=args.repo_name,
+            github_token=args.github_token,
+            output_file=args.output_file,
+        )
     parser.print_help()
     return 2
 

@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/bug.schema.json",
+  "title": "LibreCare Canonical Bug",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "bug_id",
+    "title",
+    "source",
+    "source_reference",
+    "related_requirement_ids",
+    "related_test_ids",
+    "observed_behavior",
+    "expected_behavior",
+    "reproduction",
+    "classification",
+    "severity",
+    "safety_impact",
+    "status",
+    "implementation_issue",
+    "implementation_issue_number",
+    "implementation_issue_url",
+    "pull_request",
+    "pull_request_number",
+    "pull_request_url",
+    "created_at",
+    "updated_at"
+  ],
+  "properties": {
+    "bug_id": {
+      "type": "string",
+      "pattern": "^BUG-[0-9]{4}$"
+    },
+    "title": {
+      "type": "string"
+    },
+    "source": {
+      "type": "string",
+      "enum": [
+        "GITHUB_BUG_ISSUE",
+        "FAILED_ACCEPTANCE_TESTRUN",
+        "IMPLEMENTATION_ACCEPTANCE_FAILURE",
+        "CI_REGRESSION",
+        "MANUAL"
+      ]
+    },
+    "source_reference": {
+      "type": "string"
+    },
+    "source_issue_number": {
+      "type": ["integer", "null"]
+    },
+    "related_requirement_ids": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "pattern": "^REQ-[0-9A-Za-z._-]+$"
+      }
+    },
+    "related_test_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "observed_behavior": {
+      "type": "string"
+    },
+    "expected_behavior": {
+      "type": "string"
+    },
+    "reproduction": {
+      "type": "string"
+    },
+    "classification": {
+      "type": "string",
+      "enum": [
+        "CONFIRMED_DEFECT",
+        "NEEDS_PRODUCT_DECISION",
+        "INCONCLUSIVE"
+      ]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["LOW", "MEDIUM", "HIGH", "CRITICAL"]
+    },
+    "safety_impact": {
+      "type": "string",
+      "enum": ["NONE", "LOW", "MEDIUM", "HIGH"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "NEW",
+        "TRIAGED",
+        "CONFIRMED_DEFECT",
+        "NEEDS_PRODUCT_DECISION",
+        "INCONCLUSIVE",
+        "QUEUED",
+        "IN_PROGRESS",
+        "PR_READY",
+        "FIXED",
+        "VALIDATION_PENDING",
+        "VALIDATED",
+        "CLOSED",
+        "REPAIRING",
+        "FAILED"
+      ]
+    },
+    "implementation_issue": {
+      "type": "object"
+    },
+    "implementation_issue_number": {
+      "type": ["integer", "null"]
+    },
+    "implementation_issue_url": {
+      "type": ["string", "null"]
+    },
+    "pull_request": {
+      "type": "object"
+    },
+    "pull_request_number": {
+      "type": ["integer", "null"]
+    },
+    "pull_request_url": {
+      "type": ["string", "null"]
+    },
+    "validation_state": {
+      "type": "string"
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    }
+  }
+}
+

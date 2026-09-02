@@ -1,0 +1,117 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://librecare.product/schema/implementation.schema.json",
+  "title": "LibreCare Canonical Implementation Tracking",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "implementation_id",
+    "source_inbox_id",
+    "source_issue_number",
+    "implementation_issue_number",
+    "implementation_issue_url",
+    "copilot_assignment",
+    "branch",
+    "pull_request_number",
+    "pull_request_url",
+    "status",
+    "created_at",
+    "updated_at",
+    "attempt_count",
+    "last_ci_result",
+    "validation_state"
+  ],
+  "properties": {
+    "implementation_id": {
+      "type": "string",
+      "pattern": "^IMP-(REQ|BUG)-[0-9A-Za-z._-]+$"
+    },
+    "requirement_id": {
+      "type": ["string", "null"],
+      "pattern": "^REQ-[0-9A-Za-z._-]+$"
+    },
+    "bug_id": {
+      "type": ["string", "null"],
+      "pattern": "^BUG-[0-9]{4}$"
+    },
+    "source_inbox_id": {
+      "type": ["string", "null"]
+    },
+    "source_issue_number": {
+      "type": ["integer", "null"]
+    },
+    "implementation_issue_number": {
+      "type": ["integer", "null"]
+    },
+    "implementation_issue_url": {
+      "type": ["string", "null"]
+    },
+    "copilot_assignment": {
+      "type": "object"
+    },
+    "branch": {
+      "type": ["string", "null"]
+    },
+    "pull_request_number": {
+      "type": ["integer", "null"]
+    },
+    "pull_request_url": {
+      "type": ["string", "null"]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "QUEUED",
+        "AGENT_ASSIGNED",
+        "IN_PROGRESS",
+        "PR_READY",
+        "CI_FAILED",
+        "REPAIRING",
+        "READY_FOR_HUMAN_REVIEW",
+        "MERGED",
+        "VALIDATION_PENDING",
+        "VALIDATED",
+        "FAILED"
+      ]
+    },
+    "created_at": {
+      "type": "string"
+    },
+    "updated_at": {
+      "type": "string"
+    },
+    "attempt_count": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "last_ci_result": {
+      "type": "string",
+      "enum": ["UNKNOWN", "PASS", "FAIL", "BLOCKED"]
+    },
+    "validation_state": {
+      "type": "string",
+      "enum": ["PENDING", "VALIDATION_PENDING", "VALIDATED", "EXTERNAL_ACCEPTANCE_PENDING", "FAILED"]
+    },
+    "acceptance_test_ids": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "ci_failures": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    }
+  },
+  "anyOf": [
+    {
+      "required": ["requirement_id"]
+    },
+    {
+      "required": ["bug_id"]
+    }
+  ]
+}
+

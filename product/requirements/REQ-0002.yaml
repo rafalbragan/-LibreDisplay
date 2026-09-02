@@ -1,0 +1,131 @@
+id: "REQ-0002"
+status: "ACCEPTED"
+title: "Naturalne polskie formatowanie świeżości danych na kartach osób monitorowanych"
+
+problem: >
+  Karty osób monitorowanych widoczne dla opiekuna na ekranie Home / Monitoring
+  pokazują techniczny znacznik czasu ISO-8601 w formie typu
+  "Przed 2026-09-01T23:14:13.050Z". Wymaga to interpretacji technicznej,
+  zwiększa obciążenie poznawcze i pogarsza szybkość oceny świeżości danych.
+
+target_personas:
+  - "caregiver"
+target_modes:
+  - "caregiver"
+target_modules:
+  - "Home / Monitoring"
+
+linked_observations: []
+linked_test_runs: []
+
+user_outcome: >
+  Opiekun widzi od razu naturalną, krótką i lokalną informację o świeżości
+  danych na kartach monitorowanych osób, bez konieczności interpretacji
+  technicznego formatu czasu.
+
+solution_options:
+  - id: "opt-relative-shared"
+    summary: >
+      Użyć wspólnego, testowalnego formatera czasu względnego w języku polskim
+      dla etykiet świeżości danych na kartach "Wymaga uwagi" i "Pozostali",
+      z bezpieczną obsługą niewielkiego future skew i braku czasu.
+    pros:
+      - "Usuwa techniczny ISO-8601 z głównych kart monitoringu"
+      - "Zapewnia spójność z istniejącym UX LibreCare"
+      - "Nie zmienia logiki medycznej ani progów nieświeżości"
+    cons:
+      - "Wymaga pilnowania spójności między różnymi etykietami czasu"
+  - id: "opt-absolute-local"
+    summary: >
+      Pokazywać lokalny skrócony czas bez formy względnej.
+    pros:
+      - "Wciąż usuwa techniczny ISO"
+    cons:
+      - "Mniej intuicyjne dla szybkiej oceny świeżości"
+      - "Słabiej wspiera natychmiastowe skanowanie kart"
+
+recommended_option: "opt-relative-shared"
+counterargument: >
+  Zbyt duże skracanie czasu może ukrywać dokładność pomiaru. Odpowiedź:
+  wymaganie dotyczy tylko głównych kart monitoringu; nie zmieniamy wartości
+  timestampów ani logiki szczegółowych ekranów.
+
+scores:
+  safety: 7
+  caregiver_value: 8
+  senior_value: 0
+  clinician_value: 1
+  frequency: 8
+  confidence: 9
+  complexity: 3
+  strategy_alignment: 8
+
+safety_implications: >
+  To wymaganie dotyczy wyłącznie prezentacji. Nie zmienia progów nieświeżości,
+  klasyfikacji stale/fresh, logiki leczenia, zachowania REQ-0001 ani reguł
+  bezpieczeństwa z SAFETY_GUARDRAILS.md. Ma ograniczyć ryzyko błędnej,
+  opóźnionej interpretacji przez człowieka.
+
+acceptance_criteria:
+  - >
+    Dla świeżości poniżej 1 minuty karta pokazuje "przed chwilą".
+  - >
+    Dla świeżości 1, 2, 5, 15 i 59 minut karta pokazuje odpowiednio
+    "1 min temu", "2 min temu", "5 min temu", "15 min temu", "59 min temu".
+  - >
+    Dla starszych danych karta pokazuje zwięzłą, naturalną i lokalną formę
+    względną spójną z LibreCare UX.
+  - >
+    Karty w sekcjach "Wymaga uwagi" i "Pozostali" nie pokazują już surowego
+    ISO-8601 jako głównej etykiety świeżości.
+  - >
+    Future skew nie powoduje wartości ujemnych ani fałszywej nieświeżości.
+  - >
+    Nie zmieniono wartości timestampów, progów stale/fresh, klasyfikacji uwagi
+    opiekuna ani zachowania REQ-0001.
+
+test_plan:
+  - "Unit test: < 1 minuta -> przed chwilą"
+  - "Unit test: 1 minuta -> 1 min temu"
+  - "Unit test: 2 minuty -> 2 min temu"
+  - "Unit test: 5 minut -> 5 min temu"
+  - "Unit test: 15 minut -> 15 min temu"
+  - "Unit test: 59 minut -> 59 min temu"
+  - "Unit test: starsze dane -> zwięzła forma godzin/dni"
+  - "Unit test: future timestamp / clock skew -> bez czasu ujemnego"
+  - "Unit/UI test: brak surowego ISO na kartach sekcji opiekuna"
+  - "Regression test: stale classification unchanged"
+  - "Regression test: CaregiverAttentionClassification unchanged"
+  - "Regression test: REQ-0001 grouping unchanged"
+
+human_decision: "ACCEPT"
+human_decision_date: "2026-09-02"
+human_decision_maker: "Human via GitHub Issue #1"
+human_decision_reason: >
+  Zaakceptowano problem UX dotyczący technicznego wyświetlania świeżości danych
+  na głównych kartach monitoringu opiekuna.
+
+related_decisions:
+  - "DEC-0002"
+  - "DEC-0004"
+  - "DEC-0007"
+
+created_at: "2026-09-02"
+
+implementation:
+  implementation_id: "IMP-REQ-0002"
+  source_inbox_id: "INBOX-GH-000001"
+  source_inbox_issue_number: 1
+  source_inbox_issue_url: "https://github.com/rafalbragan/-LibreDisplay/issues/1"
+  implementation_status: "VALIDATED"
+  validation_state: "PASSED"
+  implementation_issue: {}
+  implementation_pr: {}
+  acceptance_test_ids: []
+  copilot_handoff_allowed: false
+  handoff_blocked_reason: >
+    REQ-0002 zostało zaakceptowane przed dodaniem automatycznego handoffu i
+    zostało zrealizowane bezpośrednio w tym jawnie zleconym zadaniu.
+  completed_via: "direct-reviewed-local-implementation"
+
+

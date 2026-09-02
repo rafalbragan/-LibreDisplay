@@ -1,0 +1,19 @@
+{
+  "id": "DEC-0007",
+  "date": "2026-09-02",
+  "subject": "Zaakceptowano REQ-0002 dotyczące naturalnego formatowania świeżości danych na kartach opiekuna",
+  "status": "ACCEPTED",
+  "decision": "REQ-0002 zostało zaakceptowane do implementacji jako zmiana prezentacyjna bez modyfikacji logiki bezpieczeństwa i leczenia.",
+  "reason": "Surowy timestamp ISO-8601 na głównych kartach osób monitorowanych zwiększa obciążenie poznawcze opiekuna i utrudnia szybką ocenę świeżości danych.",
+  "evidence": [
+    "GitHub Issue #1",
+    "INBOX-GH-000001",
+    "REQ-0002"
+  ],
+  "counterargument": "Dokładny czas pomiaru może być potrzebny w niektórych miejscach, ale główne karty monitoringu powinny pozostawać zwięzłe i czytelne.",
+  "revisit_condition": "Jeśli przyszłe testy użyteczności pokażą potrzebę innej formy lokalizacji czasu lub dodatkowych szczegółów na kartach.",
+  "related_requirements": [
+    "REQ-0002"
+  ]
+}
+

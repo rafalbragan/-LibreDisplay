@@ -1,13 +1,13 @@
-name: LibreCare Product Inbox
+name: LibreCare — skrzynka produktu
 description: "Zgłoś obserwację, problem lub pomysł dotyczący LibreCare."
-title: "[Product Inbox] "
+title: "[Skrzynka Produktowa] "
 labels:
   - product-inbox
 body:
   - type: dropdown
     id: type
     attributes:
-      label: TYPE
+      label: Typ zgłoszenia
       options:
         - Problem
         - Obserwacja
@@ -19,7 +19,7 @@ body:
   - type: dropdown
     id: persona
     attributes:
-      label: PERSONA
+      label: Persona użytkownika
       options:
         - Opiekun
         - Senior
@@ -31,7 +31,7 @@ body:
   - type: dropdown
     id: module
     attributes:
-      label: MODULE
+      label: Moduł
       options:
         - Główna / Monitoring
         - Analiza
@@ -45,7 +45,7 @@ body:
   - type: textarea
     id: notice
     attributes:
-      label: WHAT DID YOU NOTICE / WHAT WOULD YOU LIKE?
+      label: Co zauważyłeś(-aś) / czego potrzebujesz?
       placeholder: "Opisz co zauważyłeś(-aś) albo czego potrzebujesz."
     validations:
       required: true
@@ -53,7 +53,7 @@ body:
   - type: textarea
     id: why
     attributes:
-      label: WHY DOES IT MATTER?
+      label: Dlaczego to ważne?
       placeholder: "Dlaczego to jest ważne dla Ciebie lub użytkownika?"
     validations:
       required: false
@@ -61,7 +61,7 @@ body:
   - type: textarea
     id: context
     attributes:
-      label: CONTEXT / EXAMPLE
+      label: Kontekst / przykład
       placeholder: "Przykład, ekran, sytuacja, kiedy to się pojawia."
     validations:
       required: false

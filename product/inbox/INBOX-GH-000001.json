@@ -11,5 +11,6 @@
   "raw_input": "Na kartach monitorowanych osób czas ostatniej aktualizacji jest wyświetlany w technicznej formie, np.:\n\nPrzed 2026-09-01T23:14:13.050Z\n\nChciałbym, żeby był prezentowany w naturalny i szybko zrozumiały sposób, np.:\n\nprzed chwilą\n2 min temu\n5 min temu\n15 min temu",
   "why_it_matters": "Opiekun powinien od razu rozumieć, jak świeży jest odczyt. Surowy timestamp ISO jest trudny do szybkiej interpretacji, szczególnie gdy trzeba ocenić sytuację kilku osób.",
   "context": "Problem został zauważony podczas realnego testu Firebase scenariusza MULTIPLE_PATIENTS_ONE_AT_RISK po wdrożeniu REQ-0001.",
-  "status": "CONVERTED"
+  "status": "CONVERTED",
+  "accepted_requirement_id": "REQ-0002"
 }

@@ -5,9 +5,14 @@ on:
     types: [opened, edited, reopened]
   issue_comment:
     types: [created]
+  pull_request:
+    types: [opened, reopened, synchronize, edited, closed]
+  workflow_run:
+    workflows: ["Android CI"]
+    types: [completed]
 
 concurrency:
-  group: product-inbox-state
+  group: product-foundation-state
   cancel-in-progress: false
 
 jobs:
@@ -32,13 +37,13 @@ jobs:
             const issue = context.payload.issue;
             const hasLabel = (issue.labels || []).some(l => l.name === 'product-inbox');
             const title = issue.title || '';
-            const hasPrefix = title.startsWith('[Product Inbox]');
+            const hasPrefix = title.startsWith('[Product Inbox]') || title.startsWith('[Skrzynka Produktowa]');
             const body = issue.body || '';
             const normalizedBody = body.replace(/\r\n/g, '\n').toLowerCase();
             const requiredHeadings = [
-              '### type',
-              '### persona',
-              '### what did you notice / what would you like?',
+              '### typ zgłoszenia',
+              '### persona użytkownika',
+              '### co zauważyłeś(-aś) / czego potrzebujesz?',
             ];
             const hasFormSignature = requiredHeadings.every(h => normalizedBody.includes(h));
             const shouldProcess = hasLabel || hasPrefix || hasFormSignature;
@@ -60,7 +65,7 @@ jobs:
                 repo: context.repo.repo,
                 name: 'product-inbox',
                 color: '1f6feb',
-                description: 'LibreCare Product Inbox submissions',
+                description: 'Zgłoszenia do skrzynki produktu LibreCare',
               });
             }
 
@@ -166,7 +171,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/inbox product/generated product/review product/research
+          git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
           if git diff --cached --quiet; then
             echo "No Product Foundation changes to commit."
           else
@@ -248,6 +253,22 @@ jobs:
             --event-file github-event.json \
             --repo-owner "${{ github.repository_owner }}" | tee decision-output.txt
 
+      - name: Sync implementation handoff after /accept
+        if: github.event.comment.body == '/accept'
+        env:
+          COPILOT_AGENT_LOGIN: copilot-swe-agent[bot]
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # The Product CLI uses the supported Copilot issue-assignment payload shape
+          # (`agent_assignment`, with `agentAssignment` fallback only for compatibility)
+          python scripts/product/product_cli.py inbox-sync-implementation-handoff \
+            --event-file github-event.json \
+            --repo-owner "${{ github.repository_owner }}" \
+            --repo-name "${{ github.event.repository.name }}" \
+            --github-token "$GITHUB_TOKEN" \
+            --base-branch master \
+            --output-file handoff-result.json
+
       - name: Product validation
         run: |
           python scripts/product/product_cli.py validate
@@ -262,7 +283,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/inbox product/generated product/review product/research
+          git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
           if git diff --cached --quiet; then
             echo "No Product Foundation changes to commit."
           else
@@ -279,8 +300,8 @@ jobs:
             const marker = '<!-- LIBRECARE_PRODUCT_DECISION -->';
             const output = fs.existsSync('decision-output.txt')
               ? fs.readFileSync('decision-output.txt', 'utf8').trim()
-              : 'No decision output produced.';
-            const body = `${marker}\n## LibreCare Product Decision\n\n${output}`;
+              : 'Brak wyniku komendy decyzyjnej.';
+            const body = `${marker}\n${output}`;
             const { owner, repo } = context.repo;
             const issue_number = context.issue.number;
             const comments = await github.paginate(github.rest.issues.listComments, {
@@ -304,5 +325,260 @@ jobs:
                 issue_number,
                 body,
               });
+            }
+
+  implementation-pr-tracking:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Save GitHub event payload
+        run: |
+          cat "$GITHUB_EVENT_PATH" > github-event.json
+
+      - name: Track implementation pull request
+        run: |
+          python scripts/product/product_cli.py track-implementation-pr \
+            --event-file github-event.json \
+            --output-file pr-track.json || true
+
+      - name: Validate Product Foundation
+        run: |
+          python scripts/product/product_cli.py validate
+          python scripts/product/product_cli.py summary
+
+      - name: Persist Product Foundation state
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.base.ref }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
+          if git diff --cached --quiet; then
+            echo "No Product Foundation changes to commit."
+          else
+            git commit -m "product: track implementation pr #${{ github.event.pull_request.number }}"
+            git pull --rebase origin "$BRANCH_NAME"
+            git push origin "HEAD:$BRANCH_NAME"
+          fi
+
+      - name: Upsert implementation status comment on originating inbox issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('pr-track.json')) {
+              core.info('No PR tracking payload created.');
+              return;
+            }
+            const payload = JSON.parse(fs.readFileSync('pr-track.json', 'utf8'));
+            if (!payload.originating_inbox_issue_number || !payload.comment_markdown) {
+              core.info('No originating inbox issue linked.');
+              return;
+            }
+            const marker = '<!-- LIBRECARE_IMPLEMENTATION_STATUS -->';
+            const body = payload.comment_markdown;
+            const { owner, repo } = context.repo;
+            const issue_number = Number(payload.originating_inbox_issue_number);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+  implementation-ci-repair-loop:
+    if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Android CI' && github.event.workflow_run.event == 'pull_request'
+    runs-on: ubuntu-latest
+    permissions:
+      copilot-requests: write
+      contents: write
+      issues: write
+      actions: read
+    concurrency:
+      group: product-implementation-ci-${{ github.event.workflow_run.id }}
+      cancel-in-progress: false
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Collect CI metadata
+        id: ci_meta
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            const wr = context.payload.workflow_run || {};
+            const prs = wr.pull_requests || [];
+            if (!prs.length) {
+              core.setOutput('has_pr', 'false');
+              return;
+            }
+            const prNumber = Number(prs[0].number);
+            let failingStep = '';
+            let failingTests = '';
+            let failureOutput = '';
+            if ((wr.conclusion || '').toLowerCase() !== 'success') {
+              const jobs = await github.paginate(github.rest.actions.listJobsForWorkflowRun, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: Number(wr.id),
+                per_page: 100,
+              });
+              const failedJobs = jobs.filter(j => (j.conclusion || '').toLowerCase() === 'failure');
+              const failedSteps = [];
+              for (const job of failedJobs) {
+                for (const step of (job.steps || [])) {
+                  if ((step.conclusion || '').toLowerCase() === 'failure') {
+                    failedSteps.push(`${job.name}: ${step.name}`);
+                  }
+                }
+              }
+              failingStep = failedSteps[0] || (failedJobs[0] ? failedJobs[0].name : 'unknown');
+              failingTests = failedSteps.slice(0, 3).join(' | ');
+              failureOutput = failedJobs.slice(0, 2).map(j => `${j.name} (${j.html_url || ''})`).join(' | ');
+            }
+            const meta = {
+              pr_number: prNumber,
+              workflow_name: wr.name || 'Android CI',
+              conclusion: wr.conclusion || 'unknown',
+              run_id: String(wr.id || 'unknown'),
+              run_url: wr.html_url || '',
+              failing_step: failingStep,
+              failing_tests: failingTests,
+              log_excerpt: failureOutput,
+            };
+            fs.writeFileSync('ci-meta.json', JSON.stringify(meta));
+            core.setOutput('has_pr', 'true');
+
+      - name: Record CI result and bounded repair
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -c "import json, subprocess; from pathlib import Path; meta=json.loads(Path('ci-meta.json').read_text(encoding='utf-8')); cmd=['python','scripts/product/product_cli.py','record-ci-result','--pr-number',str(meta['pr_number']),'--workflow-name',str(meta.get('workflow_name','Android CI')),'--conclusion',str(meta.get('conclusion','unknown')),'--run-id',str(meta.get('run_id','unknown')),'--run-url',str(meta.get('run_url','')),'--failing-step',str(meta.get('failing_step','')),'--failing-tests',str(meta.get('failing_tests','')),'--log-excerpt',str(meta.get('log_excerpt','')),'--repo-owner','${{ github.repository_owner }}','--repo-name','${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+
+      - name: Product validation
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        run: |
+          python scripts/product/product_cli.py validate
+
+      - name: Persist Product Foundation state
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        env:
+          BRANCH_NAME: master
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add product/implementation product/generated product/requirements product/inbox
+          if git diff --cached --quiet; then
+            echo "No Product Foundation changes to commit."
+          else
+            git commit -m "product: record implementation ci result run #${{ github.event.workflow_run.id }}"
+            git pull --rebase origin "$BRANCH_NAME"
+            git push origin "HEAD:$BRANCH_NAME"
+          fi
+
+      - name: Upsert implementation CI status comment
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('ci-result.json')) {
+              core.info('No CI result payload created.');
+              return;
+            }
+            const payload = JSON.parse(fs.readFileSync('ci-result.json', 'utf8'));
+            if (!payload.originating_inbox_issue_number || !payload.comment_markdown) {
+              core.info('No inbox comment needed for this CI result.');
+              return;
+            }
+            const marker = payload.status === 'FAILED'
+              ? '<!-- LIBRECARE_IMPLEMENTATION_ATTENTION -->'
+              : '<!-- LIBRECARE_IMPLEMENTATION_STATUS -->';
+            const body = payload.comment_markdown;
+            const { owner, repo } = context.repo;
+            const issue_number = Number(payload.originating_inbox_issue_number);
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
+            }
+
+      - name: Upsert PR status comment
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const fs = require('fs');
+            if (!fs.existsSync('ci-meta.json')) {
+              core.info('No CI metadata payload found.');
+              return;
+            }
+            const meta = JSON.parse(fs.readFileSync('ci-meta.json', 'utf8'));
+            const prNumber = Number(meta.pr_number || 0);
+            if (!prNumber) {
+              core.info('No PR number found in CI metadata.');
+              return;
+            }
+            const marker = '<!-- LIBRECARE_IMPLEMENTATION_PR_NOTICE -->';
+            const body = `${marker}\n## LibreCare — status Pull Request\n\nImplementacja przygotowana przez Copilot.\nWymaga zatwierdzenia człowieka przed scaleniem.`;
+            const { owner, repo } = context.repo;
+            const issue_number = prNumber;
+            const comments = await github.paginate(github.rest.issues.listComments, {
+              owner,
+              repo,
+              issue_number,
+              per_page: 100,
+            });
+            const existing = comments.find(c => c.body && c.body.includes(marker));
+            if (existing) {
+              await github.rest.issues.updateComment({ owner, repo, comment_id: existing.id, body });
+            } else {
+              await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
 
