@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-02T14:51:34Z",
+  "generated_at": "2026-09-02T14:54:13Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -73,6 +73,44 @@
       "reasoning_summary": "To nie jest potwierdzona nowa capability ani wystarczająco udokumentowany nowy problem produktowy. Jest to wiarygodna, safety-relevant hipoteza oraz wyraźna luka testowa: obecne materiały potwierdzają rozpoznawanie świeżości w scenariuszu NORMAL i istnienie logiki stale/fresh, ale nie potwierdzają jednoznacznego rozpoznawania starych danych przez opiekuna. Ponieważ REQ-0002 już dotyczy tego obszaru, właściwym krokiem jest HOLD, test STALE_DATA oraz ewentualne rozszerzenie istniejącego wymagania, a nie akceptacja kolejnego równoległego wymagania. Jakakolwiek zmiana powinna pozostać prezentacyjna, zachować istniejące reguły klasyfikacji i nie zawierać autonomicznych zaleceń dotyczących insuliny ani leczenia.",
       "governance_notes": [],
       "generated_at": "2026-09-02T14:44:05Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000003",
+      "github_issue_number": 3,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/3",
+      "classification": "INCONCLUSIVE",
+      "summary": "Zgłoszenie opisuje potencjalną potrzebę zapamiętywania ostatnio wybranej perspektywy użytkownika między uruchomieniami aplikacji, ale Product Foundation nie potwierdza, że przełączane tryby Opiekun, Senior i Lekarz są już zaimplementowane jako funkcja użytkowa.",
+      "evidence_available": [
+        "DEC-0001 potwierdza zaakceptowany kierunek produktu oparty na trzech perspektywach: opiekun, senior i lekarz.",
+        "CURRENT_FOCUS.yaml wymienia caregiver, senior i clinician jako trzy perspektywy aplikacji.",
+        "DEC-0003 wymaga centralnej, tryb-zależnej polityki prezentacji.",
+        "Futures zawiera prototypowy kierunek „Ekrany Senior / Opiekun / Lekarz”, a nie dowód gotowej funkcji wyboru trybu.",
+        "Zgłoszenie człowieka wskazuje oczekiwane zachowanie ręcznego przełączania i powrotu do poprzedniego wyboru."
+      ],
+      "evidence_missing": [
+        "Brak testu lub obserwacji potwierdzających, że użytkownik może obecnie ręcznie przełączać te trzy perspektywy.",
+        "Brak testu uruchomienia aplikacji po restarcie z zachowaniem wybranej perspektywy.",
+        "Brak danych o częstotliwości problemu, liczbie użytkowników dotkniętych problemem i skutkach rozpoczynania od domyślnej perspektywy.",
+        "Brak potwierdzenia, czy wybór perspektywy ma być preferencją urządzenia, konta, profilu osoby czy sesji.",
+        "Brak kryteriów bezpieczeństwa dla sytuacji, w której aplikacja uruchomi się na współdzielonym urządzeniu z poprzednią perspektywą innego użytkownika."
+      ],
+      "existing_capability_overlap": [
+        "Pokrywa się z zaakceptowanym kierunkiem trzech perspektyw z DEC-0001.",
+        "Pokrywa się z decyzją o centralnej polityce prezentacji trybów z DEC-0003.",
+        "Nie jest potwierdzoną zdolnością z VALIDATED_CAPABILITIES.md; lista potwierdza istniejące funkcje monitoringu i trendów, ale nie trwały wybór perspektywy.",
+        "Aktualny model AppMode rozróżnia NONE, LIVE i DEMO, co nie dowodzi istnienia trwałego wyboru Opiekun/Senior/Lekarz."
+      ],
+      "proposed_requirement": "Jeżeli ręczny wybór perspektywy Opiekun, Senior i Lekarz zostanie potwierdzony jako istniejąca funkcja, aplikacja powinna zapisać ostatnią poprawnie wybraną perspektywę i odtworzyć ją przy kolejnym uruchomieniu, z możliwością ręcznego przełączenia oraz jednoznacznym oznaczeniem aktywnej perspektywy. Należy zdefiniować zakres zapisu, zachowanie po wylogowaniu, resecie danych, zmianie konta i na urządzeniu współdzielonym.",
+      "user_value": "Może ograniczyć powtarzalną konfigurację i zmniejszyć ryzyko trafienia do niewłaściwie zaprezentowanego widoku, szczególnie gdy te same dane są używane przez różne role. Wartość jest jednak zależna od tego, czy perspektywy są rzeczywiście dostępne i różnią się funkcjonalnie.",
+      "counterargument": "Zapamiętanie roli może otworzyć aplikację w niewłaściwej perspektywie na współdzielonym urządzeniu albo utrwalić przypadkowy wybór. W produkcie medycznym taki błąd może być bardziej mylący niż rozpoczęcie od neutralnego lub domyślnego widoku. Jedno zgłoszenie nie dowodzi, że perspektywa jest ważniejszym problemem niż świeżość danych, szybkie rozpoznanie ryzyka i czytelność monitoringu.",
+      "simpler_alternative": "Najpierw potwierdzić istniejący przełącznik perspektywy w badaniu użyteczności, a następnie dodać jawny wybór przy starcie aplikacji, np. „Ostatnio używano: Senior — kontynuuj” oraz „Zmień perspektywę”, bez automatycznego przełączania w kontekstach współdzielonych lub po zmianie konta.",
+      "safety_impact": "LOW",
+      "estimated_scope": "MEDIUM",
+      "proposed_priority": "P2",
+      "recommended_decision": "HOLD",
+      "reasoning_summary": "To nie jest potwierdzona luka w już zwalidowanej funkcji, lecz potencjalna okazja UX zależna od niedowiedzionego stanu implementacji trzech perspektyw. Należy najpierw zweryfikować ręczne przełączanie, zakres i tożsamość zapisywanej preferencji oraz scenariusze współdzielenia urządzenia. Po tej weryfikacji można rozważyć małe wymaganie dotyczące trwałej preferencji, ale nie powinno ono wyprzedzać priorytetów fazy foundation: bezpieczeństwa, wiarygodności danych i szybkości opiekuna.",
+      "governance_notes": [],
+      "generated_at": "2026-09-02T14:54:13Z"
     }
   ]
 }
