@@ -1,0 +1,15 @@
+{
+  "inbox_id": "INBOX-GH-000004",
+  "github_issue_number": 4,
+  "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/4",
+  "created_at": "2026-09-02T15:25:40Z",
+  "updated_at": "2026-09-02T15:27:00Z",
+  "submitted_by": "rafalbragan",
+  "type": "IDEA",
+  "persona": "WSPOLNE_LUB_NIE_WIEM",
+  "module": "INNE_LUB_NIE_WIEM",
+  "raw_input": "Chciałbym zachować istniejącą zakładkę Futures, ale rozszerzyć jej rolę.\n\nFutures powinien pokazywać czytelne podsumowanie tego, nad czym obecnie pracujemy w LibreCare, co jest do sprawdzenia, jakie błędy poprawiamy i co ostatnio ukończyliśmy.\n\nJednocześnie nie chcę usuwać istniejących pomysłów zapisanych już w Futures.",
+  "why_it_matters": "Futures może być prostym miejscem pokazującym stan rozwoju aplikacji bez zaglądania do GitHuba.\n\nŹródłem prawdy powinny pozostać istniejące REQ, BUG, implementation records i Product Foundation. Futures ma tylko prezentować te dane i zachować wcześniejsze pomysły.",
+  "context": "Inwentaryzacja repozytorium wykazała 10 istniejących pomysłów Futures, z czego 6 jest częściowo zaimplementowanych.\n\nDocelowo widziałbym sekcje:\n\nW trakcie\nDo sprawdzenia\nPoprawiamy\nOstatnio ukończone\nPomysły\n\nStare pomysły Futures powinny pozostać dostępne i później być kolejno analizowane przez Product Discovery.",
+  "status": "ANALYZED"
+}

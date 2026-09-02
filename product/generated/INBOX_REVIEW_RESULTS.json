@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-02T14:54:13Z",
+  "generated_at": "2026-09-02T15:27:01Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -111,6 +111,49 @@
       "reasoning_summary": "To nie jest potwierdzona luka w już zwalidowanej funkcji, lecz potencjalna okazja UX zależna od niedowiedzionego stanu implementacji trzech perspektyw. Należy najpierw zweryfikować ręczne przełączanie, zakres i tożsamość zapisywanej preferencji oraz scenariusze współdzielenia urządzenia. Po tej weryfikacji można rozważyć małe wymaganie dotyczące trwałej preferencji, ale nie powinno ono wyprzedzać priorytetów fazy foundation: bezpieczeństwa, wiarygodności danych i szybkości opiekuna.",
       "governance_notes": [],
       "generated_at": "2026-09-02T14:54:13Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000004",
+      "github_issue_number": 4,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/4",
+      "classification": "INCONCLUSIVE",
+      "summary": "Zgłoszenie opisuje potencjalną okazję organizacyjno-produktową: przedstawienie aktualnego stanu prac i zachowanie wcześniejszych pomysłów w jednym miejscu. Product Foundation nie potwierdza jednak, że zakładka Futures jest obecnie zaimplementowanym modułem ani że istnieje udokumentowany problem użytkownika wymagający jej rozszerzenia. Twierdzenie o 10 pomysłach, z których 6 jest częściowo zaimplementowanych, nie ma potwierdzenia w przejrzanych artefaktach Product Foundation.",
+      "evidence_available": [
+        "Roadmapa stwierdza, że elementy oznaczone FUTURE są pomysłami, a nie zobowiązaniami ani istniejącą funkcjonalnością.",
+        "CURRENT_FOCUS.yaml wskazuje fazę phase-1-foundation, obowiązkową akceptację człowieka i brak autonomicznego rozpoczynania implementacji przez AI.",
+        "MODULE_INVENTORY.md wymienia rzeczywiste moduły aplikacji i nie dokumentuje Futures jako modułu nawigacji lub funkcji produkcyjnej.",
+        "Repozytorium zawiera już źródłowe artefakty Product Foundation: wymagania, decyzje, rekord implementacji, backlog badań i wyniki testów.",
+        "TESTRUN-2026-001, TESTRUN-2026-002, TESTRUN-2026-006 i TESTRUN-2026-007 dotyczą monitoringu glikemii oraz przepływu opiekuna, a nie odkrywania stanu prac, Futures ani pomysłów produktowych.",
+        "Istniejące decyzje i wymagania pokazują, że zaakceptowane elementy są rejestrowane osobno i nie powinny być wyprowadzane wyłącznie z pozytywnego testu."
+      ],
+      "evidence_missing": [
+        "Brak w Product Foundation potwierdzenia, gdzie znajduje się implementacja zakładki Futures, jakie ma obecnie zachowanie i czy jest dostępna użytkownikom.",
+        "Brak inwentaryzacji 10 pomysłów Futures oraz dowodu, że 6 z nich jest częściowo zaimplementowanych.",
+        "Brak obserwacji, testu użyteczności lub danych pokazujących, że użytkownicy nie mogą zrozumieć aktualnego stanu prac bez zaglądania do GitHuba.",
+        "Brak definicji odbiorcy, kontekstu użycia i granicy między widokiem wewnętrznym dla zespołu a funkcją dostępną użytkownikom aplikacji.",
+        "Brak reguł mapowania statusów REQ, BUG, implementation records, decyzji i testów do sekcji „W trakcie”, „Do sprawdzenia”, „Poprawiamy” i „Ostatnio ukończone”.",
+        "Brak zasad wersjonowania, aktualizacji, archiwizacji i zachowania historycznych pomysłów bez przedstawiania nieaktualnych lub odrzuconych elementów jako aktywnych.",
+        "Brak dowodu, że proponowany widok jest ważniejszy od bieżących priorytetów fazy foundation: bezpieczeństwa, wiarygodności danych, szybkości opiekuna i czytelności monitoringu."
+      ],
+      "existing_capability_overlap": [
+        "Nie ma potwierdzonej capability „Futures” w VALIDATED_CAPABILITIES.md.",
+        "Nie ma istniejącego wymagania dotyczącego prezentowania stanu rozwoju aplikacji ani agregowania rekordów Product Foundation.",
+        "Źródło prawdy wskazane w zgłoszeniu już istnieje w repozytorium jako rozdzielone artefakty: requirements, decisions, implementation, research i review queue.",
+        "Zakres częściowo pokrywa się z funkcją Product Foundation i backlogiem, ale nie z funkcją użytkową aplikacji.",
+        "DEC-0005 i ROADMAP.md wskazują, że w fazie 1 nie należy wprowadzać produkcyjnych zmian UI.",
+        "Nie należy uznawać pozytywnych testów monitoringu za dowód potrzeby ani poprawności proponowanego Futures."
+      ],
+      "proposed_requirement": "Nie tworzyć jeszcze wymagania produktowego. Najpierw potwierdzić istnienie i aktualny zakres zakładki Futures, zinwentaryzować wszystkie zachowane pomysły oraz określić odbiorcę i cel widoku. Jeśli potrzeba zostanie potwierdzona, rozważyć później wymaganie na read-only podsumowanie generowane deterministycznie z zaakceptowanych i aktywnych rekordów Product Foundation, z osobną sekcją archiwalnych pomysłów, wyraźnym rozróżnieniem statusów i bez zmiany źródeł prawdy.",
+      "user_value": "Jedno, aktualne i niemylące podsumowanie może ograniczyć koszt ręcznego przeglądania GitHuba oraz ułatwić zespołowi odnalezienie prac w toku, otwartych walidacji, błędów i ukończonych elementów. Wartość pozostaje niepotwierdzona, ponieważ brak dowodu, że obecny Futures faktycznie nie zapewnia tego celu lub że problem dotyczy użytkowników aplikacji.",
+      "counterargument": "Rozszerzanie Futures może stworzyć drugie źródło prawdy, zwiększyć koszt synchronizacji i sprawić, że przestarzałe lub niezaakceptowane elementy będą wyglądały jak zobowiązania. Może też odciągnąć uwagę od safety-relevant funkcji opiekuna, podczas gdy zgłoszenie nie dostarcza danych o wpływie problemu. Samo agregowanie rekordów nie gwarantuje zrozumiałości, jeśli statusy i zasady publikacji nie są jednoznaczne.",
+      "simpler_alternative": "Nie zmieniać aplikacji. Utrzymać istniejące pomysły w ich obecnym miejscu, a na etapie fazy foundation wygenerować lub uporządkować jeden wewnętrzny, read-only indeks Product Foundation z linkami do REQ, BUG, decyzji, implementacji i testów. Najpierw sprawdzić, czy taki indeks rozwiązuje potrzebę, zanim powstanie osobna funkcja Futures.",
+      "safety_impact": "LOW",
+      "estimated_scope": "MEDIUM",
+      "proposed_priority": "P3",
+      "recommended_decision": "HOLD",
+      "reasoning_summary": "To wiarygodna, ale obecnie nieudowodniona okazja do poprawy przejrzystości prac, a nie potwierdzona luka w działającej capability ani nowy problem bezpieczeństwa. Product Foundation nie potwierdza implementacji Futures, skali opisanej w zgłoszeniu ani potrzeby użytkowników. Rekomendacja to HOLD: najpierw inwentaryzacja i krótka walidacja potrzeby, następnie ewentualny deterministyczny, read-only widok oparty na istniejących źródłach prawdy. Każda przyszła implementacja wymaga decyzji człowieka i nie może przedstawiać propozycji AI jako zaakceptowanych prac.",
+      "governance_notes": [],
+      "generated_at": "2026-09-02T15:27:00Z"
     }
   ]
 }
