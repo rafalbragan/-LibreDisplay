@@ -1,4 +1,39 @@
 {
-  "generated_at": "2026-09-02T00:03:05Z",
-  "items": []
+  "generated_at": "2026-09-02T01:08:36Z",
+  "items": [
+    {
+      "inbox_id": "INBOX-GH-000001",
+      "github_issue_number": 1,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/1",
+      "classification": "PRODUCT_OPPORTUNITY",
+      "summary": "The product already treats data freshness as important and validates that the last-update time is visible; the gap is not the capability itself but the presentation format. A raw ISO timestamp on monitored-person cards is harder for caregivers to scan across multiple people and is a UX refinement opportunity within an existing safety-relevant feature.",
+      "evidence_available": [
+        "PERSONAS.yaml: caregiver priorities explicitly include 'freshness_of_cgm_data' and 'what_changed_since_last_check'.",
+        "CURRENT_FOCUS.yaml: caregiver_speed and readability are top-priority product values, and caregiver is the primary mode.",
+        "SAFETY_GUARDRAILS.md: freshness/staleness is a safety-relevant signal and must be obvious rather than hidden.",
+        "VALIDATED_CAPABILITIES.md: the senior scenario explicitly records 'Agent identified freshness / last update time'; this confirms the capability already exists."
+      ],
+      "evidence_missing": [
+        "No requirement explicitly states that last-update times must use human-readable relative strings like 'przed chwilą' or '2 min temu'.",
+        "No test run validates the exact caregiver comprehension of relative-time wording, thresholds, or localization across multiple monitored people.",
+        "No research documents whether raw timestamps are genuinely a barrier in multi-person caregiver workflows versus a minor readability issue."
+      ],
+      "existing_capability_overlap": [
+        "The app already exposes a freshness/last-update indicator in the monitoring home view; this is already validated in product evidence.",
+        "REQ-0001 requires rapid caregiver attention identification and relies on staleness-related classification, but it does not specify the exact wording or relative-time formatter.",
+        "The priority is aligned with existing product direction: caregiver speed and readability are explicitly defined as high-value goals."
+      ],
+      "proposed_requirement": "Refine the monitored-person freshness label to show relative, human-readable time strings such as 'przed chwilą', '2 min temu', or '15 min temu', while preserving access to the precise timestamp in a detail view or tooltip and keeping staleness logic unchanged.",
+      "user_value": "Caregivers can judge whether data is fresh at a glance, especially when comparing several monitored people, reducing delay and lowering the chance of misreading a stale reading as current.",
+      "counterargument": "This may be a cosmetic issue if the presence of staleness is already clearly signaled through status color or risk classification. A raw ISO timestamp can also be more precise and auditable than a relative time string, and some users may prefer the exact timestamp in a precise context. The value is therefore not yet proven to justify a design change without validation.",
+      "simpler_alternative": "Keep the current freshness indicator but localize and compress it to a one-line relative-time label (for example, '5 min temu') and move the exact ISO timestamp behind a tap or tooltip. This addresses the main usability problem without redesigning the card.",
+      "safety_impact": "LOW",
+      "estimated_scope": "SMALL",
+      "proposed_priority": "P2",
+      "recommended_decision": "HOLD",
+      "reasoning_summary": "The issue is valid as a product refinement, but the product foundation already confirms that freshness and staleness are important and visible; the missing part is a validated, user-friendly presentation format. Because there is existing capability overlap and no direct research proving the exact wording or threshold behavior, the recommended decision is to hold this item until a concise UX validation confirms the preferred relative-time language and preserves precision without masking staleness.",
+      "governance_notes": [],
+      "generated_at": "2026-09-02T01:08:36Z"
+    }
+  ]
 }

@@ -3,4 +3,41 @@ updated: '2026-09-02'
 phase: phase-1-foundation
 note: 'v2: Evidence correctly classified — no automatic creation of requirements from
   passing tests'
-candidates: {}
+candidates:
+  CAND-INBOX-GH-000001:
+    title: 'Inbox INBOX-GH-000001 #1'
+    persona: caregiver
+    module: Home / Monitoring
+    problem_or_opportunity: The product already treats data freshness as important
+      and validates that the last-update time is visible; the gap is not the capability
+      itself but the presentation format. A raw ISO timestamp on monitored-person
+      cards is harder for caregivers to scan across multiple people and is a UX refinement
+      opportunity within an existing safety-relevant feature.
+    proposed_requirement: Refine the monitored-person freshness label to show relative,
+      human-readable time strings such as 'przed chwilą', '2 min temu', or '15 min
+      temu', while preserving access to the precise timestamp in a detail view or
+      tooltip and keeping staleness logic unchanged.
+    expected_user_value: Caregivers can judge whether data is fresh at a glance, especially
+      when comparing several monitored people, reducing delay and lowering the chance
+      of misreading a stale reading as current.
+    alternative: Keep the current freshness indicator but localize and compress it
+      to a one-line relative-time label (for example, '5 min temu') and move the exact
+      ISO timestamp behind a tap or tooltip. This addresses the main usability problem
+      without redesigning the card.
+    counterargument: This may be a cosmetic issue if the presence of staleness is
+      already clearly signaled through status color or risk classification. A raw
+      ISO timestamp can also be more precise and auditable than a relative time string,
+      and some users may prefer the exact timestamp in a precise context. The value
+      is therefore not yet proven to justify a design change without validation.
+    safety_impact: LOW
+    proposed_priority: P2
+    human_decision: PENDING
+    source_ids:
+    - INBOX-GH-000001
+    - GH-ISSUE-1
+    inbox_id: INBOX-GH-000001
+    github_issue_number: 1
+    github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/1
+    recommended_decision: HOLD
+    classification: PRODUCT_OPPORTUNITY
+    applied_requirement_id: null
