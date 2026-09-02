@@ -1,6 +1,7 @@
 import importlib.util
 import json
 import shutil
+import subprocess
 import tempfile
 import unittest
 from pathlib import Path
@@ -289,6 +290,80 @@ class AutomationCliTest(unittest.TestCase):
 			self.write_json(meta_file, metadata)
 			metadata_arg = str(meta_file)
 		self.assertEqual(0, self.cli.cmd_ci_regression_intake(str(event_file), metadata_arg, str(output_file)))
+		return self.read_json(output_file)
+
+	def run_git(self, cwd: Path, *args: str) -> subprocess.CompletedProcess:
+		return subprocess.run(
+			["git", *args],
+			cwd=cwd,
+			capture_output=True,
+			text=True,
+			encoding="utf-8",
+			errors="replace",
+		)
+
+	def make_bug_record(self, bug_id: str, source: str, source_reference: str, observed: str, expected: str = "Oczekiwane", reproduction: str = "1. Repro") -> dict:
+		bug = self.cli.build_bug_record(
+			bug_id=bug_id,
+			title=f"Bug {bug_id}",
+			source=source,
+			source_reference=source_reference,
+			source_issue_number=None,
+			source_issue_url="https://example/issue",
+			related_requirement_ids=[],
+			related_test_ids=[],
+			observed_behavior=observed,
+			expected_behavior=expected,
+			reproduction=reproduction,
+			severity="HIGH",
+			safety_impact="LOW",
+		)
+		bug["dedup_signature"] = self.cli.bug_signature(bug)
+		bug["status"] = "TRIAGED"
+		return bug
+
+	def make_bug_review(self, bug_id: str, status: str = "TRIAGED", classification: str = "INCONCLUSIVE") -> dict:
+		return {
+			"bug_id": bug_id,
+			"classification": classification,
+			"status": status,
+			"generated_at": "2026-09-03T00:00:00Z",
+		}
+
+	def init_git_origin_with_baseline_bug(self) -> tuple[Path, Path]:
+		baseline_bug = self.make_bug_record(
+			"BUG-0001",
+			"MANUAL",
+			"baseline-reference",
+			"Baseline observed",
+		)
+		self.write_json(self.root / "product" / "bugs" / "BUG-0001.json", baseline_bug)
+		self.write_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0001.json", self.make_bug_review("BUG-0001"))
+		self.assertEqual(0, self.run_git(self.root, "init", "-b", "master").returncode)
+		self.assertEqual(0, self.run_git(self.root, "config", "user.name", "Test User").returncode)
+		self.assertEqual(0, self.run_git(self.root, "config", "user.email", "test@example.com").returncode)
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		commit = self.run_git(self.root, "commit", "-m", "init")
+		self.assertEqual(0, commit.returncode, commit.stderr)
+		remote_dir = self.root / "remote.git"
+		self.assertEqual(0, self.run_git(self.root, "init", "--bare", str(remote_dir)).returncode)
+		self.assertEqual(0, self.run_git(self.root, "remote", "add", "origin", str(remote_dir)).returncode)
+		push = self.run_git(self.root, "push", "-u", "origin", "master")
+		self.assertEqual(0, push.returncode, push.stderr)
+		return self.root, remote_dir
+
+	def clone_origin(self, remote_dir: Path, clone_name: str) -> Path:
+		clone_dir = self.root / clone_name
+		clone = self.run_git(self.root, "clone", str(remote_dir), str(clone_dir))
+		self.assertEqual(0, clone.returncode, clone.stderr)
+		self.assertEqual(0, self.run_git(clone_dir, "config", "user.name", "Other Writer").returncode)
+		self.assertEqual(0, self.run_git(clone_dir, "config", "user.email", "other@example.com").returncode)
+		return clone_dir
+
+	def persist_bug_records(self, output_name: str = "persist.json") -> dict:
+		output_file = self.root / output_name
+		rc = self.cli.cmd_persist_bug_records("master", "product: persist test bug", output_file=str(output_file))
+		self.assertEqual(0, rc)
 		return self.read_json(output_file)
 
 	def test_regression_against_requirement_queues_fix(self):
@@ -702,6 +777,81 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual("DUPLICATED_SOURCE", second["action"])
 		self.assertEqual(1, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
 
+	def test_two_writers_start_with_bug0002_and_only_one_canonical_bug0002_survives(self):
+		_root, remote_dir = self.init_git_origin_with_baseline_bug()
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="33694534681")
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-persist-dup-source.json")
+		self.assertEqual("BUG-0002", result["bug_id"])
+		other = self.clone_origin(remote_dir, "other-writer")
+		self.write_json(other / "product" / "bugs" / "BUG-0002.json", self.read_json(self.root / "product" / "bugs" / "BUG-0002.json"))
+		self.write_json(other / "product" / "generated" / "bug-reviews" / "BUG-0002.json", self.make_bug_review("BUG-0002"))
+		self.assertEqual(0, self.run_git(other, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(other, "commit", "-m", "remote duplicate bug").returncode)
+		push = self.run_git(other, "push", "origin", "master")
+		self.assertEqual(0, push.returncode, push.stderr)
+
+		persist = self.persist_bug_records("persist-dup-source.json")
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+		self.assertEqual("DUPLICATED_SOURCE", persist["persisted_bugs"][0]["action"])
+		self.assertTrue((self.root / "product" / "bugs" / "BUG-0002.json").exists())
+		self.assertFalse((self.root / "product" / "bugs" / "BUG-0003.json").exists())
+
+	def test_same_source_reference_remote_before_persistence_reuses_remote_bug(self):
+		_root, remote_dir = self.init_git_origin_with_baseline_bug()
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="33694534681")
+		self.run_ci_regression_intake(event, metadata, output_name="ci-remote-reuse.json")
+		other = self.clone_origin(remote_dir, "other-reuse")
+		self.write_json(other / "product" / "bugs" / "BUG-0002.json", self.read_json(self.root / "product" / "bugs" / "BUG-0002.json"))
+		self.write_json(other / "product" / "generated" / "bug-reviews" / "BUG-0002.json", self.make_bug_review("BUG-0002"))
+		self.assertEqual(0, self.run_git(other, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(other, "commit", "-m", "remote same source bug").returncode)
+		self.assertEqual(0, self.run_git(other, "push", "origin", "master").returncode)
+
+		persist = self.persist_bug_records("persist-remote-reuse.json")
+		self.assertIn(persist["status"], {"NO_CHANGES", "PUSHED"})
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+
+	def test_different_remote_bug_using_planned_id_allocates_next_free_id_safely(self):
+		_root, remote_dir = self.init_git_origin_with_baseline_bug()
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="33694534681")
+		self.run_ci_regression_intake(event, metadata, output_name="ci-remote-renumber.json")
+		other = self.clone_origin(remote_dir, "other-renumber")
+		remote_bug = self.make_bug_record(
+			"BUG-0002",
+			"MANUAL",
+			"different-remote-bug",
+			"Inny zdalny bug",
+			"Inny expected",
+			"1. Inny repro",
+		)
+		self.write_json(other / "product" / "bugs" / "BUG-0002.json", remote_bug)
+		self.write_json(other / "product" / "generated" / "bug-reviews" / "BUG-0002.json", self.make_bug_review("BUG-0002", classification="CONFIRMED_DEFECT", status="CONFIRMED_DEFECT"))
+		self.assertEqual(0, self.run_git(other, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(other, "commit", "-m", "remote unrelated bug").returncode)
+		push = self.run_git(other, "push", "origin", "master")
+		self.assertEqual(0, push.returncode, push.stderr)
+
+		persist = self.persist_bug_records("persist-remote-renumber.json")
+		self.assertEqual("PUSHED", persist["status"])
+		self.assertEqual("BUG-0003", persist["persisted_bugs"][0]["final_bug_id"])
+		self.assertTrue((self.root / "product" / "bugs" / "BUG-0003.json").exists())
+		review = self.read_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0003.json")
+		self.assertEqual("BUG-0003", review["bug_id"])
+
+	def test_unrelated_canonical_conflict_stops_without_destructive_resolution(self):
+		self.init_git_origin_with_baseline_bug()
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="33694534681")
+		self.run_ci_regression_intake(event, metadata, output_name="ci-unrelated-stop.json")
+		(self.root / "product" / "requirements" / "REQ-0001.yaml").write_text("changed: true\n", encoding="utf-8")
+		output_file = self.root / "persist-stop.json"
+		rc = self.cli.cmd_persist_bug_records("master", "product: should stop", output_file=str(output_file))
+		self.assertEqual(1, rc)
+		self.assertFalse(output_file.exists())
+
 	def test_same_root_cause_across_different_runs_deduplicates_bug(self):
 		first = self.run_ci_regression_intake(
 			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2007"),
@@ -924,6 +1074,8 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertNotIn('"model": "Auto"', text)
 		self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS", text)
 		self.assertIn("def cmd_ci_regression_intake", text)
+		self.assertIn("def cmd_persist_bug_records", text)
+		self.assertIn('persist-bug-records', text)
 		self.assertIn('"CI_REGRESSION"', text)
 
 

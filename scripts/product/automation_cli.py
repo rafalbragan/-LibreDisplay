@@ -3,7 +3,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import subprocess
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
@@ -36,6 +38,8 @@ BUG_SOURCES = {
 }
 MASTER_CI_REGRESSION_WORKFLOWS = {"Android CI", "Android APK Build"}
 MASTER_CI_BRANCHES = {"master", "main"}
+PRODUCT_FOUNDATION_CANONICAL_BRANCH_ENV = "PRODUCT_FOUNDATION_CANONICAL_BRANCH"
+MAX_PERSIST_RETRIES = 3
 
 
 def now_iso() -> str:
@@ -108,10 +112,14 @@ def iter_bugs():
             continue
 
 
-def next_bug_id() -> str:
+def next_bug_id(existing_bugs: list[dict] | None = None) -> str:
     nums = []
-    for path, _ in iter_bugs():
-        m = re.match(r"BUG-(\d+)$", path.stem)
+    if existing_bugs is None:
+        iterable = [path.stem for path, _ in iter_bugs()]
+    else:
+        iterable = [str((bug or {}).get("bug_id", "")) for bug in existing_bugs]
+    for stem in iterable:
+        m = re.match(r"BUG-(\d+)$", stem)
         if m:
             nums.append(int(m.group(1)))
     return f"BUG-{(max(nums) + 1) if nums else 1:04d}"
@@ -269,6 +277,137 @@ def find_bug_by_signature(signature: str):
     return None, None
 
 
+def bug_record_path(bug_id: str) -> Path:
+    return BUGS_DIR / f"{bug_id}.json"
+
+
+def bug_review_path(bug_id: str) -> Path:
+    return BUG_REVIEWS_DIR / f"{bug_id}.json"
+
+
+def bug_impl_record_path(bug_id: str) -> Path:
+    return impl_path(f"IMP-{bug_id}")
+
+
+def canonical_branch_name(branch: str | None = None) -> str:
+    configured = str(branch or os.environ.get(PRODUCT_FOUNDATION_CANONICAL_BRANCH_ENV) or DEFAULT_BASE_BRANCH).strip()
+    return configured or DEFAULT_BASE_BRANCH
+
+
+def run_git(args: list[str]) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        ["git", *args],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        errors="replace",
+    )
+
+
+def git_ref(ref: str) -> str:
+    return ref if "/" in ref else f"origin/{ref}"
+
+
+def git_read_bug_records(ref: str) -> list[dict]:
+    listing = run_git(["ls-tree", "-r", "--name-only", ref, "--", "product/bugs"])
+    if listing.returncode != 0:
+        return []
+    bugs: list[dict] = []
+    for rel_path in listing.stdout.splitlines():
+        rel_path = rel_path.strip()
+        if not re.fullmatch(r"product/bugs/BUG-\d+\.json", rel_path):
+            continue
+        shown = run_git(["show", f"{ref}:{rel_path}"])
+        if shown.returncode != 0:
+            continue
+        try:
+            payload = json.loads(shown.stdout)
+        except Exception:
+            continue
+        if isinstance(payload, dict):
+            bugs.append(payload)
+    return bugs
+
+
+def load_canonical_bug_catalog(branch: str | None = None) -> list[dict]:
+    combined: list[dict] = []
+    seen_bug_ids: set[str] = set()
+    seen_sources: set[tuple[str, str]] = set()
+    ref = git_ref(canonical_branch_name(branch))
+    for bug in git_read_bug_records(ref):
+        bug_id = str(bug.get("bug_id") or "").strip()
+        source_key = (str(bug.get("source") or ""), str(bug.get("source_reference") or ""))
+        if bug_id:
+            seen_bug_ids.add(bug_id)
+        if source_key != ("", ""):
+            seen_sources.add(source_key)
+        combined.append(json.loads(json.dumps(bug)))
+    for _path, bug in iter_bugs():
+        bug_id = str(bug.get("bug_id") or "").strip()
+        source_key = (str(bug.get("source") or ""), str(bug.get("source_reference") or ""))
+        if bug_id and bug_id in seen_bug_ids:
+            continue
+        if source_key != ("", "") and source_key in seen_sources:
+            continue
+        combined.append(json.loads(json.dumps(bug)))
+    return combined
+
+
+def merge_bug_records(existing: dict, candidate: dict) -> dict:
+    merged = json.loads(json.dumps(existing))
+    merged["title"] = merged.get("title") or candidate.get("title") or "Zgloszony blad"
+    merged["source_issue_number"] = merged.get("source_issue_number") if merged.get("source_issue_number") is not None else candidate.get("source_issue_number")
+    merged["source_issue_url"] = merged.get("source_issue_url") or candidate.get("source_issue_url") or ""
+    merged["related_requirement_ids"] = sorted(set((merged.get("related_requirement_ids") or []) + (candidate.get("related_requirement_ids") or [])))
+    merged["related_test_ids"] = sorted(set((merged.get("related_test_ids") or []) + (candidate.get("related_test_ids") or [])))
+    if not merged.get("observed_behavior"):
+        merged["observed_behavior"] = candidate.get("observed_behavior") or "Brak opisu zachowania."
+    if not merged.get("expected_behavior"):
+        merged["expected_behavior"] = candidate.get("expected_behavior") or "Brak jednoznacznego opisu."
+    if not merged.get("reproduction"):
+        merged["reproduction"] = candidate.get("reproduction") or "Brak krokow reprodukcji."
+    if not merged.get("additional_context") and candidate.get("additional_context"):
+        merged["additional_context"] = candidate.get("additional_context")
+    if merged.get("status") == "NEW" and candidate.get("status") not in {None, "", "NEW"}:
+        merged["status"] = candidate.get("status")
+    if not merged.get("triage_reasoning") and candidate.get("triage_reasoning"):
+        merged["triage_reasoning"] = candidate.get("triage_reasoning")
+    traceability = dict(merged.get("triage_traceability") or {})
+    candidate_traceability = dict(candidate.get("triage_traceability") or {})
+    for key, value in candidate_traceability.items():
+        if key not in traceability:
+            traceability[key] = value
+    if traceability:
+        merged["triage_traceability"] = traceability
+    merged["dedup_signature"] = merged.get("dedup_signature") or bug_signature(candidate)
+    append_evidence(merged, str(candidate.get("source") or ""), str(candidate.get("source_reference") or ""))
+    merged["updated_at"] = now_iso()
+    return merged
+
+
+def create_or_deduplicate_bug(candidate: dict, canonical_branch: str | None = None) -> tuple[dict, str]:
+    source = str(candidate["source"])
+    source_reference = str(candidate["source_reference"])
+    existing_bugs = load_canonical_bug_catalog(canonical_branch)
+    for bug in existing_bugs:
+        if bug.get("source") == source and bug.get("source_reference") == source_reference:
+            merged = merge_bug_records(bug, candidate)
+            write_json(bug_record_path(merged["bug_id"]), merged)
+            return merged, "DUPLICATED_SOURCE"
+    signature = bug_signature(candidate)
+    for bug in existing_bugs:
+        if bug.get("dedup_signature") == signature:
+            merged = merge_bug_records(bug, candidate)
+            write_json(bug_record_path(merged["bug_id"]), merged)
+            return merged, "DUPLICATED_ROOT_CAUSE"
+    candidate = json.loads(json.dumps(candidate))
+    candidate["bug_id"] = next_bug_id(existing_bugs)
+    candidate["dedup_signature"] = signature
+    write_json(bug_record_path(candidate["bug_id"]), candidate)
+    return candidate, "CREATED"
+
+
 def append_evidence(bug: dict, source: str, source_reference: str) -> None:
     evidence = list(bug.get("evidence") or [])
     key = f"{source}:{source_reference}"
@@ -276,27 +415,6 @@ def append_evidence(bug: dict, source: str, source_reference: str) -> None:
     if key not in existing:
         evidence.append({"source": source, "source_reference": source_reference, "captured_at": now_iso()})
     bug["evidence"] = evidence
-
-
-def create_or_deduplicate_bug(candidate: dict) -> tuple[dict, str]:
-    source = str(candidate["source"])
-    source_reference = str(candidate["source_reference"])
-    for path, bug in iter_bugs():
-        if bug.get("source") == source and bug.get("source_reference") == source_reference:
-            append_evidence(bug, source, source_reference)
-            bug["updated_at"] = now_iso()
-            write_json(path, bug)
-            return bug, "DUPLICATED_SOURCE"
-    signature = bug_signature(candidate)
-    path, existing = find_bug_by_signature(signature)
-    if existing is not None:
-        append_evidence(existing, source, source_reference)
-        existing["updated_at"] = now_iso()
-        write_json(path, existing)
-        return existing, "DUPLICATED_ROOT_CAUSE"
-    candidate["dedup_signature"] = signature
-    write_json(BUGS_DIR / f"{candidate['bug_id']}.json", candidate)
-    return candidate, "CREATED"
 
 
 def extract_workflow_run_context(event: dict, metadata: dict | None = None) -> dict:
@@ -354,7 +472,7 @@ def build_ci_regression_bug_candidate(context: dict) -> dict:
     failure_excerpt = context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "Deterministyczny build zakończył się błędem."
     source_reference = build_ci_regression_source_reference(context)
     bug = build_bug_record(
-        bug_id=next_bug_id(),
+        bug_id="",
         title=f"Regresja CI: {workflow_name} / {branch}",
         source="CI_REGRESSION",
         source_reference=source_reference,
@@ -726,7 +844,7 @@ def cmd_bug_import(event_file: str) -> int:
     fields = parse_issue_form_sections(body)
     source = f"GH-ISSUE-{int(issue['number'])}"
     bug = build_bug_record(
-        bug_id=next_bug_id(),
+        bug_id="",
         title=issue.get("title", "Zgloszony blad"),
         source="GITHUB_BUG_ISSUE",
         source_reference=source,
@@ -807,7 +925,7 @@ def cmd_bug_create(source: str, source_reference: str, title: str, observed_beha
         print(f"ERROR: unsupported source {source}", file=sys.stderr)
         return 1
     bug = build_bug_record(
-        bug_id=next_bug_id(),
+        bug_id="",
         title=title,
         source=source,
         source_reference=source_reference,
@@ -824,6 +942,165 @@ def cmd_bug_create(source: str, source_reference: str, title: str, observed_beha
     bug, action = create_or_deduplicate_bug(bug)
     print(json.dumps({"bug_id": bug["bug_id"], "status": bug["status"], "action": action}, ensure_ascii=False))
     return 0
+
+
+def changed_product_paths() -> list[str]:
+    modified = run_git(["diff", "--name-only", "HEAD", "--", "product"])
+    if modified.returncode != 0:
+        raise RuntimeError((modified.stderr or modified.stdout or "git diff failed").strip())
+    untracked = run_git(["ls-files", "--others", "--exclude-standard", "--", "product"])
+    if untracked.returncode != 0:
+        raise RuntimeError((untracked.stderr or untracked.stdout or "git ls-files failed").strip())
+    paths = {line.strip() for line in (modified.stdout + "\n" + untracked.stdout).splitlines() if line.strip()}
+    return sorted(paths)
+
+
+def is_bug_persist_path(rel_path: str) -> bool:
+    return bool(
+        re.fullmatch(r"product/bugs/BUG-\d+\.json", rel_path)
+        or re.fullmatch(r"product/generated/bug-reviews/BUG-\d+\.json", rel_path)
+        or re.fullmatch(r"product/implementation/IMP-BUG-\d+\.json", rel_path)
+    )
+
+
+def extract_bug_id_from_path(rel_path: str) -> str | None:
+    match = re.search(r"(BUG-\d+)", rel_path)
+    return match.group(1) if match else None
+
+
+def merge_bug_review(existing: dict | None, candidate: dict | None, bug: dict) -> dict:
+    payload = dict(existing or {})
+    candidate = dict(candidate or {})
+    payload["bug_id"] = bug["bug_id"]
+    payload["classification"] = payload.get("classification") or candidate.get("classification") or bug.get("classification", "INCONCLUSIVE")
+    payload["status"] = payload.get("status") or candidate.get("status") or bug.get("status", "NEW")
+    payload["generated_at"] = candidate.get("generated_at") or payload.get("generated_at") or now_iso()
+    return payload
+
+
+def capture_bug_persistence_bundles() -> list[dict]:
+    changed = changed_product_paths()
+    unexpected = [path for path in changed if not is_bug_persist_path(path)]
+    if unexpected:
+        raise RuntimeError(
+            "Unrelated canonical changes prevent automatic bug persistence: "
+            + ", ".join(unexpected)
+        )
+    bug_ids = sorted({bug_id for bug_id in (extract_bug_id_from_path(path) for path in changed) if bug_id})
+    bundles: list[dict] = []
+    for bug_id in bug_ids:
+        bug_path = bug_record_path(bug_id)
+        if not bug_path.exists():
+            raise RuntimeError(f"Missing local bug payload for persistence: {bug_path}")
+        bundle = {
+            "planned_bug_id": bug_id,
+            "bug": read_json(bug_path),
+        }
+        review_path = bug_review_path(bug_id)
+        if review_path.exists():
+            bundle["review"] = read_json(review_path)
+        impl_path_value = bug_impl_record_path(bug_id)
+        if impl_path_value.exists():
+            bundle["implementation"] = read_json(impl_path_value)
+        bundles.append(bundle)
+    return bundles
+
+
+def reconcile_bug_persistence_bundle(bundle: dict) -> dict:
+    candidate = json.loads(json.dumps(bundle["bug"]))
+    candidate["bug_id"] = str(bundle.get("planned_bug_id") or candidate.get("bug_id") or "")
+    bug, action = create_or_deduplicate_bug(candidate)
+    final_bug_id = str(bug["bug_id"])
+    existing_review = read_json(bug_review_path(final_bug_id)) if bug_review_path(final_bug_id).exists() else None
+    if bundle.get("review") is not None or existing_review is not None:
+        write_json(bug_review_path(final_bug_id), merge_bug_review(existing_review, bundle.get("review"), bug))
+    if bundle.get("implementation") is not None:
+        impl_record = dict(bundle["implementation"])
+        impl_record["implementation_id"] = f"IMP-{final_bug_id}"
+        impl_record["bug_id"] = final_bug_id
+        write_json(bug_impl_record_path(final_bug_id), impl_record)
+    return {
+        "planned_bug_id": str(bundle.get("planned_bug_id") or ""),
+        "final_bug_id": final_bug_id,
+        "action": action,
+        "source": bug.get("source"),
+        "source_reference": bug.get("source_reference"),
+    }
+
+
+def validate_product_foundation() -> None:
+    result = subprocess.run([sys.executable, str(ROOT / "scripts" / "product" / "product_cli.py"), "validate"], cwd=ROOT)
+    if result.returncode != 0:
+        raise RuntimeError("Product validation failed during bug persistence retry")
+
+
+def is_non_fast_forward_push(result: subprocess.CompletedProcess[str]) -> bool:
+    haystack = f"{result.stdout}\n{result.stderr}".lower()
+    return "non-fast-forward" in haystack or "[rejected]" in haystack or "fetch first" in haystack
+
+
+def cmd_persist_bug_records(branch: str, commit_message: str, validate_product: bool = False, output_file: str | None = None) -> int:
+    try:
+        bundles = capture_bug_persistence_bundles()
+    except RuntimeError as exc:
+        print(f"ERROR: {exc}", file=sys.stderr)
+        return 1
+    if not bundles:
+        payload = {"status": "NO_CHANGES", "branch": branch, "attempts": 0, "persisted_bugs": []}
+        if output_file:
+            write_json(Path(output_file), payload)
+        else:
+            print(json.dumps(payload, ensure_ascii=False))
+        return 0
+    last_error = ""
+    for attempt in range(1, MAX_PERSIST_RETRIES + 1):
+        fetch = run_git(["fetch", "origin", branch])
+        if fetch.returncode != 0:
+            last_error = (fetch.stderr or fetch.stdout or "git fetch failed").strip()
+            continue
+        reset = run_git(["reset", "--hard", f"origin/{branch}"])
+        if reset.returncode != 0:
+            last_error = (reset.stderr or reset.stdout or "git reset --hard failed").strip()
+            continue
+        persisted = [reconcile_bug_persistence_bundle(bundle) for bundle in bundles]
+        if validate_product:
+            try:
+                validate_product_foundation()
+            except RuntimeError as exc:
+                print(f"ERROR: {exc}", file=sys.stderr)
+                return 1
+        add = run_git(["add", "product/bugs", "product/generated", "product/implementation"])
+        if add.returncode != 0:
+            last_error = (add.stderr or add.stdout or "git add failed").strip()
+            continue
+        quiet = run_git(["diff", "--cached", "--quiet"])
+        if quiet.returncode not in {0, 1}:
+            last_error = (quiet.stderr or quiet.stdout or "git diff --cached failed").strip()
+            continue
+        if quiet.returncode == 0:
+            payload = {"status": "NO_CHANGES", "branch": branch, "attempts": attempt, "persisted_bugs": persisted}
+            if output_file:
+                write_json(Path(output_file), payload)
+            else:
+                print(json.dumps(payload, ensure_ascii=False))
+            return 0
+        commit = run_git(["commit", "-m", commit_message])
+        if commit.returncode != 0:
+            last_error = (commit.stderr or commit.stdout or "git commit failed").strip()
+            continue
+        push = run_git(["push", "origin", f"HEAD:{branch}"])
+        if push.returncode == 0:
+            payload = {"status": "PUSHED", "branch": branch, "attempts": attempt, "persisted_bugs": persisted}
+            if output_file:
+                write_json(Path(output_file), payload)
+            else:
+                print(json.dumps(payload, ensure_ascii=False))
+            return 0
+        last_error = (push.stderr or push.stdout or "git push failed").strip()
+        if not is_non_fast_forward_push(push):
+            break
+    print(f"ERROR: idempotent bug persistence failed: {last_error}", file=sys.stderr)
+    return 1
 
 
 def cmd_ci_regression_intake(event_file: str, metadata_file: str | None = None, output_file: str | None = None) -> int:
@@ -1051,6 +1328,12 @@ def main(argv: list[str] | None = None) -> int:
     ci_regression.add_argument("--metadata-file")
     ci_regression.add_argument("--output-file")
 
+    persist_bug = sub.add_parser("persist-bug-records")
+    persist_bug.add_argument("--branch", default=DEFAULT_BASE_BRANCH)
+    persist_bug.add_argument("--commit-message", required=True)
+    persist_bug.add_argument("--validate-product", action="store_true")
+    persist_bug.add_argument("--output-file")
+
     bug_triage = sub.add_parser("bug-apply-ai-triage")
     bug_triage.add_argument("--bug-id", required=True)
     bug_triage.add_argument("--ai-review-file", required=True)
@@ -1105,6 +1388,8 @@ def main(argv: list[str] | None = None) -> int:
         )
     if args.command == "ci-regression-intake":
         return cmd_ci_regression_intake(args.event_file, args.metadata_file, args.output_file)
+    if args.command == "persist-bug-records":
+        return cmd_persist_bug_records(args.branch, args.commit_message, args.validate_product, args.output_file)
     if args.command == "bug-build-ai-prompt":
         _path, bug = find_bug(args.bug_id)
         if bug is None:

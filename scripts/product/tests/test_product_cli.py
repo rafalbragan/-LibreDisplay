@@ -1238,8 +1238,10 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_workflow_has_persistence_and_concurrency(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        bug_text = BUG_WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("concurrency:", text)
         self.assertIn("group: product-foundation-state", text)
+        self.assertIn("group: product-foundation-state", bug_text)
         self.assertIn("git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation", text)
         self.assertIn("product: process inbox issue", text)
         self.assertIn("product: apply inbox decision issue", text)
@@ -1335,10 +1337,12 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("workflow_run", text)
         self.assertIn("record-ci-result", text)
         self.assertIn("bug-sync-fix-handoff", text)
+        self.assertIn("persist-bug-records", text)
         self.assertIn('workflows: ["Android CI", "Android APK Build"]', text)
         self.assertIn("master-ci-regression-intake", text)
         self.assertIn("ci-regression-intake", text)
         self.assertIn("github.event.workflow_run.event != 'pull_request'", text)
+        self.assertIn("fetch-depth: 0", text)
         automation_cli_text = (WORKSPACE_ROOT / "scripts" / "product" / "automation_cli.py").read_text(encoding="utf-8")
         self.assertIn("COPILOT_AGENT_LOGIN = \"copilot-swe-agent[bot]\"", automation_cli_text)
         self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS = {\"Android CI\", \"Android APK Build\"}", automation_cli_text)

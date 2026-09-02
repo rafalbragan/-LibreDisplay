@@ -36,6 +36,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -152,14 +154,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/bugs product/implementation product/generated
-          if git diff --cached --quiet; then
-            echo "No Product Foundation changes to commit."
-          else
-            git commit -m "product: bug intake #${{ github.event.issue.number }}"
-            git pull --rebase origin "${{ github.ref_name }}"
-            git push origin "HEAD:${{ github.ref_name }}"
-          fi
+          python scripts/product/automation_cli.py persist-bug-records \
+            --branch "${{ github.ref_name }}" \
+            --commit-message "product: bug intake #${{ github.event.issue.number }}" \
+            --validate-product \
+            --output-file bug-persist.json
 
   track-work-pr:
     if: github.event_name == 'pull_request'
@@ -171,6 +170,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -211,6 +212,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -346,14 +349,11 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/bugs product/generated product/implementation
-          if git diff --cached --quiet; then
-            echo "No Product Foundation changes to commit."
-          else
-            git commit -m "product: record master ci regression run #${{ github.event.workflow_run.id }}"
-            git pull --rebase origin master
-            git push origin HEAD:master
-          fi
+          python scripts/product/automation_cli.py persist-bug-records \
+            --branch master \
+            --commit-message "product: record master ci regression run #${{ github.event.workflow_run.id }}" \
+            --validate-product \
+            --output-file bug-persist.json
 
   ci-repair-loop:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Android CI' && github.event.workflow_run.event == 'pull_request'
@@ -366,6 +366,8 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Setup Python
         uses: actions/setup-python@v5
