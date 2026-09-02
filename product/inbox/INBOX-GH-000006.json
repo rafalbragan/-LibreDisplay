@@ -1,0 +1,15 @@
+{
+  "inbox_id": "INBOX-GH-000006",
+  "github_issue_number": 6,
+  "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/6",
+  "created_at": "2026-09-02T17:04:04Z",
+  "updated_at": "2026-09-02T17:33:39Z",
+  "submitted_by": "rafalbragan",
+  "type": "PROBLEM",
+  "persona": "WSPOLNE_LUB_NIE_WIEM",
+  "module": "INNE_LUB_NIE_WIEM",
+  "raw_input": "Product Review powinien podczas analizy zgłoszenia korzystać nie tylko z kanonicznych\nartefaktów Product Foundation, ale również z dostępnych read-only dowodów stanu\nimplementacji w repozytorium.\n\nJeśli zgłoszenie dotyczy istniejącej funkcji, Product Review powinien móc sprawdzić\nodpowiedni kod, testy oraz raporty techniczne, aby ustalić, czy dana funkcja\nrzeczywiście istnieje i jaki jest jej aktualny stan.\n\nKod i raporty nie mogą zastępować Product Foundation jako źródła decyzji\nproduktowych. Mają być wyłącznie źródłem dowodów o stanie implementacji.",
+  "why_it_matters": "W live teście Product Review stwierdził, że nie ma potwierdzenia istnienia zakładki\nFutures ani jej pomysłów, mimo że repozytorium zawiera FuturesScreen,\nFuturesViewModel oraz raport futures-and-perspectives-inventory.md.\n\nTo powoduje, że Product Review może błędnie uznawać temat za niejednoznaczny,\ngdy dowód istnieje w kodzie, ale nie został jeszcze zapisany jako validated capability.",
+  "context": "Problem został wykryty w GitHub Issue #5 podczas live testu Bug Automation.\n\nBug Automation poprawnie zaklasyfikował ten przypadek jako wymagający decyzji\nproduktowej i zablokował automatyczną naprawę.\n\nOczekiwany model:\n\nProduct Foundation = źródło prawdy dla decyzji, REQ, BUG i statusów.\n\nKod / testy / raporty techniczne = read-only evidence o rzeczywistym stanie\nimplementacji.\n\nProduct Review AI może korzystać z obu, ale nie może tworzyć ani uznawać\nwymagań bez decyzji człowieka.",
+  "status": "AWAITING_HUMAN_DECISION"
+}

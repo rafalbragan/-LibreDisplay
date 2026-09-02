@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-02T15:28:53Z",
+  "generated_at": "2026-09-02T17:33:40Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -154,6 +154,48 @@
       "reasoning_summary": "To wiarygodna, ale obecnie nieudowodniona okazja do poprawy przejrzystości prac, a nie potwierdzona luka w działającej capability ani nowy problem bezpieczeństwa. Product Foundation nie potwierdza implementacji Futures, skali opisanej w zgłoszeniu ani potrzeby użytkowników. Rekomendacja to HOLD: najpierw inwentaryzacja i krótka walidacja potrzeby, następnie ewentualny deterministyczny, read-only widok oparty na istniejących źródłach prawdy. Każda przyszła implementacja wymaga decyzji człowieka i nie może przedstawiać propozycji AI jako zaakceptowanych prac.",
       "governance_notes": [],
       "generated_at": "2026-09-02T15:27:00Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000006",
+      "github_issue_number": 6,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/6",
+      "classification": "PRODUCT_PROBLEM",
+      "summary": "Product Review ma potwierdzony problem z rozdzieleniem źródeł decyzji produktowych od read-only dowodów stanu implementacji. W przypadku Futures wcześniejsza analiza błędnie uznała brak dowodu istnienia funkcji, mimo że repozytorium zawiera ekran, ViewModel, testy i integrację nawigacji. Nie jest to jednak dowód, że wszystkie twierdzenia ze zgłoszenia, w szczególności raport futures-and-perspectives-inventory.md i częściowa implementacja sześciu pomysłów, są obecnie dostępne lub potwierdzone.",
+      "evidence_available": [
+        "BUG-0001 opisuje konkretną rozbieżność faktograficzną w poprzednim Product Review i klasyfikuje ją jako wymagającą decyzji produktowej.",
+        "FuturesScreen.kt i FuturesViewModel.kt istnieją w app/src/main/java/com/libredisplay/ui/futures/.",
+        "FuturesViewModel zawiera 10 zapisanych obiektów FutureIdea.",
+        "Istnieją FuturesScreenTest.kt i FuturesViewModelTest.kt, obejmujące obecność ekranu, filtrowanie odbiorców i stan pomysłów.",
+        "AppNavigationState.kt, MainActivity.kt i test AppNavigationStateTest.kt zawierają dowody integracji Futures z nawigacją.",
+        "Release notes LibreCare 2.12.0 opisują zakładkę Futures, jej prototypowy charakter oraz ograniczenia.",
+        "Product Foundation pozostaje źródłem decyzji, wymagań i statusów, a CURRENT_FOCUS.yaml wymaga ludzkiej akceptacji i zabrania AI samodzielnego zatwierdzania lub rozpoczynania implementacji.",
+        "TESTRUN-2026-007 potwierdza zasadę, że dowód implementacji może służyć do oceny rzeczywistego stanu funkcji, ale sam test nie tworzy wymagania."
+      ],
+      "evidence_missing": [
+        "Brak potwierdzenia w aktualnym drzewie repozytorium pliku futures-and-perspectives-inventory.md wskazanego w zgłoszeniu i BUG-0001.",
+        "Brak niezależnego, technicznego mapowania, które z 10 pomysłów jest częściowo zaimplementowane; sam kod Futures pokazuje treść prototypową, a nie kompletność docelowych funkcji.",
+        "Brak kontraktu Product Review definiującego zakres, kolejność i format odczytu dowodów z kodu, testów, nawigacji i raportów.",
+        "Brak testu regresyjnego potwierdzającego, że review rozpoznaje istniejącą funkcję na podstawie dowodów implementacyjnych.",
+        "Brak testu negatywnego potwierdzającego, że dowód implementacji nie jest traktowany jako decyzja, akceptacja wymagania ani zgoda na wdrożenie.",
+        "Brak zasad obsługi nieaktualnego, niepełnego lub sprzecznego raportu technicznego oraz brak określenia, jak review ma sygnalizować ograniczony zakres odczytu."
+      ],
+      "existing_capability_overlap": [
+        "Zakładka Futures jest rzeczywiście zaimplementowana jako prototypowy ekran z nawigacją, ViewModelem, filtrami i testami.",
+        "Istnienie Futures nie jest obecnie wpisane do VALIDATED_CAPABILITIES.md, więc nie należy na tej podstawie uznawać jej za zwalidowaną capability użytkową.",
+        "Product Foundation już rozdziela decyzje, wymagania, badania i statusy; proponowana zmiana powinna rozszerzyć warstwę dowodową, a nie zastąpić te źródła.",
+        "Wcześniejsze pozytywne testy monitoringu nie uzasadniają nowego wymagania dotyczącego Futures ani nie dowodzą jego wartości dla użytkowników końcowych."
+      ],
+      "proposed_requirement": "Product Review powinien, gdy zgłoszenie odwołuje się do istniejącej funkcji lub konkretnego raportu, wykonać jawny, read-only przegląd odpowiednich dowodów repozytorium: kodu, nawigacji, testów i dostępnych raportów technicznych. Wynik powinien rozdzielać: potwierdzony stan implementacji, stan zwalidowanej capability, decyzje Product Foundation, niepewności oraz brakujące dowody. Dowody implementacji nie mogą automatycznie tworzyć, akceptować ani zmieniać wymagania, decyzji, statusu ani zakresu wdrożenia. Należy dodać kontraktowy test obecności dowodów i test negatywny potwierdzający zachowanie granicy decyzyjnej.",
+      "user_value": "Dokładniejszy Product Review ograniczy błędne klasyfikowanie istniejących funkcji jako niejednoznacznych, zmniejszy duplikację pracy i poprawi jakość decyzji człowieka. Jednocześnie jawne rozdzielenie dowodu implementacji od Product Foundation pozwoli uniknąć uznawania prototypu za zaakceptowaną funkcję.",
+      "counterargument": "Automatyczne analizowanie kodu i raportów może zwiększyć złożoność, ujawnić nieaktualne lub sprzeczne źródła oraz stworzyć pozorne poczucie pewności. W repozytorium może istnieć kod martwy, testowy albo prototypowy, więc samo znalezienie klasy lub testu nie potwierdza dostępności, jakości ani wartości funkcji. Rozszerzenie zakresu review może też odciągnąć uwagę od priorytetów fazy foundation.",
+      "simpler_alternative": "Nie rozszerzać od razu pełnej analizy semantycznej repozytorium. Dodać deterministyczny manifest dowodów dla zgłoszonych identyfikatorów, sprawdzający istnienie wskazanych plików, symboli, testów i raportów oraz podający ich ścieżki. Product Review używa manifestu wyłącznie jako dowodu stanu, a w przypadku braku lub sprzeczności oznacza ograniczenie i pozostawia decyzję człowiekowi.",
+      "safety_impact": "LOW",
+      "estimated_scope": "MEDIUM",
+      "proposed_priority": "P1",
+      "recommended_decision": "ACCEPT",
+      "reasoning_summary": "To jest rzeczywisty problem wiarygodności procesu Product Review, potwierdzony przez BUG-0001 i bezpośrednie dowody w kodzie oraz testach Futures. Nie jest to nowa funkcja kliniczna ani potrzeba autonomicznego leczenia. Należy zaakceptować potrzebę poprawy kontraktu review, ale ograniczyć ją do read-only evidence, jawnego raportowania niepewności i testów granicy między dowodem a decyzją. Nie należy uznawać Futures za validated capability ani potwierdzać twierdzenia o sześciu częściowo zaimplementowanych pomysłach bez dostępnego, niezależnego raportu. Wszelkie decyzje produktowe i implementacyjne muszą nadal wymagać człowieka, a zmiana nie może prowadzić do autonomicznych rekomendacji insuliny ani leczenia.",
+      "governance_notes": [],
+      "generated_at": "2026-09-02T17:33:39Z"
     }
   ]
 }

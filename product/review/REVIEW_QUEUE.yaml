@@ -41,3 +41,49 @@ candidates:
     recommended_decision: HOLD
     classification: PRODUCT_OPPORTUNITY
     applied_requirement_id: REQ-0002
+  CAND-INBOX-GH-000006:
+    title: 'Inbox INBOX-GH-000006 #6'
+    persona: unknown
+    module: unknown
+    problem_or_opportunity: Product Review ma potwierdzony problem z rozdzieleniem
+      źródeł decyzji produktowych od read-only dowodów stanu implementacji. W przypadku
+      Futures wcześniejsza analiza błędnie uznała brak dowodu istnienia funkcji, mimo
+      że repozytorium zawiera ekran, ViewModel, testy i integrację nawigacji. Nie
+      jest to jednak dowód, że wszystkie twierdzenia ze zgłoszenia, w szczególności
+      raport futures-and-perspectives-inventory.md i częściowa implementacja sześciu
+      pomysłów, są obecnie dostępne lub potwierdzone.
+    proposed_requirement: 'Product Review powinien, gdy zgłoszenie odwołuje się do
+      istniejącej funkcji lub konkretnego raportu, wykonać jawny, read-only przegląd
+      odpowiednich dowodów repozytorium: kodu, nawigacji, testów i dostępnych raportów
+      technicznych. Wynik powinien rozdzielać: potwierdzony stan implementacji, stan
+      zwalidowanej capability, decyzje Product Foundation, niepewności oraz brakujące
+      dowody. Dowody implementacji nie mogą automatycznie tworzyć, akceptować ani
+      zmieniać wymagania, decyzji, statusu ani zakresu wdrożenia. Należy dodać kontraktowy
+      test obecności dowodów i test negatywny potwierdzający zachowanie granicy decyzyjnej.'
+    expected_user_value: Dokładniejszy Product Review ograniczy błędne klasyfikowanie
+      istniejących funkcji jako niejednoznacznych, zmniejszy duplikację pracy i poprawi
+      jakość decyzji człowieka. Jednocześnie jawne rozdzielenie dowodu implementacji
+      od Product Foundation pozwoli uniknąć uznawania prototypu za zaakceptowaną funkcję.
+    alternative: Nie rozszerzać od razu pełnej analizy semantycznej repozytorium.
+      Dodać deterministyczny manifest dowodów dla zgłoszonych identyfikatorów, sprawdzający
+      istnienie wskazanych plików, symboli, testów i raportów oraz podający ich ścieżki.
+      Product Review używa manifestu wyłącznie jako dowodu stanu, a w przypadku braku
+      lub sprzeczności oznacza ograniczenie i pozostawia decyzję człowiekowi.
+    counterargument: Automatyczne analizowanie kodu i raportów może zwiększyć złożoność,
+      ujawnić nieaktualne lub sprzeczne źródła oraz stworzyć pozorne poczucie pewności.
+      W repozytorium może istnieć kod martwy, testowy albo prototypowy, więc samo
+      znalezienie klasy lub testu nie potwierdza dostępności, jakości ani wartości
+      funkcji. Rozszerzenie zakresu review może też odciągnąć uwagę od priorytetów
+      fazy foundation.
+    safety_impact: LOW
+    proposed_priority: P1
+    human_decision: PENDING
+    source_ids:
+    - INBOX-GH-000006
+    - GH-ISSUE-6
+    inbox_id: INBOX-GH-000006
+    github_issue_number: 6
+    github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/6
+    recommended_decision: ACCEPT
+    classification: PRODUCT_PROBLEM
+    applied_requirement_id: null
