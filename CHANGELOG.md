@@ -2,6 +2,210 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.1 - 2026-09-02
+
+### PL
+
+#### Added
+- Dodano testy `RelativeTimeFormatter` dla przykładów z `REQ-0002`: `2 min temu`, `5 min temu` oraz uczciwej obsługi nieprawidłowego ISO przez wspólny formatter.
+- Dodano ukierunkowane testy Product Inbox potwierdzające polskie nagłówki komentarza analizy produktu, polskie komunikaty decyzji oraz polski fallback komentarza workflow.
+- Dodano regresyjne testy bug automation dla wykrywania kanonicznego formularza błędu LibreCare bez etykiety `librecare-bug`, wykluczenia Product Inbox, wykluczenia issue implementacyjnych oraz deduplikacji po `reopened`.
+
+#### Changed
+- Utrzymano scentralizowany formatter świeżości dla kart opiekuna i rozszerzono go o testowalną ścieżkę parsowania ISO -> tekst względny z komunikatem `nieprawidłowy czas` dla błędnych danych wejściowych.
+- Human-facing komunikacja Product Inbox dla komentarzy review/decyzji/workflow została domknięta po polsku bez zmiany enumów technicznych (`PRODUCT_PROBLEM`, `ACCEPT`, `/accept`, `REQ-*`, `INBOX-*`, `CAND-*`).
+- Workflow `librecare-implementation-automation` i `scripts/product/automation_cli.py` rozpoznają teraz kanoniczny formularz błędu po prefiksie tytułu oraz wymaganych sekcjach formularza, zamiast polegać wyłącznie na etykiecie GitHub.
+- Wersja aplikacji: `2.16.0` (`versionCode 44`) -> `2.16.1` (`versionCode 45`).
+
+#### Fixed
+- Karty monitorowanych osób w sekcjach `Wymaga uwagi` i `Pozostali` nie eksponują surowego ISO-8601 jako głównej etykiety świeżości danych w zakresie `REQ-0002`.
+- Future skew nadal nie pokazuje czasu ujemnego i pozostaje prezentowany jako `przed chwilą`.
+- Naprawiono bootstrap bug automation dla zgłoszeń w kształcie Issue #5: intake nie pomija już poprawnego formularza błędu LibreCare tylko dlatego, że brakuje etykiety `librecare-bug`.
+
+#### Tests
+- `python -m unittest scripts.product.tests.test_automation_cli` - PASS
+- `python scripts/product/product_cli.py validate` - PASS
+- `python -m unittest scripts.product.tests.test_product_cli.ProductCliInboxTest.test_polish_presentation_does_not_change_internal_enums scripts.product.tests.test_product_cli.ProductCliInboxTest.test_issue_review_comment_uses_required_polish_headings_and_commands scripts.product.tests.test_product_cli.ProductCliInboxTest.test_decision_output_is_polish scripts.product.tests.test_product_cli.ProductCliInboxTest.test_non_owner_decision_skip_message_is_polish scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_issue_form_has_product_inbox_prefix scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_bootstrap_routing_supports_body_signature scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_has_copilot_handoff_and_pr_tracking scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_decision_fallback_comment_is_polish` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-debug.apk` (`23,924,698 B`)
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-release.apk` (`3,712,135 B`)
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-release.aab` (`6,733,328 B`)
+
+### EN
+
+#### Added
+- Added `RelativeTimeFormatter` tests for the `REQ-0002` examples: `2 min temu`, `5 min temu`, and honest invalid-ISO handling through the shared formatter.
+- Added focused Product Inbox tests that verify Polish review-comment headings, Polish decision output, and the Polish workflow fallback comment.
+- Added regression tests for bug automation covering canonical LibreCare bug-form detection without the `librecare-bug` label, Product Inbox exclusion, implementation-issue exclusion, and reopened-issue deduplication.
+
+#### Changed
+- Kept the centralized freshness formatter for caregiver cards and extended it with a testable ISO -> relative-text entry point that returns `nieprawidłowy czas` for invalid input.
+- Human-facing Product Inbox review/decision/workflow communication is now consistently Polish without changing machine-readable enums (`PRODUCT_PROBLEM`, `ACCEPT`, `/accept`, `REQ-*`, `INBOX-*`, `CAND-*`).
+- The `librecare-implementation-automation` workflow and `scripts/product/automation_cli.py` now recognize the canonical LibreCare bug form by title prefix plus required body sections instead of relying only on a GitHub label.
+- App version: `2.16.0` (`versionCode 44`) -> `2.16.1` (`versionCode 45`).
+
+#### Fixed
+- Monitored-person cards in `Wymaga uwagi` and `Pozostali` no longer expose raw ISO-8601 as the primary freshness label within the `REQ-0002` scope.
+- Future skew still never renders negative time and remains displayed as `przed chwilą`.
+- Fixed the bug-automation bootstrap for Issue #5-shaped reports: intake no longer skips a valid LibreCare bug form just because the `librecare-bug` label is missing.
+
+#### Tests
+- `python -m unittest scripts.product.tests.test_automation_cli` - PASS
+- `python scripts/product/product_cli.py validate` - PASS
+- `python -m unittest scripts.product.tests.test_product_cli.ProductCliInboxTest.test_polish_presentation_does_not_change_internal_enums scripts.product.tests.test_product_cli.ProductCliInboxTest.test_issue_review_comment_uses_required_polish_headings_and_commands scripts.product.tests.test_product_cli.ProductCliInboxTest.test_decision_output_is_polish scripts.product.tests.test_product_cli.ProductCliInboxTest.test_non_owner_decision_skip_message_is_polish scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_issue_form_has_product_inbox_prefix scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_bootstrap_routing_supports_body_signature scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_has_copilot_handoff_and_pr_tracking scripts.product.tests.test_product_cli.ProductInboxWorkflowStaticTest.test_workflow_decision_fallback_comment_is_polish` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-debug.apk` (`23,924,698 B`)
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-release.apk` (`3,712,135 B`)
+- `C:\Users\SG0216827\IdeaProjects\LibreDisplay\release-artifacts\LibreCare-2.16.1-release.aab` (`6,733,328 B`)
+
+## 2.15.2 - 2026-09-02
+
+### PL
+
+#### Added
+- Dodano kanoniczne wymaganie `product/requirements/REQ-0002.yaml` oraz pełną ścieżkę traceability do Inbox `#1` (`product/inbox/INBOX-GH-000001.json`, `product/generated/inbox-reviews/INBOX-GH-000001.json`, `product/decisions/DEC-0007-accept-req0002-monitoring-freshness.json`).
+- Dodano automatyczny handoff po ludzkim `/accept`: tworzenie jednego zadania implementacyjnego, idempotentne śledzenie stanu implementacji oraz rejestrowanie Pull Request dla przyszłych wymagań.
+- Dodano testy Product Foundation dla: idempotencji `/accept`, blokady unsafe handoff, generowania treści zadania implementacyjnego, śledzenia PR i utrzymania rozdziału ról AI review vs. coding agent.
+
+#### Changed
+- Karty osób monitorowanych w sekcjach `Wymaga uwagi` / `Pozostali` pokazują teraz naturalny polski czas świeżości (`przed chwilą`, `15 min temu`, `1 godz. temu`) zamiast surowego ISO-8601.
+- Ujednolicono formatter czasu względnego między Home/Monitoring i prezentacją kart opiekuna, z bezpieczną obsługą future skew i brakującego czasu.
+- Cała komunikacja human-facing Product Inbox w GitHub została spolszczona: formularz issue, komentarz analizy produktu, komentarz decyzji oraz komentarze statusu implementacji.
+- Workflow `product-inbox` i `android-ci` rozszerzono o walidację Product Foundation, `assembleDebugAndroidTest`, śledzenie implementacyjnych PR oraz jawny komunikat o obowiązkowym przeglądzie człowieka.
+- Wersja aplikacji: `2.15.1` (`versionCode 42`) -> `2.15.2` (`versionCode 43`).
+
+#### Fixed
+- Zaimplementowano zaakceptowane `REQ-0002`: usunięto techniczny/raw timestamp z głównych kart monitoringu opiekuna bez zmiany progów stale/fresh, klasyfikacji uwagi ani logiki bezpieczeństwa.
+- Zachowano niezmienione zachowanie `REQ-0001` i `CaregiverAttentionClassification` mimo zmiany prezentacyjnej czasu.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `python -m unittest scripts.product.tests.test_product_cli -v` - PASS
+- `python scripts/product/product_cli.py review` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest --rerun-tasks` - PASS
+- `./gradlew lintDebug` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.2-debug.apk` (`23,924,695 B`)
+- `release-artifacts/LibreCare-2.15.2-release.apk` (`3,712,129 B`)
+- `release-artifacts/LibreCare-2.15.2-release.aab` (`6,733,336 B`)
+
+### EN
+
+#### Added
+- Added the canonical `REQ-0002` record and full Inbox `#1` traceability (`product/requirements/REQ-0002.yaml`, `product/inbox/INBOX-GH-000001.json`, `product/generated/inbox-reviews/INBOX-GH-000001.json`, `product/decisions/DEC-0007-accept-req0002-monitoring-freshness.json`).
+- Added automatic post-human-accept handoff for future requirements: one implementation issue, idempotent implementation-status tracking, and implementation PR recording.
+- Added Product Foundation tests for `/accept` idempotency, unsafe-handoff blocking, deterministic implementation-issue body generation, PR tracking, and AI role separation.
+
+#### Changed
+- Caregiver monitored-person cards in `Wymaga uwagi` / `Pozostali` now show natural Polish freshness text (`przed chwilą`, `15 min temu`, `1 godz. temu`) instead of raw ISO-8601.
+- Unified Home/Monitoring relative-time formatting with safe future-skew and missing-timestamp handling.
+- All human-facing Product Inbox GitHub communication is now Polish: issue form, product-review comment, decision comment, and implementation-status comments.
+- `product-inbox` and `android-ci` workflows now validate Product Foundation, run `assembleDebugAndroidTest`, track implementation PRs, and state that human PR review is mandatory.
+- App version: `2.15.1` (`versionCode 42`) -> `2.15.2` (`versionCode 43`).
+
+#### Fixed
+- Implemented accepted `REQ-0002`: removed the technical/raw timestamp from primary caregiver monitoring cards without changing stale thresholds, attention classification, or safety logic.
+- Preserved `REQ-0001` grouping and `CaregiverAttentionClassification` behavior while updating freshness presentation only.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `python -m unittest scripts.product.tests.test_product_cli -v` - PASS
+- `python scripts/product/product_cli.py review` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest --rerun-tasks` - PASS
+- `./gradlew lintDebug` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.2-debug.apk` (`23,924,695 B`)
+- `release-artifacts/LibreCare-2.15.2-release.apk` (`3,712,129 B`)
+- `release-artifacts/LibreCare-2.15.2-release.aab` (`6,733,336 B`)
+
+## 2.15.1 - 2026-09-02
+
+### PL
+
+#### Added
+- Dodano testy ścieżki renderowania sekcji tożsamości na ekranie głównym monitoringu dla REQ-0001 (`CaregiverHomeRenderingBranchTest`), w tym przypadki: opiekun 2+ osoby, jedna w ryzyku; wiele osób bez ryzyka; pojedyncza osoba; tryby senior/klinicysta.
+- Dodano kanoniczny rekord realnego, nieudanego testu Firebase dla REQ-0001: `product/research/test-runs/TESTRUN-2026-006.yaml` (klasyfikacja `IMPLEMENTATION_ACCEPTANCE_FAILURE`).
+
+#### Changed
+- Ekran `Home / Monitoring` przełącza sekcję tożsamości na `CaregiverAttentionView` gdy spełnione są warunki REQ-0001 (`mode = CAREGIVER`, monitorowane osoby >= 2), zamiast domyślnego widoku legacy.
+- Dodano jawne tagi testowe dla rozgałęzienia UI: `home.caregiverAttentionView` oraz `home.legacyPersonSwitcher`.
+- Wersja aplikacji: `2.15.0` (`versionCode 41`) -> `2.15.1` (`versionCode 42`).
+
+#### Fixed
+- Naprawiono defekt implementacyjny REQ-0001: po aktywacji scenariusza `MULTIPLE_PATIENTS_ONE_AT_RISK` ekran startowy opiekuna nie wymaga już ręcznego przełączenia osoby, aby zobaczyć osobę wymagającą uwagi.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `./gradlew testDebugUnitTest --rerun-tasks` - PASS
+- `./gradlew lintDebug` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.1-debug.apk`
+- `release-artifacts/LibreCare-2.15.1-release.apk`
+- `release-artifacts/LibreCare-2.15.1-release.aab`
+
+### EN
+
+#### Added
+- Added UI rendering-path tests for REQ-0001 on Home monitoring identity section (`CaregiverHomeRenderingBranchTest`) covering: caregiver 2+ people with one at risk, multiple normal people, single-person flow, and senior/clinician non-regression.
+- Added canonical failed real Firebase test-run record for REQ-0001: `product/research/test-runs/TESTRUN-2026-006.yaml` (`IMPLEMENTATION_ACCEPTANCE_FAILURE`).
+
+#### Changed
+- `Home / Monitoring` identity section now routes to `CaregiverAttentionView` when REQ-0001 conditions apply (`mode = CAREGIVER`, monitored people >= 2), instead of defaulting to the legacy layout.
+- Added explicit test tags for branch verification: `home.caregiverAttentionView` and `home.legacyPersonSwitcher`.
+- App version: `2.15.0` (`versionCode 41`) -> `2.15.1` (`versionCode 42`).
+
+#### Fixed
+- Fixed REQ-0001 implementation defect: after selecting `MULTIPLE_PATIENTS_ONE_AT_RISK`, caregivers no longer need manual person switching to discover who requires attention.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `./gradlew testDebugUnitTest --rerun-tasks` - PASS
+- `./gradlew lintDebug` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.15.1-debug.apk`
+- `release-artifacts/LibreCare-2.15.1-release.apk`
+- `release-artifacts/LibreCare-2.15.1-release.aab`
+
 ## 2.15.0 - 2026-09-01
 
 ### PL
