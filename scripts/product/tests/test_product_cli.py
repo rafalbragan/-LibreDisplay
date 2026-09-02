@@ -1118,6 +1118,9 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         self.assertEqual("master", agent_assignment["baseRef"])
         self.assertEqual("R_repo", agent_assignment["targetRepositoryId"])
         self.assertEqual("Instrukcje testowe", agent_assignment["customInstructions"])
+        self.assertEqual("GPT-5.4 mini", agent_assignment["model"])
+        self.assertTrue(agent_assignment["model"].strip())
+        self.assertNotEqual("auto", agent_assignment["model"].strip().lower())
         self.assertNotIn("agentLogin", agent_assignment)
         self.assertNotIn("instructions", agent_assignment)
 
@@ -1154,6 +1157,9 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         self.assertEqual(["BOT_NODE_ID"], payload["actorIds"])
         self.assertEqual("actorIds", result["assignee_id_field"])
         self.assertEqual("Instrukcje testowe", agent_assignment["customInstructions"])
+        self.assertEqual("GPT-5.4 mini", agent_assignment["model"])
+        self.assertTrue(agent_assignment["model"].strip())
+        self.assertNotEqual("auto", agent_assignment["model"].strip().lower())
         self.assertNotIn("agentLogin", agent_assignment)
         self.assertNotIn("instructions", agent_assignment)
 
@@ -1198,6 +1204,11 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         self.assertEqual("ASSIGNED", result["status"])
         self.assertEqual("GRAPHQL", result["method"])
         self.assertEqual([self.cli.COPILOT_AGENT_LOGIN], result["verified_assignees"])
+
+    def test_explicit_model_constant_is_configured_and_not_auto(self):
+        self.assertEqual("GPT-5.4 mini", self.cli.COPILOT_AGENT_MODEL)
+        self.assertTrue(self.cli.COPILOT_AGENT_MODEL.strip())
+        self.assertNotEqual("auto", self.cli.COPILOT_AGENT_MODEL.strip().lower())
 
 
 class ProductInboxWorkflowStaticTest(unittest.TestCase):
@@ -1277,9 +1288,14 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("targetRepositoryId", text)
         self.assertIn("baseRef", text)
         self.assertIn("customInstructions", text)
+        self.assertIn('"model": model_name', text)
+        self.assertIn('COPILOT_AGENT_MODEL = "GPT-5.4 mini"', text)
+        self.assertIn('"issues_copilot_assignment_api_support"', text)
+        self.assertIn('"coding_agent_model_selection"', text)
         self.assertNotIn('"agentLogin": COPILOT_AGENT_LOGIN', text)
         self.assertNotIn('"instructions": instructions', text)
         self.assertIn("copilot_assignment_token", text)
+        self.assertNotIn('"model": "Auto"', text)
 
     def test_workflows_use_safe_repo_argument_shape_for_leading_hyphen_names(self):
         inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")

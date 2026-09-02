@@ -742,8 +742,13 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertIn("targetRepositoryId", text)
 		self.assertIn("baseRef", text)
 		self.assertIn("customInstructions", text)
+		self.assertIn('"model": model_name', text)
+		self.assertIn('COPILOT_AGENT_MODEL = "GPT-5.4 mini"', text)
+		self.assertIn('"issues_copilot_assignment_api_support"', text)
+		self.assertIn('"coding_agent_model_selection"', text)
 		self.assertNotIn('"agentLogin": COPILOT_AGENT_LOGIN', text)
 		self.assertNotIn('"instructions": instructions', text)
+		self.assertNotIn('"model": "Auto"', text)
 
 
 class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
@@ -784,6 +789,9 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 		self.assertEqual(["BOT_NODE_ID"], payload["assigneeIds"])
 		self.assertEqual("assigneeIds", result["assignee_id_field"])
 		self.assertEqual("Instrukcje testowe", agent_assignment["customInstructions"])
+		self.assertEqual("GPT-5.4 mini", agent_assignment["model"])
+		self.assertTrue(agent_assignment["model"].strip())
+		self.assertNotEqual("auto", agent_assignment["model"].strip().lower())
 		self.assertNotIn("agentLogin", agent_assignment)
 		self.assertNotIn("instructions", agent_assignment)
 
@@ -814,9 +822,13 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 		result = client.assign_copilot(7, "master", "Instrukcje testowe")
 
 		payload = captured[1]["variables"]
+		agent_assignment = payload["agentAssignment"]
 		self.assertIn("actorIds", payload)
 		self.assertEqual(["BOT_NODE_ID"], payload["actorIds"])
 		self.assertEqual("actorIds", result["assignee_id_field"])
+		self.assertEqual("GPT-5.4 mini", agent_assignment["model"])
+		self.assertTrue(agent_assignment["model"].strip())
+		self.assertNotEqual("auto", agent_assignment["model"].strip().lower())
 
 	def test_graphql_success_without_copilot_assignee_raises(self):
 		client = self.make_client()
@@ -837,6 +849,11 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 
 		with self.assertRaisesRegex(RuntimeError, "Copilot assignee was not confirmed"):
 			client.assign_copilot(7, "master", "Instrukcje testowe")
+
+	def test_explicit_model_constant_is_configured_and_not_auto(self):
+		self.assertEqual("GPT-5.4 mini", self.cli.COPILOT_AGENT_MODEL)
+		self.assertTrue(self.cli.COPILOT_AGENT_MODEL.strip())
+		self.assertNotEqual("auto", self.cli.COPILOT_AGENT_MODEL.strip().lower())
 
 
 if __name__ == "__main__":

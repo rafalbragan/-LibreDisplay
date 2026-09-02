@@ -51,9 +51,10 @@ BUGS_DIR = PRODUCT / "bugs"
 
 COPILOT_AGENT_LOGIN = "copilot-swe-agent[bot]"
 DEFAULT_BASE_BRANCH = "master"
+COPILOT_AGENT_MODEL = "GPT-5.4 mini"
 COPILOT_GRAPHQL_FEATURE_FLAGS = [
-    "copilot_agent_assignment_api",
-    "copilot_workspace_assignments",
+    "issues_copilot_assignment_api_support",
+    "coding_agent_model_selection",
 ]
 
 POLISH_CLASSIFICATION_LABELS = {
@@ -1247,10 +1248,15 @@ class GitHubIssueAutomationClient:
                 "variables": {"assignableId": issue_id, "actorIds": [actor_id]},
             },
         ]
+        model_name = str(COPILOT_AGENT_MODEL or "").strip()
+        if not model_name:
+            raise RuntimeError("Copilot model configuration is empty")
+
         assignment_input = {
             "targetRepositoryId": repository_id,
             "baseRef": base_branch,
             "customInstructions": instructions,
+            "model": model_name,
         }
 
         last_error = None
