@@ -8,7 +8,7 @@
   "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/7",
   "copilot_assignment": {
     "status": "ASSIGNMENT_FAILED",
-    "error": "GraphQL returned errors for replaceActorsForAssignable: [{'type': 'FORBIDDEN', 'path': ['replaceActorsForAssignable'], 'locations': [{'line': 7, 'column': 19}], 'message': 'Assigning agents is not supported with GitHub App installation tokens. Use a user token (personal access token or OAuth token) instead.'}]"
+    "error": "GraphQL returned errors for replaceActorsForAssignable: [{'type': 'FORBIDDEN', 'path': ['replaceActorsForAssignable'], 'locations': [{'line': 7, 'column': 19}], 'message': 'Copilot agent is not enabled in this repository.'}]"
   },
   "branch": null,
   "pull_request_number": null,
@@ -20,5 +20,5 @@
   "validation_state": "PENDING",
   "acceptance_test_ids": [],
   "ci_failures": [],
-  "updated_at": "2026-09-02T19:37:20Z"
+  "updated_at": "2026-09-02T22:15:59Z"
 }
