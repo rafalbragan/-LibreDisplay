@@ -31,7 +31,7 @@ candidates:
       is therefore not yet proven to justify a design change without validation.
     safety_impact: LOW
     proposed_priority: P2
-    human_decision: PENDING
+    human_decision: ACCEPT
     source_ids:
     - INBOX-GH-000001
     - GH-ISSUE-1
@@ -40,4 +40,4 @@ candidates:
     github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/1
     recommended_decision: HOLD
     classification: PRODUCT_OPPORTUNITY
-    applied_requirement_id: null
+    applied_requirement_id: REQ-0002
