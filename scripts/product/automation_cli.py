@@ -164,6 +164,46 @@ def parse_issue_form_sections(body: str) -> dict[str, str]:
     return fields
 
 
+BUG_ISSUE_TITLE_PREFIXES = ("[blad librecare]", "[błąd librecare]")
+BUG_ISSUE_REQUIRED_FIELDS = (
+    "observed_behavior",
+    "expected_behavior",
+    "reproduction",
+    "location",
+    "history",
+)
+
+
+def issue_label_names(issue: dict) -> set[str]:
+    labels = set()
+    for entry in issue.get("labels", []) or []:
+        if isinstance(entry, dict):
+            name = str(entry.get("name", "")).strip().lower()
+        else:
+            name = str(entry).strip().lower()
+        if name:
+            labels.add(name)
+    return labels
+
+
+def issue_has_bug_form(issue: dict) -> bool:
+    title = normalized_text(str(issue.get("title", "")))
+    body = str(issue.get("body", "") or "")
+    fields = parse_issue_form_sections(body)
+    has_required_fields = all(fields.get(field, "").strip() for field in BUG_ISSUE_REQUIRED_FIELDS)
+    has_canonical_prefix = any(title.startswith(prefix) for prefix in BUG_ISSUE_TITLE_PREFIXES)
+    return has_required_fields and has_canonical_prefix
+
+
+def is_librecare_bug_issue(issue: dict) -> bool:
+    if not isinstance(issue, dict):
+        return False
+    labels = issue_label_names(issue)
+    if labels.intersection({"bug", "librecare-bug"}) and issue_has_bug_form(issue):
+        return True
+    return issue_has_bug_form(issue)
+
+
 def normalized_text(value: str) -> str:
     return re.sub(r"\s+", " ", (value or "").strip().lower())
 
@@ -432,9 +472,8 @@ def cmd_bug_import(event_file: str) -> int:
     if not isinstance(issue, dict):
         print("SKIP: no issue payload")
         return 0
-    labels = [x.get("name") if isinstance(x, dict) else x for x in issue.get("labels", [])]
-    if "bug" not in labels and "librecare-bug" not in labels:
-        print("SKIP: issue has no bug label")
+    if not is_librecare_bug_issue(issue):
+        print("SKIP: issue is not a LibreCare bug form")
         return 0
     body = issue.get("body", "") or ""
     fields = parse_issue_form_sections(body)

@@ -126,6 +126,19 @@ class AutomationCliTest(unittest.TestCase):
 			}
 		}
 
+	def issue_event(self, number: int, title: str, body: str, labels=None, action: str = "opened") -> dict:
+		return {
+			"action": action,
+			"issue": {
+				"number": number,
+				"title": title,
+				"body": body,
+				"labels": labels if labels is not None else [{"name": "bug"}, {"name": "librecare-bug"}],
+				"html_url": f"https://example/issues/{number}",
+				"url": f"https://api.example/issues/{number}",
+			},
+		}
+
 	def import_bug(self, event: dict) -> str:
 		event_file = self.root / "bug-event.json"
 		self.write_json(event_file, event)
@@ -138,6 +151,54 @@ class AutomationCliTest(unittest.TestCase):
 		triage_file = self.root / "triage.json"
 		self.write_json(triage_file, payload)
 		self.assertEqual(0, self.cli.cmd_bug_apply_ai_triage(bug_id, str(triage_file)))
+
+	def bug_form_body(self, observed: str = "Widoczny objaw", expected: str = "Oczekiwany objaw", reproduction: str = "1. Otworz dashboard") -> str:
+		return "\n".join([
+			"### Co się stało?",
+			observed,
+			"",
+			"### Jakiego zachowania oczekiwałeś?",
+			expected,
+			"",
+			"### Jak odtworzyć problem?",
+			reproduction,
+			"",
+			"### Gdzie występuje?",
+			"Główna / Monitoring",
+			"",
+			"### Czy problem występował wcześniej?",
+			"Nie",
+			"",
+			"### Dodatkowy kontekst",
+			"Brak",
+		])
+
+	def product_inbox_body(self) -> str:
+		return "\n".join([
+			"### Typ zgłoszenia",
+			"Problem",
+			"",
+			"### Persona użytkownika",
+			"Opiekun",
+			"",
+			"### Moduł",
+			"Główna / Monitoring",
+			"",
+			"### Co zauważyłeś(-aś) / czego potrzebujesz?",
+			"Opis obserwacji",
+		])
+
+	def implementation_issue_body(self) -> str:
+		return "\n".join([
+			"## OGRANICZENIA_AUTOMATYZACJI",
+			"To jest kanoniczny rekord bledu.",
+			"",
+			"## BUG",
+			"BUG-0123",
+			"",
+			"## OPIS",
+			"Naprawa implementacji",
+		])
 
 	def test_regression_against_requirement_queues_fix(self):
 		bug_id = self.import_bug(
@@ -161,6 +222,83 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
 		self.assertEqual("IN_PROGRESS", bug["status"])
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
+
+	def test_issue_five_shape_routes_as_bug_even_without_label(self):
+		event = self.issue_event(
+			5,
+			"[Błąd LibreCare] Product Review ignoruje istniejące dowody z repozytorium",
+			self.bug_form_body(
+				observed="Product Review nie bierze pod uwagę dowodów.",
+				expected="Powinien uwzględniać istniejące dowody.",
+				reproduction="1. Otworz Product Review\n2. Sprawdz dowody",
+			),
+			labels=[],
+		)
+		self.assertTrue(self.cli.is_librecare_bug_issue(event["issue"]))
+		bug_id = self.import_bug(event)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
+		self.assertEqual("GITHUB_BUG_ISSUE", bug["source"])
+		self.assertEqual(5, bug["source_issue_number"])
+
+	def test_product_inbox_issue_is_not_routed_as_bug(self):
+		event = self.issue_event(
+			6,
+			"[Skrzynka Produktowa] Product Review ignoruje istniejące dowody z repozytorium",
+			self.product_inbox_body(),
+			labels=[{"name": "product-inbox"}],
+		)
+		self.assertFalse(self.cli.is_librecare_bug_issue(event["issue"]))
+		event_file = self.root / "product-inbox-event.json"
+		self.write_json(event_file, event)
+		self.assertEqual(0, self.cli.cmd_bug_import(str(event_file)))
+		self.assertEqual(0, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+
+	def test_implementation_issue_is_not_routed_as_bug(self):
+		event = self.issue_event(
+			77,
+			"[Naprawa] BUG-0123 — Product Review",
+			self.implementation_issue_body(),
+			labels=[{"name": "bugfix"}, {"name": "BUG-0123"}],
+		)
+		self.assertFalse(self.cli.is_librecare_bug_issue(event["issue"]))
+		event_file = self.root / "implementation-event.json"
+		self.write_json(event_file, event)
+		self.assertEqual(0, self.cli.cmd_bug_import(str(event_file)))
+		self.assertEqual(0, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+
+	def test_unrelated_issue_is_not_routed_as_bug(self):
+		event = self.issue_event(
+			88,
+			"Pytanie o UI",
+			"Zwykly tekst bez formy zgloszenia błędu.",
+			labels=[],
+		)
+		self.assertFalse(self.cli.is_librecare_bug_issue(event["issue"]))
+		event_file = self.root / "unrelated-event.json"
+		self.write_json(event_file, event)
+		self.assertEqual(0, self.cli.cmd_bug_import(str(event_file)))
+		self.assertEqual(0, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+
+	def test_reopened_bug_issue_deduplicates_source_record(self):
+		opened = self.issue_event(
+			91,
+			"[Blad LibreCare] Duplikat po wznowieniu",
+			self.bug_form_body(observed="Ten sam objaw", expected="Ten sam wynik", reproduction="1. Otworz dashboard"),
+			labels=[],
+			action="opened",
+		)
+		reopened = self.issue_event(
+			91,
+			"[Blad LibreCare] Duplikat po wznowieniu",
+			self.bug_form_body(observed="Ten sam objaw", expected="Ten sam wynik", reproduction="1. Otworz dashboard"),
+			labels=[],
+			action="reopened",
+		)
+		first_id = self.import_bug(opened)
+		second_id = self.import_bug(reopened)
+		self.assertEqual(first_id, second_id)
+		bug_files = sorted((self.root / "product" / "bugs").glob("BUG-*.json"))
+		self.assertEqual(1, len(bug_files))
 
 	def test_new_behavior_routes_to_product_decision_and_no_fix(self):
 		bug_id = self.import_bug(

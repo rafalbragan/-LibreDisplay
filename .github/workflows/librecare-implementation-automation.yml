@@ -15,7 +15,19 @@ concurrency:
 
 jobs:
   bug-intake-triage:
-    if: github.event_name == 'issues' && contains(join(github.event.issue.labels.*.name, ','), 'librecare-bug')
+    if: >-
+      github.event_name == 'issues' &&
+      (
+        (
+          startsWith(github.event.issue.title, '[Blad LibreCare]') ||
+          startsWith(github.event.issue.title, '[Błąd LibreCare]')
+        ) &&
+        contains(github.event.issue.body, '### Co się stało?') &&
+        contains(github.event.issue.body, '### Jakiego zachowania oczekiwałeś?') &&
+        contains(github.event.issue.body, '### Jak odtworzyć problem?') &&
+        contains(github.event.issue.body, '### Gdzie występuje?') &&
+        contains(github.event.issue.body, '### Czy problem występował wcześniej?')
+      )
     runs-on: ubuntu-latest
     permissions:
       copilot-requests: write
