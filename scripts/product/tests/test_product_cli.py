@@ -1339,8 +1339,10 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("bug-sync-fix-handoff", text)
         self.assertIn("persist-bug-records", text)
         self.assertIn("ci-regression-enrich-evidence", text)
+        self.assertIn("Report CI evidence enrichment summary", text)
         self.assertIn("Determine if CI regression auto-fix is allowed", text)
         self.assertIn("Attempt bug fix handoff for confirmed CI regressions", text)
+        self.assertIn("Verify enriched evidence reached the triage prompt", text)
         self.assertIn("COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}", text)
         self.assertIn('--copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN"', text)
         self.assertIn('workflows: ["Android CI", "Android APK Build"]', text)
@@ -1355,6 +1357,10 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("copilot-requests: write", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_android_ci_workflow_uses_current_fast_suite_artifact_name(self):
+        text = (WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml").read_text(encoding="utf-8")
+        self.assertIn("name: librecare-fast-suite", text)
 
 
 if __name__ == "__main__":

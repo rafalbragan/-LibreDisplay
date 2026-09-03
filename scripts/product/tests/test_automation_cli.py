@@ -28,6 +28,10 @@ class FakeGitHubClient:
 	next_issue_number = 700
 	issue_assignees = {}
 	assign_should_fail = False
+	job_list_should_fail = False
+	artifact_list_should_fail = False
+	job_log_should_fail = False
+	artifact_download_should_fail = False
 	workflow_jobs = {}
 	workflow_artifacts = {}
 	artifact_payloads = {}
@@ -77,15 +81,23 @@ class FakeGitHubClient:
 		return payload
 
 	def list_workflow_run_jobs(self, run_id: str) -> list[dict]:
+		if self.__class__.job_list_should_fail:
+			raise RuntimeError("GitHub Actions workflow job retrieval failed")
 		return json.loads(json.dumps(self.__class__.workflow_jobs.get(str(run_id), [])))
 
 	def list_workflow_run_artifacts(self, run_id: str) -> list[dict]:
+		if self.__class__.artifact_list_should_fail:
+			raise RuntimeError("GitHub Actions artifact retrieval failed")
 		return json.loads(json.dumps(self.__class__.workflow_artifacts.get(str(run_id), [])))
 
 	def download_workflow_artifact(self, artifact_id: int) -> bytes:
+		if self.__class__.artifact_download_should_fail:
+			raise RuntimeError("GitHub Actions artifact download failed")
 		return self.__class__.artifact_payloads.get(int(artifact_id), b"")
 
 	def download_workflow_job_logs(self, job_id: int) -> bytes:
+		if self.__class__.job_log_should_fail:
+			raise RuntimeError("GitHub Actions job log download failed")
 		return self.__class__.job_log_payloads.get(int(job_id), b"")
 
 
@@ -119,6 +131,10 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.next_issue_number = 700
 		FakeGitHubClient.issue_assignees = {}
 		FakeGitHubClient.assign_should_fail = False
+		FakeGitHubClient.job_list_should_fail = False
+		FakeGitHubClient.artifact_list_should_fail = False
+		FakeGitHubClient.job_log_should_fail = False
+		FakeGitHubClient.artifact_download_should_fail = False
 		FakeGitHubClient.workflow_jobs = {}
 		FakeGitHubClient.workflow_artifacts = {}
 		FakeGitHubClient.artifact_payloads = {}
@@ -815,8 +831,41 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001", "ci-artifact-enriched.json")
 		self.assertTrue(payload["evidence_enriched"])
+		self.assertEqual("ENRICHED", payload["result"])
+		self.assertEqual(["gradle-reports"], payload["artifact_names"])
 		self.assertEqual("gradle-reports", payload["artifact_name"])
 		self.assertEqual("gradle-debug.log", payload["log_file"])
+		self.assertGreaterEqual(payload["diagnostic_lines_found"], 1)
+
+	def test_artifact_name_is_discovered_dynamically(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3001a"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3001a", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-artifact-dynamic-source.json",
+		)
+		self.configure_workflow_failure_diagnostics(
+			"3001a",
+			artifact_name="librecare-fast-suite",
+			artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n",
+		)
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001a", "ci-artifact-dynamic-enriched.json")
+		self.assertTrue(payload["evidence_enriched"])
+		self.assertEqual("librecare-fast-suite", payload["artifact_name"])
+		self.assertIn("librecare-fast-suite", payload["artifact_names"])
+
+	def test_retrieval_failure_returns_structured_failure_without_silent_success(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3001b"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3001b", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-retrieval-failure-source.json",
+		)
+		FakeGitHubClient.job_list_should_fail = True
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001b", "ci-retrieval-failure.json")
+		self.assertEqual("RETRIEVAL_FAILED", payload["result"])
+		self.assertFalse(payload["evidence_enriched"])
+		self.assertFalse(payload["job_logs_fetched"])
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertNotIn("ci_failure_evidence", bug)
 
 	def test_compile_debug_kotlin_failure_captures_concise_compiler_excerpt(self):
 		result = self.run_ci_regression_intake(
@@ -849,6 +898,7 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		)
 		payload = self.enrich_ci_regression_bug(result["bug_id"], "3003", "ci-missing-artifact-enrich.json")
 		self.assertFalse(payload["evidence_enriched"])
+		self.assertEqual("NO_USEFUL_EVIDENCE", payload["result"])
 		self.triage_bug(result["bug_id"], {
 			"classification": "INCONCLUSIVE",
 			"reasoning": "Brak użytecznego artefaktu lub logu.",
@@ -899,6 +949,11 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		)
 		self.configure_workflow_failure_diagnostics("3006", artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n")
 		self.enrich_ci_regression_bug(result["bug_id"], "3006", "ci-retriage-enrich.json")
+		prompt_file = self.root / "bug-ai-prompt.json"
+		self.cli.main(["bug-build-ai-prompt", "--bug-id", result["bug_id"], "--output-file", str(prompt_file)])
+		prompt = self.read_json(prompt_file)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual(bug["ci_failure_evidence"]["excerpt"], prompt["ci_failure_evidence_excerpt"])
 		self.triage_bug(result["bug_id"], {
 			"classification": "CONFIRMED_DEFECT",
 			"reasoning": "Rzeczywisty błąd kompilacji Kotlin potwierdza regresję deterministycznego CI.",
@@ -937,6 +992,21 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 		self.assertEqual(1, len(FakeGitHubClient.assignments))
 		self.assertEqual(["user-token"], FakeGitHubClient.assignment_tokens)
+
+	def test_enriched_prompt_contains_ci_failure_excerpt(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3007a"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3007a", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-prompt-source.json",
+		)
+		self.configure_workflow_failure_diagnostics("3007a", artifact_name="librecare-fast-suite", artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n")
+		self.enrich_ci_regression_bug(result["bug_id"], "3007a", "ci-prompt-enriched.json")
+		prompt_file = self.root / "bug-ai-prompt.json"
+		self.assertEqual(0, self.cli.main(["bug-build-ai-prompt", "--bug-id", result["bug_id"], "--output-file", str(prompt_file)]))
+		prompt = self.read_json(prompt_file)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual(bug["ci_failure_evidence"]["excerpt"], prompt["ci_failure_evidence_excerpt"])
+		self.assertIn("compileDebugKotlin", prompt["ci_failure_evidence_excerpt"])
 
 	def test_inconclusive_ci_regression_creates_no_implementation_issue(self):
 		result = self.run_ci_regression_intake(

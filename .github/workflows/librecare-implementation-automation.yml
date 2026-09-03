@@ -307,6 +307,7 @@ jobs:
           echo "bug_id=$(cat ci-regression-bug-id.txt)" >> "$GITHUB_OUTPUT"
 
       - name: Enrich CI regression bug evidence from workflow logs and artifacts
+        id: ci_regression_evidence
         if: steps.ci_regression.outputs.should_route == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -317,7 +318,28 @@ jobs:
             --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
             --run-id "${{ github.event.workflow_run.id }}" \
-            --output-file ci-regression-evidence.json || true
+            --output-file ci-regression-evidence.json
+
+      - name: Report CI evidence enrichment summary
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          data = json.loads(Path('ci-regression-evidence.json').read_text(encoding='utf-8'))
+          print('CI_EVIDENCE_RESULT:')
+          print(f"BUG_ID: {data.get('bug_id', '')}")
+          print(f"RUN_ID: {data.get('run_id', '')}")
+          print(f"JOB_LOGS_FETCHED: {data.get('job_logs_fetched')}")
+          print(f"ARTIFACTS_FOUND: {data.get('artifacts_found')}")
+          print(f"ARTIFACT_NAMES: {', '.join(data.get('artifact_names') or []) or 'BRAK'}")
+          print(f"GRADLE_LOG_FOUND: {bool(data.get('artifact_downloaded'))}")
+          print(f"DIAGNOSTIC_LINES_FOUND: {data.get('diagnostic_lines_found')}")
+          print(f"RESULT: {data.get('result')}")
+          if data.get('result') == 'RETRIEVAL_FAILED':
+              error = str(data.get('error') or 'Nie udało się pobrać dowodów z GitHub Actions.')
+              print(f"SAFE_DIAGNOSTIC: {error[:200]}")
+          PY
 
       - name: Install GitHub Copilot CLI
         if: steps.ci_regression.outputs.should_route == 'true'
@@ -336,6 +358,22 @@ jobs:
           python scripts/product/automation_cli.py bug-build-ai-prompt \
             --bug-id "${{ steps.bug.outputs.bug_id }}" \
             --output-file bug-ai-prompt.json
+
+      - name: Verify enriched evidence reached the triage prompt
+        if: steps.ci_regression.outputs.should_route == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          evidence = json.loads(Path('ci-regression-evidence.json').read_text(encoding='utf-8'))
+          if evidence.get('result') != 'ENRICHED':
+              print('Prompt verification skipped because no enriched evidence was retrieved.')
+              raise SystemExit(0)
+          prompt = json.loads(Path('bug-ai-prompt.json').read_text(encoding='utf-8'))
+          if str(prompt.get('ci_failure_evidence_excerpt') or '').strip() != str(evidence.get('diagnostic_excerpt') or '').strip():
+              raise SystemExit('Enriched compiler evidence was not propagated into bug-ai-prompt.json')
+          print('Prompt verification passed.')
+          PY
 
       - name: Run Copilot bug triage (read-only)
         if: steps.ci_regression.outputs.should_route == 'true'
