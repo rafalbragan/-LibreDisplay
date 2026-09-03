@@ -21,6 +21,7 @@
 - Workflow `librecare-implementation-automation` i CLI automatyzacji rozpoznają kanoniczny formularz błędu po prefiksie tytułu oraz wymaganych sekcjach zgłoszenia, więc intake nie zależy wyłącznie od etykiety GitHub.
 
 ### Poprawki
+- Naprawiono regresję kompilacji Android CI (BUG-0004), przywracając typy projekcji trendu i przekazywanie okna trendu do karty glikemii.
 - Zakres `REQ-0002` jest domknięty: główne karty opiekuna w sekcjach `Wymaga uwagi` i `Pozostali` pokazują naturalną polską świeżość danych zamiast surowego ISO-8601.
 - Future clock skew nadal nie pokazuje czasu ujemnego (`przed chwilą`), bez zmiany klasyfikacji stale/fresh, progów ani semantyki medycznej.
 - Naprawiono bootstrap bug automation dla zgłoszeń w kształcie Issue #5: poprawny formularz błędu LibreCare jest importowany także wtedy, gdy brakuje etykiety `librecare-bug`.
@@ -64,6 +65,7 @@
 - The `librecare-implementation-automation` workflow and automation CLI now recognize the canonical LibreCare bug form by title prefix plus required sections, so intake no longer depends only on a GitHub label.
 
 ### Fixes
+- Fixed the Android CI compilation regression (BUG-0004) by restoring trend projection types and passing the configured trend window to the glucose card.
 - `REQ-0002` scope is closed: primary caregiver cards in `Wymaga uwagi` and `Pozostali` show natural Polish freshness text instead of raw ISO-8601.
 - Future clock skew still never renders negative time (`przed chwilą`) without changing stale/fresh classification, thresholds, or medical semantics.
 - Fixed the bug-automation bootstrap for Issue #5-shaped reports: a valid LibreCare bug form is imported even when the `librecare-bug` label is missing.
@@ -90,4 +92,3 @@
 ### Known limitations
 - Firebase and connected-device tests were not run because no device/emulator was available in this environment.
 - The repository contains many unrelated in-progress local modifications; this update documents only the verified automation scope and current 2.16.1 artifacts.
-

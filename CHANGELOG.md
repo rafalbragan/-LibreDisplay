@@ -18,6 +18,7 @@ All notable changes to LibreCare will be documented in this file.
 - Wersja aplikacji: `2.16.0` (`versionCode 44`) -> `2.16.1` (`versionCode 45`).
 
 #### Fixed
+- Naprawiono regresję CI BUG-0004: karta glikemii otrzymuje skonfigurowane okno trendu, a brakujące typy projekcji trendu zostały przywrócone.
 - Karty monitorowanych osób w sekcjach `Wymaga uwagi` i `Pozostali` nie eksponują surowego ISO-8601 jako głównej etykiety świeżości danych w zakresie `REQ-0002`.
 - Future skew nadal nie pokazuje czasu ujemnego i pozostaje prezentowany jako `przed chwilą`.
 - Naprawiono bootstrap bug automation dla zgłoszeń w kształcie Issue #5: intake nie pomija już poprawnego formularza błędu LibreCare tylko dlatego, że brakuje etykiety `librecare-bug`.
@@ -53,6 +54,7 @@ All notable changes to LibreCare will be documented in this file.
 - App version: `2.16.0` (`versionCode 44`) -> `2.16.1` (`versionCode 45`).
 
 #### Fixed
+- Fixed CI regression BUG-0004: the glucose card now receives the configured trend window, and the missing trend projection types were restored.
 - Monitored-person cards in `Wymaga uwagi` and `Pozostali` no longer expose raw ISO-8601 as the primary freshness label within the `REQ-0002` scope.
 - Future skew still never renders negative time and remains displayed as `przed chwilą`.
 - Fixed the bug-automation bootstrap for Issue #5-shaped reports: intake no longer skips a valid LibreCare bug form just because the `librecare-bug` label is missing.
@@ -2122,4 +2124,3 @@ All notable changes to LibreCare will be documented in this file.
 - Release APK: `app/build/outputs/apk/release/app-release.apk` (2.9 MiB)
 - Release AAB: `app/build/outputs/bundle/release/app-release.aab` (5.3 MiB)
 - Google Play upload artifact: `app/build/outputs/bundle/release/app-release.aab` (5.3 MiB)
-

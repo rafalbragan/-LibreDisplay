@@ -12,6 +12,7 @@ Automation Phase 1 is completed for accepted `REQ-0002` and Product Inbox Polish
 The caregiver multi-person monitoring cards use a centralized relative freshness formatter and do not expose raw ISO-8601 as the primary user-facing label.
 Product Inbox human-facing GitHub communication remains Polish while preserving machine-readable enums and traceability from Inbox `#1` -> `REQ-0002` -> implementation -> tests.
 Bug automation bootstrap is now resilient for Issue #5-shaped reports: canonical LibreCare bug forms are routed by title/body signature even when the `librecare-bug` label is missing.
+BUG-0004 Android CI compilation regression is fixed by restoring trend projection logic and wiring the configured trend window through both monitoring layouts.
 
 ---
 
@@ -137,4 +138,3 @@ No Room schema/version/migration changes.
 1. The workspace contains many unrelated in-progress modifications from other efforts; this report covers only the verified automation-repair scope and current 2.16.1 artifacts.
 2. Firebase and connected-device verification were not run in this environment.
 3. Git push is still blocked from this working tree until unrelated local changes are isolated and the local `master` branch is rebased onto `origin/master`.
-
