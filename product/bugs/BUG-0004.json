@@ -18,10 +18,70 @@
   "classification": "CONFIRMED_DEFECT",
   "severity": "HIGH",
   "safety_impact": "LOW",
-  "status": "CONFIRMED_DEFECT",
-  "implementation_issue": {},
-  "implementation_issue_number": null,
-  "implementation_issue_url": null,
+  "status": "IN_PROGRESS",
+  "implementation_issue": {
+    "number": 10,
+    "url": "https://github.com/rafalbragan/-LibreDisplay/issues/10",
+    "agent_assignment": {
+      "status": "ASSIGNED",
+      "method": "GRAPHQL",
+      "mutation": "addAssigneesToAssignable",
+      "issue_node_id": "I_kwDOTNfGKM8AAAABPmTesg",
+      "repository_node_id": "R_kgDOTNfGKA",
+      "actor_node_id": "BOT_kgDOC9w8XQ",
+      "agent_assignment_input": {
+        "targetRepositoryId": "R_kgDOTNfGKA",
+        "baseRef": "master",
+        "customInstructions": "Napraw wylacznie kanoniczny regresyjny blad BUG-0004 na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.",
+        "model": "GPT-5.4 mini"
+      },
+      "assignee_ids": [
+        "BOT_kgDOC9w8XQ"
+      ],
+      "assignee_id_field": "assigneeIds",
+      "assignees": [
+        "Copilot",
+        "rafalbragan"
+      ],
+      "assignee_node_ids": [
+        "BOT_kgDOC9w8XQ",
+        "U_kgDOEd8_5w"
+      ],
+      "verified_assignees": [
+        "Copilot",
+        "rafalbragan"
+      ],
+      "verified_assignee_node_ids": [
+        "BOT_kgDOC9w8XQ",
+        "U_kgDOEd8_5w"
+      ],
+      "response": {
+        "data": {
+          "addAssigneesToAssignable": {
+            "assignable": {
+              "number": 10,
+              "assignees": {
+                "nodes": [
+                  {
+                    "login": "Copilot",
+                    "id": "BOT_kgDOC9w8XQ"
+                  },
+                  {
+                    "login": "rafalbragan",
+                    "id": "U_kgDOEd8_5w"
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    },
+    "updated_at": "2026-09-03T21:42:50Z",
+    "assigned_agent": "copilot-swe-agent[bot]"
+  },
+  "implementation_issue_number": 10,
+  "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/10",
   "pull_request": {},
   "pull_request_number": null,
   "pull_request_url": null,
@@ -40,7 +100,7 @@
   ],
   "dedup_signature": "deterministyczny workflow android ci na gałęzi master kończy się błędem: 2026-09-03t20:54:10.2899403z > task :app:compiledebugkotlin failed||gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację ci.||uruchom deterministyczny workflow android ci na gałęzi master i potwierdź powtarzalny błąd.||",
   "created_at": "2026-09-03T20:54:41Z",
-  "updated_at": "2026-09-03T21:34:35Z",
+  "updated_at": "2026-09-03T21:42:50Z",
   "additional_context": "Workflow: Android CI\nRun ID: 33804732928\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33804732928\nCommit: 5b69127cae6500549265be3bf151992313f1874b\nBranch: master\nFailed job: Fast test suite\nFailed step: Fast test suite: Run fast suite\nLog file: 0_Fast test suite.txt\nDiagnostic excerpt:\n2026-09-03T20:54:10.2899403Z > Task :app:compileDebugKotlin FAILED\n2026-09-03T20:54:10.2930307Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:311:45 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T20:54:10.2959812Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:379:37 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T20:54:10.2987053Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:32 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T20:54:10.2990011Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:64 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T20:54:10.2991775Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:57:9 Unresolved reference 'TrendProjectionThresholds'.\n2026-09-03T20:54:10.2993990Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:27 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T20:54:10.2996079Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:92 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T20:54:10.4969248Z Execution failed for task ':app:compileDebugKotlin'.\n2026-09-03T20:54:10.4972300Z    > Compilation error. See log for more details",
   "ci_failure_evidence": {
     "artifact_name": "",

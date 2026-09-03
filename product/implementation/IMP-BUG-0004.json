@@ -1,0 +1,80 @@
+{
+  "implementation_id": "IMP-BUG-0004",
+  "requirement_id": null,
+  "bug_id": "BUG-0004",
+  "source_inbox_id": null,
+  "source_issue_number": null,
+  "implementation_issue_number": 10,
+  "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/10",
+  "copilot_assignment": {
+    "status": "ASSIGNED",
+    "method": "GRAPHQL",
+    "mutation": "addAssigneesToAssignable",
+    "issue_node_id": "I_kwDOTNfGKM8AAAABPmTesg",
+    "repository_node_id": "R_kgDOTNfGKA",
+    "actor_node_id": "BOT_kgDOC9w8XQ",
+    "agent_assignment_input": {
+      "targetRepositoryId": "R_kgDOTNfGKA",
+      "baseRef": "master",
+      "customInstructions": "Napraw wylacznie kanoniczny regresyjny blad BUG-0004 na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.",
+      "model": "GPT-5.4 mini"
+    },
+    "assignee_ids": [
+      "BOT_kgDOC9w8XQ"
+    ],
+    "assignee_id_field": "assigneeIds",
+    "assignees": [
+      "Copilot",
+      "rafalbragan"
+    ],
+    "assignee_node_ids": [
+      "BOT_kgDOC9w8XQ",
+      "U_kgDOEd8_5w"
+    ],
+    "verified_assignees": [
+      "Copilot",
+      "rafalbragan"
+    ],
+    "verified_assignee_node_ids": [
+      "BOT_kgDOC9w8XQ",
+      "U_kgDOEd8_5w"
+    ],
+    "response": {
+      "data": {
+        "addAssigneesToAssignable": {
+          "assignable": {
+            "number": 10,
+            "assignees": {
+              "nodes": [
+                {
+                  "login": "Copilot",
+                  "id": "BOT_kgDOC9w8XQ"
+                },
+                {
+                  "login": "rafalbragan",
+                  "id": "U_kgDOEd8_5w"
+                }
+              ]
+            }
+          }
+        }
+      }
+    }
+  },
+  "branch": null,
+  "pull_request_number": null,
+  "pull_request_url": null,
+  "status": "AGENT_ASSIGNED",
+  "created_at": "2026-09-03T21:42:50Z",
+  "attempt_count": 0,
+  "last_ci_result": "UNKNOWN",
+  "validation_state": "PENDING",
+  "acceptance_test_ids": [
+    "TEST-BUILD-COMPILE-DEBUG-KOTLIN",
+    "TEST-MONITORING-SCREEN-COMPOSE-SMOKE",
+    "TEST-REDESIGNED-GLUCOSE-CARD-TREND-PROJECTION",
+    "TEST-CI-FAST-SUITE-REGRESSION"
+  ],
+  "ci_failures": [],
+  "updated_at": "2026-09-03T21:42:50Z"
+}
