@@ -7,8 +7,10 @@
   "source_issue_url": "https://github.com/rafalbragan/-LibreDisplay/actions/runs/33696123982",
   "related_requirement_ids": [],
   "related_test_ids": [
+    "DashboardUiLogicTest.kt::formatTrendRatePerMinute_roundsToOneDecimalWithSign",
     "DashboardUiLogicTest.kt::formatTrendRatePerMinute_roundsToOneDecimalWithSign (istnieje, obecnie nie kompiluje się z powodu brakującej implementacji)",
     "DashboardUiLogicTest.kt::formatTrendRatePerMinute_roundsToOneDecimalWithSign — istnieje, obecnie nie kompiluje się z powodu brakującej implementacji formatTrendRatePerMinute w DashboardUiLogic.kt",
+    "DashboardUiLogicTest.kt::trendWindowSnapshot_returnsNullForZeroMinuteSpan",
     "DashboardUiLogicTest.kt::trendWindowSnapshot_returnsNullForZeroMinuteSpan (istnieje, powiązany test logiki trendu)",
     "DashboardUiLogicTest.kt::trendWindowSnapshot_returnsNullForZeroMinuteSpan — istnieje, powiązany test logiki trendu, weryfikuje osobną, już zaimplementowaną funkcję (nie jest bezpośrednio dotknięty, ale w tym samym pliku/module co brakujące funkcje)",
     "Pobranie i analiza artefaktu 'gradle-reports'/'gradle-debug.log' z run_id=33696123982 jako warunek wstępny dalszej klasyfikacji",
@@ -17,10 +19,13 @@
     "TEST-CI-SMOKE-001: automatyczny test 'gradlew assembleDebug' jako gate w PR (już częściowo istnieje w workflow)",
     "TEST-CI-SMOKE-001: gradlew assembleDebug jako gate w PR (już częściowo istnieje w workflow) — musi zostać rozszerzony, by blokował merge do master przy błędzie kompilacji",
     "TEST-CI-SMOKE-001: gradlew assembleDebug jako gate w PR — musi zostać rozszerzony/wyegzekwowany jako wymagany status check blokujący merge do master, ponieważ ten regres przeszedł niezauważony przez co najmniej dwa commity na master",
+    "TEST-CI-SMOKE-001: gradlew assembleDebug jako wymagany (required) status check blokujący merge do master",
     "TEST-TREND-PROJECTION-001 (do utworzenia): test jednostkowy dla nowej implementacji buildTrendProjection/TrendProjectionThresholds w DashboardUiLogic.kt lub nowym pliku, potwierdzający zgodność z oczekiwaniami DashboardUiLogicTest.kt",
     "TEST-TREND-PROJECTION-001 (do utworzenia): test jednostkowy dla nowej implementacji buildTrendProjection/TrendProjectionThresholds/formatTrendProjectionMessage w DashboardUiLogic.kt, potwierdzający zgodność z sygnaturami już używanymi w RedesignedGlucoseCard.kt (linie 61-70)",
+    "TEST-TREND-PROJECTION-001: test jednostkowy dla buildTrendProjection/TrendProjectionThresholds w DashboardUiLogic.kt, potwierdzający zgodność sygnatur z użyciem w RedesignedGlucoseCard.kt",
     "TEST-UI-MONITORING-001 (do utworzenia): test Compose/parametryczny potwierdzający, że wszystkie wywołania RedesignedCurrentGlucoseCard w MonitoringScreen.kt (linie 307, 375) przekazują poprawną wartość trendWindowMinutes = state.settings.trendWindowMinutes",
-    "TEST-UI-MONITORING-001 (do utworzenia): test Compose/parametryczny potwierdzający, że wszystkie wywołania RedesignedCurrentGlucoseCard w MonitoringScreen.kt przekazują poprawną wartość trendWindowMinutes ze state.settings"
+    "TEST-UI-MONITORING-001 (do utworzenia): test Compose/parametryczny potwierdzający, że wszystkie wywołania RedesignedCurrentGlucoseCard w MonitoringScreen.kt przekazują poprawną wartość trendWindowMinutes ze state.settings",
+    "TEST-UI-MONITORING-001: test Compose potwierdzający, że każde wywołanie RedesignedCurrentGlucoseCard w MonitoringScreen.kt (portrait i landscape) przekazuje trendWindowMinutes = state.settings.trendWindowMinutes"
   ],
   "observed_behavior": "Deterministyczny workflow Android APK Build na gałęzi master kończy się błędem: Build debug APK: Fail if debug APK was not created",
   "expected_behavior": "Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
@@ -45,7 +50,7 @@
   ],
   "dedup_signature": "deterministyczny workflow android apk build na gałęzi master kończy się błędem: build debug apk: fail if debug apk was not created||gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację ci.||uruchom deterministyczny workflow android apk build na gałęzi master i potwierdź powtarzalny błąd.||",
   "created_at": "2026-09-02T23:43:41Z",
-  "updated_at": "2026-09-03T13:21:16Z",
+  "updated_at": "2026-09-03T14:21:45Z",
   "additional_context": "Workflow: Android APK Build\nRun ID: 33696123982\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33696123982\nCommit: 1ccd21b17c5b2f90db1097e3702a1fc7d063d5bb\nBranch: master\nFailed job: Build debug APK\nFailed step: Build debug APK: Fail if debug APK was not created\nFailure excerpt: Build debug APK: Fail if debug APK was not created",
   "triage_reasoning": "Dowód źródłowy zawiera wyłącznie nazwę kroku bramkującego CI ('Fail if debug APK was not created'), bez faktycznej treści logu Gradle (brak 'FAILURE:', 'e:', stack trace, nazwy zadania które faktycznie padło). Nie da się jednoznacznie odróżnić: (a) rzeczywistej regresji w kodzie produkcyjnym, (b) problemu infrastrukturalnego CI (SDK/toolchain/sieć), (c) celowej zmiany zachowania niewymagającej naprawy. Statyczny przegląd app/build.gradle.kts ujawnił nietypowy blok 'tasks.withType<AbstractCompile>().configureEach { exclude(\"**/data/api/v2/**\", \"**/data/api/v3/**\") }', wykluczający z kompilacji cały nieużywany kod migracji V2/V3 API (potwierdzono grepem: żadne inne pliki main nie referencują klas z tych pakietów) — to obszar ryzyka, ale nie ma dowodu, że jest przyczyną źródłową tego konkretnego niepowodzenia. related_requirement_ids nie zawiera obecnie żadnych prawidłowych kanonicznych REQ, a wpisy w related_test_ids nie stanowią jeszcze wystarczającego dowodu źródłowego do potwierdzenia regresji względem zaakceptowanego zachowania. Reprodukowalność jest deklarowana ('deterministic_work_executed: true'), co wskazuje na stały, powtarzalny błąd, a nie flaky test — to podnosi prawdopodobieństwo realnej regresji, ale bez treści logu nie można tego potwierdzić z wymaganą pewnością dla CONFIRMED_DEFECT.",
   "triage_traceability": {
