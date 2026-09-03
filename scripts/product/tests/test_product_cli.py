@@ -1093,6 +1093,30 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertFalse(success["auto_merge"])
         self.assertIn("Wymagany przegląd człowieka przed scaleniem.", success["comment_markdown"])
 
+    def test_failed_ci_result_can_never_transition_to_merged(self):
+        event = self.make_issue_event(305, "Problem", "Brak auto merge po fail CI")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(305, self.ai_payload(305, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+        handoff = self.run_handoff(decision_event)
+        self.run_pr_track({
+            "action": "opened",
+            "pull_request": {
+                "number": 95,
+                "html_url": "https://github.com/example/repo/pull/95",
+                "title": f"{handoff['req_id']} — implementacja",
+                "body": f"Closes #{handoff['implementation_issue_number']}\n{handoff['req_id']}",
+                "state": "open",
+                "merged": False,
+                "head": {"ref": "copilot/fix-95"},
+            }
+        })
+        failure = self.run_ci_result(95, "failure", "3005fail")
+        self.assertNotEqual("MERGED", failure["status"])
+        implementation = self.implementation_record(handoff["implementation_id"])
+        self.assertNotEqual("MERGED", implementation["status"])
+
     def test_polish_presentation_does_not_change_internal_enums(self):
         review = self.ai_payload(223, "PRODUCT_PROBLEM", "ACCEPT")
         comment = self.cli.build_issue_review_comment(review)
@@ -1611,6 +1635,40 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product/implementation", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_pr_tracking_workflows_checkout_base_ref_before_pushing(self):
+        bug_text = BUG_WORKFLOW_PATH.read_text(encoding="utf-8")
+        inbox_text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn('track-work-pr:', bug_text)
+        self.assertIn('ref: ${{ github.event.pull_request.base.ref }}', bug_text)
+        self.assertIn('git push origin "HEAD:${{ github.event.pull_request.base.ref }}"', bug_text)
+        self.assertIn('implementation-pr-tracking:', inbox_text)
+        self.assertIn('ref: ${{ github.event.pull_request.base.ref }}', inbox_text)
+        self.assertIn('git push origin "HEAD:$BRANCH_NAME"', inbox_text)
+        self.assertIn('BRANCH_NAME: ${{ github.event.pull_request.base.ref }}', inbox_text)
+
+    def test_runtime_automation_contains_no_merge_or_automerge_operations(self):
+        runtime_files = [
+            BUG_WORKFLOW_PATH,
+            WORKFLOW_PATH,
+            WORKSPACE_ROOT / ".github" / "workflows" / "product-quality.yml",
+            WORKSPACE_ROOT / "scripts" / "product" / "automation_cli.py",
+            WORKSPACE_ROOT / "scripts" / "product" / "product_cli.py",
+        ]
+        forbidden = [
+            "gh pr merge",
+            "enablePullRequestAutoMerge",
+            "mergePullRequest",
+            "pulls.merge",
+            "createReview({",
+            "event: \"APPROVE\"",
+            "event:'APPROVE'",
+            "auto-merge",
+        ]
+        for path in runtime_files:
+            text = path.read_text(encoding="utf-8")
+            for marker in forbidden:
+                self.assertNotIn(marker, text, f"forbidden merge capability marker {marker!r} found in {path}")
 
     def test_product_cli_uses_graphql_assignment_mutations(self):
         text = CLI_PATH.read_text(encoding="utf-8")
