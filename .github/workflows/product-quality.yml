@@ -8,12 +8,14 @@ on:
     paths:
       - "product/**"
       - "scripts/product/**"
-      - ".github/workflows/product-quality.yml"
+      - ".github/workflows/**"
+      - ".github/ISSUE_TEMPLATE/**"
   pull_request:
     paths:
       - "product/**"
       - "scripts/product/**"
-      - ".github/workflows/product-quality.yml"
+      - ".github/workflows/**"
+      - ".github/ISSUE_TEMPLATE/**"
   workflow_dispatch:
 
 permissions:
@@ -35,6 +37,9 @@ jobs:
 
       - name: Install Product CLI dependencies
         run: python -m pip install --disable-pip-version-check pyyaml
+
+      - name: Run actionlint
+        uses: rhysd/actionlint@v1
 
       - name: Run Product CLI self-tests
         run: python -m unittest discover -s scripts/product/tests -p "test_*.py"

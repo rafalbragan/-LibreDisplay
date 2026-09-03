@@ -20,9 +20,9 @@ jobs:
     if: github.event_name == 'issues'
     runs-on: ubuntu-latest
     permissions:
-      copilot-requests: write
       contents: write
       issues: write
+      models: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -224,7 +224,6 @@ jobs:
     if: github.event_name == 'issue_comment' && contains(join(github.event.issue.labels.*.name, ','), 'product-inbox')
     runs-on: ubuntu-latest
     permissions:
-      copilot-requests: write
       contents: write
       issues: write
     steps:
@@ -255,6 +254,8 @@ jobs:
 
       - name: Sync implementation handoff after /accept
         if: github.event.comment.body == '/accept'
+        id: handoff
+        continue-on-error: true
         env:
           COPILOT_AGENT_LOGIN: copilot-swe-agent[bot]
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
@@ -269,6 +270,41 @@ jobs:
             --copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN" \
             --base-branch master \
             --output-file handoff-result.json
+
+      - name: Report implementation handoff result
+        if: github.event.comment.body == '/accept'
+        id: handoff_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('handoff-result.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          result = str(data.get('handoff_result') or ('HANDOFF_BLOCKED' if data.get('blocked') else 'HANDOFF_FAILED'))
+          issue_number = str(data.get('implementation_issue_number') or '')
+          issue_url = str(data.get('implementation_issue_url') or '')
+          assigned = str(bool(data.get('copilot_real_assignee_confirmed'))).lower()
+          failure_reason = str(data.get('failure_reason') or data.get('reason') or '')[:280]
+
+          print('IMPLEMENTATION_HANDOFF_RESULT:')
+          print(f"HANDOFF_RESULT: {result}")
+          print(f"IMPLEMENTATION_ISSUE_NUMBER: {issue_number}")
+          print(f"IMPLEMENTATION_ISSUE_URL: {issue_url}")
+          print(f"COPILOT_AGENT_ASSIGNED: {assigned}")
+          if failure_reason:
+              print(f"HANDOFF_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"handoff_result={result}",
+              f"issue_number={issue_number}",
+              f"issue_url={issue_url}",
+              f"copilot_assigned={assigned}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
 
       - name: Upsert handoff assignment status comment
         if: github.event.comment.body == '/accept'
@@ -324,6 +360,19 @@ jobs:
             git pull --rebase origin "$BRANCH_NAME"
             git push origin "HEAD:$BRANCH_NAME"
           fi
+
+      - name: Fail workflow if implementation handoff failed
+        if: github.event.comment.body == '/accept' && steps.handoff_summary.outputs.handoff_result == 'HANDOFF_FAILED'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('handoff-result.json').read_text(encoding='utf-8')) if Path('handoff-result.json').exists() else {}
+          reason = str(data.get('failure_reason') or data.get('reason') or 'Implementation handoff failed.')[:280]
+          print(f'HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
 
       - name: Upsert decision result comment
         uses: actions/github-script@v7
@@ -391,7 +440,7 @@ jobs:
         run: |
           python scripts/product/product_cli.py track-implementation-pr \
             --event-file github-event.json \
-            --output-file pr-track.json || true
+            --output-file pr-track.json
 
       - name: Validate Product Foundation
         run: |
@@ -448,10 +497,9 @@ jobs:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Android CI' && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      copilot-requests: write
+      actions: read
       contents: write
       issues: write
-      actions: read
     concurrency:
       group: product-implementation-ci-${{ github.event.workflow_run.id }}
       cancel-in-progress: false
@@ -522,10 +570,40 @@ jobs:
 
       - name: Record CI result and bounded repair
         if: steps.ci_meta.outputs.has_pr == 'true'
+        id: ci_result
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}
         run: |
-          python -c "import json, subprocess; from pathlib import Path; meta=json.loads(Path('ci-meta.json').read_text(encoding='utf-8')); cmd=['python','scripts/product/product_cli.py','record-ci-result','--pr-number',str(meta['pr_number']),'--workflow-name',str(meta.get('workflow_name','Android CI')),'--conclusion',str(meta.get('conclusion','unknown')),'--run-id',str(meta.get('run_id','unknown')),'--run-url',str(meta.get('run_url','')),'--failing-step',str(meta.get('failing_step','')),'--failing-tests',str(meta.get('failing_tests','')),'--log-excerpt',str(meta.get('log_excerpt','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+          python -c "import json, subprocess; from pathlib import Path; meta=json.loads(Path('ci-meta.json').read_text(encoding='utf-8')); cmd=['python','scripts/product/product_cli.py','record-ci-result','--pr-number',str(meta['pr_number']),'--workflow-name',str(meta.get('workflow_name','Android CI')),'--conclusion',str(meta.get('conclusion','unknown')),'--run-id',str(meta.get('run_id','unknown')),'--run-url',str(meta.get('run_url','')),'--failing-step',str(meta.get('failing_step','')),'--failing-tests',str(meta.get('failing_tests','')),'--log-excerpt',str(meta.get('log_excerpt','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--copilot-assignment-token','${{ secrets.COPILOT_AGENT_USER_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+
+      - name: Report CI repair handoff result
+        if: steps.ci_meta.outputs.has_pr == 'true'
+        id: ci_result_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('ci-result.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          failure_reason = str(data.get('failure_reason') or '')[:280]
+          failed = bool(failure_reason and data.get('status') == 'REPAIRING' and not data.get('repair_assignment_verified'))
+          print('CI_REPAIR_RESULT:')
+          print(f"STATUS: {data.get('status', '')}")
+          print(f"REPAIR_ATTEMPTED: {str(bool(data.get('repair_attempted'))).lower()}")
+          print(f"REPAIR_ASSIGNMENT_VERIFIED: {str(bool(data.get('repair_assignment_verified'))).lower()}")
+          if failure_reason:
+              print(f"REPAIR_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"repair_handoff_failed={'true' if failed else 'false'}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
 
       - name: Product validation
         if: steps.ci_meta.outputs.has_pr == 'true'
@@ -614,4 +692,17 @@ jobs:
             } else {
               await github.rest.issues.createComment({ owner, repo, issue_number, body });
             }
+
+      - name: Fail workflow if CI repair handoff failed
+        if: steps.ci_meta.outputs.has_pr == 'true' && steps.ci_result_summary.outputs.repair_handoff_failed == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('ci-result.json').read_text(encoding='utf-8')) if Path('ci-result.json').exists() else {}
+          reason = str(data.get('failure_reason') or 'CI repair handoff failed.')[:280]
+          print(f'CI_REPAIR_HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
 

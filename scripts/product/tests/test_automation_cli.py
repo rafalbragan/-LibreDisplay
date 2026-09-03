@@ -28,6 +28,7 @@ class FakeGitHubClient:
 	labels = []
 	label_events = []
 	existing_labels = set()
+	existing_bugfix_issues = {}
 	next_issue_number = 700
 	issue_assignees = {}
 	assign_should_fail = False
@@ -70,6 +71,16 @@ class FakeGitHubClient:
 		self.__class__.created_issues.append(response)
 		self.__class__.issue_assignees.setdefault(issue_number, [])
 		return response
+
+	def find_existing_bugfix_issue(self, bug_id: str, expected_title: str) -> dict | None:
+		existing = self.__class__.existing_bugfix_issues.get(bug_id)
+		if existing is not None:
+			return dict(existing)
+		for issue in self.__class__.created_issues:
+			labels = set(issue.get("labels") or [])
+			if bug_id in labels and "bugfix" in labels and str(issue.get("title", "")).startswith(f"[Naprawa] {bug_id}"):
+				return dict(issue)
+		return None
 
 	def _copilot_assignee_confirmed(self, issue_number: int):
 		logins = list(self.__class__.issue_assignees.get(issue_number, []))
@@ -148,6 +159,7 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.labels = []
 		FakeGitHubClient.label_events = []
 		FakeGitHubClient.existing_labels = set()
+		FakeGitHubClient.existing_bugfix_issues = {}
 		FakeGitHubClient.next_issue_number = 700
 		FakeGitHubClient.issue_assignees = {}
 		FakeGitHubClient.assign_should_fail = False
@@ -758,6 +770,35 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(["copilot-user-token"], FakeGitHubClient.assignment_tokens)
 		self.assertTrue(summary["copilot_real_assignee_confirmed"])
 
+	def test_bug_handoff_reuses_existing_remote_fix_issue_without_creating_duplicate(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(423, "[Blad LibreCare] Reuse remote", "ISO", "Naturalny czas", "1. Otworz dashboard")
+		)
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Regresja potwierdzona.",
+				"severity": "MEDIUM",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0015"],
+			},
+		)
+		FakeGitHubClient.existing_bugfix_issues[bug_id] = {
+			"number": 744,
+			"html_url": "https://example/issues/744",
+			"title": f"[Naprawa] {bug_id} — Reuse remote",
+			"labels": ["bugfix", bug_id],
+		}
+		out = self.root / "bug-handoff-remote-reuse.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "github-token", "copilot-user-token", output_file=str(out)))
+		summary = self.read_json(out)
+		self.assertEqual("HANDOFF_REUSED", summary["handoff_result"])
+		self.assertEqual(744, summary["implementation_issue_number"])
+		self.assertEqual([], FakeGitHubClient.created_issues)
+
 	def test_bug_handoff_cli_parses_repo_name_without_hyphen(self):
 		rc, captured = self.parse_bug_handoff_args("LibreDisplay")
 		self.assertEqual(0, rc)
@@ -828,12 +869,15 @@ class AutomationCliTest(unittest.TestCase):
 				repo_owner="example",
 				repo_name="repo",
 				github_token="token",
+				copilot_assignment_token="user-token",
 				output_file=str(out),
 			),
 		)
 		first = self.read_json(out)
 		self.assertEqual("REPAIRING", first["status"])
 		self.assertTrue(first["repair_attempted"])
+		self.assertTrue(first["repair_assignment_verified"])
+		self.assertEqual(["user-token", "user-token"], FakeGitHubClient.assignment_tokens)
 
 		self.assertEqual(
 			0,
@@ -841,6 +885,37 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		duplicate = self.read_json(out)
 		self.assertEqual("DEDUPLICATED", duplicate["action"])
+
+	def test_bug_pr_ci_failure_without_user_token_fails_with_sanitized_reason(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(424, "[Blad LibreCare] Missing repair token", "Regresja", "Naprawa", "1. Otworz dashboard")
+		)
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Regresja potwierdzona.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0016"],
+			},
+		)
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
+		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
+		bug = self.read_json(bug_path)
+		bug["pull_request"] = {"number": 81, "url": "https://example/pr/81", "branch": "copilot/bug"}
+		self.write_json(bug_path, bug)
+		self.cli.ensure_bug_impl(bug)
+
+		out = self.root / "ci-missing-token.json"
+		self.assertEqual(1, self.cli.cmd_record_ci_result(81, "Android CI", "failure", "run-missing", "https://run/missing", repo_owner="example", repo_name="repo", output_file=str(out)))
+		payload = self.read_json(out)
+		self.assertEqual("REPAIRING", payload["status"])
+		self.assertFalse(payload["repair_attempted"])
+		self.assertFalse(payload["repair_assignment_verified"])
+		self.assertIn("COPILOT_AGENT_USER_TOKEN", payload["failure_reason"])
 
 	def test_android_ci_failure_on_master_routes_to_bug_intake(self):
 		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2001")
@@ -1408,11 +1483,11 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.cli.ensure_bug_impl(bug)
 
 		out = self.root / "ci-limit.json"
-		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-a", "https://run/a", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-a", "https://run/a", repo_owner="example", repo_name="repo", copilot_assignment_token="user-token", output_file=str(out)))
 		self.assertEqual("REPAIRING", self.read_json(out)["status"])
-		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-b", "https://run/b", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-b", "https://run/b", repo_owner="example", repo_name="repo", copilot_assignment_token="user-token", output_file=str(out)))
 		self.assertEqual("REPAIRING", self.read_json(out)["status"])
-		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-c", "https://run/c", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_record_ci_result(78, "Android CI", "failure", "run-c", "https://run/c", repo_owner="example", repo_name="repo", copilot_assignment_token="user-token", output_file=str(out)))
 		third = self.read_json(out)
 		self.assertEqual("FAILED", third["status"])
 		self.assertFalse(third["repair_attempted"])
@@ -1443,7 +1518,7 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.cli.ensure_bug_impl(bug)
 
 		out = self.root / "ci-dedup.json"
-		self.assertEqual(0, self.cli.cmd_record_ci_result(79, "Android CI", "failure", "run-x", "https://run/x", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_record_ci_result(79, "Android CI", "failure", "run-x", "https://run/x", repo_owner="example", repo_name="repo", copilot_assignment_token="user-token", output_file=str(out)))
 		self.assertEqual(0, self.cli.cmd_record_ci_result(79, "Android CI", "FAILURE", "run-x", "https://run/x", output_file=str(out)))
 		dup = self.read_json(out)
 		self.assertEqual("DEDUPLICATED", dup["action"])

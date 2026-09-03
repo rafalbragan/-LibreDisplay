@@ -84,6 +84,7 @@ jobs:
         env:
           RESULTS_PREFIX: ${{ github.event.inputs.results_prefix }}
         run: |
+          set -o pipefail
           echo "::group::Downloading from GCS"
           echo "GCS prefix: ${RESULTS_PREFIX}"
 
@@ -93,7 +94,8 @@ jobs:
           gcloud storage cp --recursive \
             "${PREFIX}**" \
             app-testing-results/raw/ \
-            2>&1 | tee /tmp/gcs-download.log || true
+            2>&1 | tee /tmp/gcs-download.log
+          DOWNLOAD_EXIT=${PIPESTATUS[0]}
 
           echo "::endgroup::"
 
@@ -105,6 +107,11 @@ jobs:
             echo "::error::No files downloaded from GCS prefix: ${PREFIX}"
             echo "::error::Verify the prefix is correct and that the service account has storage.objects.list and storage.objects.get on this bucket."
             exit 1
+          fi
+
+          if [ "${DOWNLOAD_EXIT}" -ne 0 ]; then
+            echo "::error::gcloud storage cp failed with exit code ${DOWNLOAD_EXIT}. Partial downloads are not treated as success."
+            exit "${DOWNLOAD_EXIT}"
           fi
 
           echo "Downloaded ${FILE_COUNT} file(s) successfully."

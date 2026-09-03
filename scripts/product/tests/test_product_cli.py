@@ -18,6 +18,7 @@ ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "product-inbox
 BUG_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-implementation-automation.yml"
 BUG_ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "librecare-bug.yml"
 ANDROID_CI_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml"
+PRODUCT_QUALITY_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-quality.yml"
 
 
 def load_cli_module():
@@ -249,7 +250,7 @@ class ProductCliInboxTest(unittest.TestCase):
             code = self.cli.cmd_inbox_handle_decision(str(event_file))
         return code, stdout.getvalue()
 
-    def run_handoff(self, event: dict, output_name: str = "handoff.json", copilot_assignment_token: str = "copilot-user-token") -> dict:
+    def run_handoff(self, event: dict, output_name: str = "handoff.json", copilot_assignment_token: str = "copilot-user-token", expected_code: int = 0) -> dict:
         event_file = self.root / "comment-event.json"
         output_file = self.root / output_name
         self.write_json(event_file, event)
@@ -262,7 +263,7 @@ class ProductCliInboxTest(unittest.TestCase):
                 copilot_assignment_token=copilot_assignment_token,
                 output_file=str(output_file),
             )
-        self.assertEqual(0, result)
+        self.assertEqual(expected_code, result)
         return json.loads(output_file.read_text(encoding="utf-8"))
 
     def run_pr_track(self, payload: dict) -> dict:
@@ -393,6 +394,7 @@ class ProductCliInboxTest(unittest.TestCase):
                 repo_owner="example",
                 repo_name="repo",
                 github_token="token",
+                copilot_assignment_token="copilot-user-token",
                 output_file=str(out),
             )
         self.assertEqual(0, code)
@@ -412,6 +414,10 @@ class ProductCliInboxTest(unittest.TestCase):
                 failing_step="testDebugUnitTest" if conclusion != "success" else "",
                 failing_tests="RelativeTimeFormatterTest.futureClockSkew" if conclusion != "success" else "",
                 log_excerpt="AssertionError: expected ..." if conclusion != "success" else "",
+                repo_owner="example",
+                repo_name="repo",
+                github_token="token",
+                copilot_assignment_token="copilot-user-token",
                 output_file=str(out),
             )
         self.assertEqual(0, code)
@@ -588,7 +594,7 @@ class ProductCliInboxTest(unittest.TestCase):
 
         self.fake_client.issue_assignees[7] = []
         self.fake_client.assign_should_fail = True
-        summary = self.run_handoff(decision_event, output_name="handoff-unassigned.json")
+        summary = self.run_handoff(decision_event, output_name="handoff-unassigned.json", expected_code=1)
 
         self.assertEqual("QUEUED", summary["status"])
         self.assertFalse(summary["copilot_real_assignee_confirmed"])
@@ -605,12 +611,12 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual(0, self.run_decision(decision_event))
 
         self.fake_client.assign_should_fail = True
-        first = self.run_handoff(decision_event, output_name="handoff-fail-1.json")
+        first = self.run_handoff(decision_event, output_name="handoff-fail-1.json", expected_code=1)
         self.assertEqual("QUEUED", first["status"])
         issue_number = first["implementation_issue_number"]
         self.assertEqual(1, len(self.fake_client.created_issues))
 
-        second = self.run_handoff(decision_event, output_name="handoff-fail-2.json")
+        second = self.run_handoff(decision_event, output_name="handoff-fail-2.json", expected_code=1)
         self.assertEqual(issue_number, second["implementation_issue_number"])
         self.assertEqual(1, len(self.fake_client.created_issues))
 
@@ -647,11 +653,39 @@ class ProductCliInboxTest(unittest.TestCase):
         decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
         self.assertEqual(0, self.run_decision(decision_event))
 
-        summary = self.run_handoff(decision_event, output_name="handoff-missing-user-token.json", copilot_assignment_token="")
+        summary = self.run_handoff(decision_event, output_name="handoff-missing-user-token.json", copilot_assignment_token="", expected_code=1)
         self.assertEqual("QUEUED", summary["status"])
         self.assertFalse(summary["copilot_real_assignee_confirmed"])
+        self.assertEqual("HANDOFF_FAILED", summary["handoff_result"])
         self.assertEqual([], self.fake_client.assignment_tokens)
         self.assertIn("COPILOT_AGENT_USER_TOKEN", summary.get("comment_markdown", ""))
+
+    def test_ci_repair_uses_dedicated_user_token(self):
+        event = self.make_issue_event(248, "Problem", "Retry after CI failure")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(248, self.ai_payload(248, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+
+        handoff = self.run_handoff(decision_event, output_name="handoff-ci-token.json", copilot_assignment_token="copilot-user-token")
+        self.run_pr_track({
+            "action": "opened",
+            "pull_request": {
+                "number": 90,
+                "html_url": "https://github.com/example/repo/pull/90",
+                "title": f"{handoff['req_id']} — implementacja",
+                "body": f"Closes #{handoff['implementation_issue_number']}\n{handoff['req_id']}",
+                "state": "open",
+                "merged": False,
+                "head": {"ref": "copilot/fix-90"},
+            },
+        })
+        self.fake_client.assignment_tokens = []
+        summary = self.run_ci_result(90, "failure", "2005")
+        self.assertEqual("REPAIRING", summary["status"])
+        self.assertTrue(summary["repair_attempted"])
+        self.assertTrue(summary["repair_assignment_verified"])
+        self.assertEqual(["copilot-user-token"], self.fake_client.assignment_tokens)
 
     def test_existing_implementation_record_issue_is_reused_without_search_or_create(self):
         event = self.make_issue_event(243, "Problem", "Reuse issue from IMP record")
@@ -1212,6 +1246,45 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         self.assertNotEqual("auto", self.cli.COPILOT_AGENT_MODEL.strip().lower())
 
 
+class ProductCliLabelIdempotencyTest(unittest.TestCase):
+    def setUp(self):
+        self.cli = load_cli_module()
+
+    def test_missing_requirement_label_is_created(self):
+        client = self.cli.GitHubIssueAutomationClient("rafalbragan", "-LibreDisplay", "token")
+        calls = []
+
+        def fake_request(method: str, path: str, payload=None, extra_headers=None):
+            calls.append((method, path))
+            if method == "GET":
+                raise RuntimeError('GitHub API GET failed: HTTP 404: {"message": "Not Found"}')
+            if method == "POST":
+                return {"name": "REQ-1234"}
+            raise AssertionError(method)
+
+        client._request = fake_request
+        self.assertEqual("CREATED", client.ensure_label("REQ-1234", "0e8a16", "Śledzenie wymagania REQ-1234"))
+        self.assertEqual([("GET", "/repos/rafalbragan/-LibreDisplay/labels/REQ-1234"), ("POST", "/repos/rafalbragan/-LibreDisplay/labels")], calls)
+
+    def test_concurrent_requirement_label_creation_is_reused(self):
+        client = self.cli.GitHubIssueAutomationClient("rafalbragan", "-LibreDisplay", "token")
+        calls = []
+
+        def fake_request(method: str, path: str, payload=None, extra_headers=None):
+            calls.append((method, path))
+            if method == "GET" and len(calls) == 1:
+                raise RuntimeError('GitHub API GET failed: HTTP 404: {"message": "Not Found"}')
+            if method == "POST":
+                raise RuntimeError('GitHub API POST failed: HTTP 422: {"message": "already exists"}')
+            if method == "GET":
+                return {"name": "REQ-1234"}
+            raise AssertionError(method)
+
+        client._request = fake_request
+        self.assertEqual("REUSED", client.ensure_label("REQ-1234", "0e8a16", "Śledzenie wymagania REQ-1234"))
+        self.assertEqual(["GET", "POST", "GET"], [method for method, _ in calls])
+
+
 class ProductInboxWorkflowStaticTest(unittest.TestCase):
     def test_android_ci_fast_suite_captures_gradle_log_and_uploads_it(self):
         text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -1227,7 +1300,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_workflow_has_permissions_and_copilot_install(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
-        self.assertIn("copilot-requests: write", text)
+        self.assertIn("models: read", text)
         self.assertIn("contents: write", text)
         self.assertIn("issues: write", text)
         self.assertIn("npm install -g @github/copilot", text)
@@ -1260,9 +1333,38 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product: apply inbox decision issue", text)
 
     def test_workflows_are_valid_yaml(self):
-        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH]:
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH]:
             loaded = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
             self.assertIsInstance(loaded, dict)
+
+    def test_workflow_permission_keys_are_supported(self):
+        allowed = {
+            "actions",
+            "artifact-metadata",
+            "attestations",
+            "checks",
+            "contents",
+            "deployments",
+            "discussions",
+            "id-token",
+            "issues",
+            "models",
+            "packages",
+            "pages",
+            "pull-requests",
+            "repository-projects",
+            "security-events",
+            "statuses",
+            "read-all",
+            "write-all",
+        }
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH]:
+            data = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+            permissions = data.get("permissions") or {}
+            self.assertTrue(set(permissions).issubset(allowed), f"Unsupported top-level permissions in {workflow_path}: {set(permissions) - allowed}")
+            for job_name, job in (data.get("jobs") or {}).items():
+                job_permissions = (job or {}).get("permissions") or {}
+                self.assertTrue(set(job_permissions).issubset(allowed), f"Unsupported job permissions in {workflow_path}:{job_name}: {set(job_permissions) - allowed}")
 
     def test_issue_form_has_product_inbox_prefix(self):
         text = ISSUE_FORM_PATH.read_text(encoding="utf-8")
@@ -1347,6 +1449,9 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_bug_automation_workflow_has_bounded_repair(self):
         text = BUG_WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("workflow_dispatch:", text)
+        self.assertIn("resume-confirmed-bug-handoff:", text)
+        self.assertIn("bug_id:", text)
         self.assertIn("workflow_run", text)
         self.assertIn("record-ci-result", text)
         self.assertIn("bug-sync-fix-handoff", text)
@@ -1373,10 +1478,17 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("COPILOT_AGENT_LOGIN = \"copilot-swe-agent[bot]\"", automation_cli_text)
         self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS = {\"Android CI\", \"Android APK Build\"}", automation_cli_text)
         self.assertIn("group: product-foundation-state", text)
-        self.assertIn("copilot-requests: write", text)
+        self.assertIn("models: read", text)
+        self.assertIn("continue-on-error: true", text)
         self.assertNotIn("ci-regression-evidence.json || true", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_product_quality_workflow_runs_actionlint_for_workflow_changes(self):
+        text = PRODUCT_QUALITY_WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn('".github/workflows/**"', text)
+        self.assertIn('".github/ISSUE_TEMPLATE/**"', text)
+        self.assertIn("uses: rhysd/actionlint@v1", text)
 
     def test_android_ci_workflow_uses_current_fast_suite_artifact_name(self):
         text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")

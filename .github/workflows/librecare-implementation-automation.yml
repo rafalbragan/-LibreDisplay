@@ -5,6 +5,12 @@ on:
     types: [opened, edited, reopened]
   pull_request:
     types: [opened, reopened, synchronize, edited, closed]
+  workflow_dispatch:
+    inputs:
+      bug_id:
+        description: "Canonical confirmed bug id to resume"
+        required: true
+        type: string
   workflow_run:
     workflows: ["Android CI", "Android APK Build"]
     types: [completed]
@@ -12,7 +18,6 @@ on:
 permissions:
   actions: read
   contents: write
-  copilot-requests: write
   issues: write
 
 concurrency:
@@ -36,9 +41,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     permissions:
-      copilot-requests: write
       contents: write
       issues: write
+      models: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -145,6 +150,8 @@ jobs:
 
       - name: Attempt bug fix handoff for confirmed defects
         if: steps.triage.outputs.allowed == 'true'
+        id: bug_handoff
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}
@@ -156,7 +163,46 @@ jobs:
             --github-token "$GITHUB_TOKEN" \
             --copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN" \
             --base-branch master \
-            --output-file bug-handoff.json || true
+            --output-file bug-handoff.json
+
+      - name: Report bug fix handoff result
+        if: steps.triage.outputs.allowed == 'true'
+        id: bug_handoff_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('bug-handoff.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          result = str(data.get('handoff_result') or 'HANDOFF_FAILED')
+          issue_number = str(data.get('implementation_issue_number') or '')
+          issue_url = str(data.get('implementation_issue_url') or '')
+          assigned = str(bool(data.get('copilot_real_assignee_confirmed'))).lower()
+          label_status = data.get('bugfix_label_result') or 'UNKNOWN'
+          failure_reason = str(data.get('failure_reason') or data.get('assignment_error') or '')[:280]
+
+          print('FIX_HANDOFF_RESULT:')
+          print(f"HANDOFF_RESULT: {result}")
+          print(f"FIX_ISSUE_NUMBER: {issue_number}")
+          print(f"FIX_ISSUE_URL: {issue_url}")
+          print(f"COPILOT_AGENT_ASSIGNED: {assigned}")
+          print(f"COPILOT_ASSIGNMENT_VERIFIED_ON_GITHUB: {assigned}")
+          print(f"BUGFIX_LABEL_CREATED_OR_REUSED: {label_status in {'CREATED', 'REUSED'}}")
+          if failure_reason:
+              print(f"HANDOFF_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"handoff_result={result}",
+              f"issue_number={issue_number}",
+              f"issue_url={issue_url}",
+              f"copilot_assigned={assigned}",
+              f"label_status={label_status}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
 
       - name: Persist automation records
         run: |
@@ -167,6 +213,134 @@ jobs:
             --commit-message "product: bug intake #${{ github.event.issue.number }}" \
             --validate-product \
             --output-file bug-persist.json
+
+      - name: Fail workflow if confirmed-defect handoff failed
+        if: steps.triage.outputs.allowed == 'true' && steps.bug_handoff_summary.outputs.handoff_result == 'HANDOFF_FAILED'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('bug-handoff.json').read_text(encoding='utf-8')) if Path('bug-handoff.json').exists() else {}
+          reason = str(data.get('failure_reason') or data.get('assignment_error') or 'Handoff failed.')[:280]
+          print(f'HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
+
+  resume-confirmed-bug-handoff:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install pyyaml
+
+      - name: Validate requested bug can resume
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          bug_id = "${{ inputs.bug_id }}".strip()
+          path = Path('product') / 'bugs' / f'{bug_id}.json'
+          if not path.exists():
+              raise SystemExit(f'ERROR: canonical bug {bug_id} does not exist')
+          payload = json.loads(path.read_text(encoding='utf-8'))
+          if str(payload.get('classification') or '') != 'CONFIRMED_DEFECT':
+              raise SystemExit(f'ERROR: bug {bug_id} is not classified as CONFIRMED_DEFECT')
+          if str(payload.get('status') or '') not in {'CONFIRMED_DEFECT', 'QUEUED', 'IN_PROGRESS', 'REPAIRING', 'PR_READY'}:
+              raise SystemExit(f"ERROR: bug {bug_id} is not resumable from status {payload.get('status')}")
+          print(f'BUG_RESUME_OK: {bug_id}')
+          PY
+
+      - name: Attempt manual bug fix handoff resume
+        id: bug_handoff
+        continue-on-error: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}
+        run: |
+          python scripts/product/automation_cli.py bug-sync-fix-handoff \
+            --bug-id "${{ inputs.bug_id }}" \
+            --repo-owner="${{ github.repository_owner }}" \
+            --repo-name="${{ github.event.repository.name }}" \
+            --github-token "$GITHUB_TOKEN" \
+            --copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN" \
+            --base-branch master \
+            --output-file bug-handoff.json
+
+      - name: Report bug fix handoff result
+        id: bug_handoff_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('bug-handoff.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          result = str(data.get('handoff_result') or 'HANDOFF_FAILED')
+          issue_number = str(data.get('implementation_issue_number') or '')
+          issue_url = str(data.get('implementation_issue_url') or '')
+          assigned = str(bool(data.get('copilot_real_assignee_confirmed'))).lower()
+          failure_reason = str(data.get('failure_reason') or data.get('assignment_error') or '')[:280]
+
+          print('FIX_HANDOFF_RESULT:')
+          print(f"HANDOFF_RESULT: {result}")
+          print(f"FIX_ISSUE_NUMBER: {issue_number}")
+          print(f"FIX_ISSUE_URL: {issue_url}")
+          print(f"COPILOT_AGENT_ASSIGNED: {assigned}")
+          print(f"COPILOT_ASSIGNMENT_VERIFIED_ON_GITHUB: {assigned}")
+          if failure_reason:
+              print(f"HANDOFF_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"handoff_result={result}",
+              f"issue_number={issue_number}",
+              f"issue_url={issue_url}",
+              f"copilot_assigned={assigned}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
+
+      - name: Persist resumed bug records
+        if: always()
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          python scripts/product/automation_cli.py persist-bug-records \
+            --branch master \
+            --commit-message "product: resume bug handoff ${{ inputs.bug_id }}" \
+            --validate-product \
+            --output-file bug-persist.json
+
+      - name: Fail workflow if manual bug handoff failed
+        if: steps.bug_handoff_summary.outputs.handoff_result == 'HANDOFF_FAILED'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('bug-handoff.json').read_text(encoding='utf-8')) if Path('bug-handoff.json').exists() else {}
+          reason = str(data.get('failure_reason') or data.get('assignment_error') or 'Manual bug handoff failed.')[:280]
+          print(f'HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
 
   track-work-pr:
     if: github.event_name == 'pull_request'
@@ -195,7 +369,7 @@ jobs:
         run: |
           python scripts/product/automation_cli.py track-work-pr \
             --event-file "$GITHUB_EVENT_PATH" \
-            --output-file pr-track.json || true
+            --output-file pr-track.json
 
       - name: Persist automation records
         run: |
@@ -215,9 +389,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
-      copilot-requests: write
       contents: write
       issues: write
+      models: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -501,7 +675,6 @@ jobs:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Android CI' && github.event.workflow_run.event == 'pull_request'
     runs-on: ubuntu-latest
     permissions:
-      copilot-requests: write
       contents: write
       issues: write
       pull-requests: write
@@ -522,10 +695,39 @@ jobs:
           pip install pyyaml
 
       - name: Record CI result and bounded repair
+        id: ci_result
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}
         run: |
-          python -c "import json, os, subprocess, sys; from pathlib import Path; payload=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')); wr=payload.get('workflow_run') or {}; prs=wr.get('pull_requests') or []; pr_number=(prs[0].get('number') if prs else None); print('No pull request linked to workflow run.') if pr_number is None else None; sys.exit(0) if pr_number is None else None; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number',str(pr_number),'--workflow-name',str(wr.get('name','Android CI')),'--conclusion',str(wr.get('conclusion','unknown')),'--run-id',str(wr.get('id','unknown')),'--run-url',str(wr.get('html_url','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+          python -c "import json, os, subprocess, sys; from pathlib import Path; payload=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')); wr=payload.get('workflow_run') or {}; prs=wr.get('pull_requests') or []; pr_number=(prs[0].get('number') if prs else None); print('No pull request linked to workflow run.') if pr_number is None else None; sys.exit(0) if pr_number is None else None; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number',str(pr_number),'--workflow-name',str(wr.get('name','Android CI')),'--conclusion',str(wr.get('conclusion','unknown')),'--run-id',str(wr.get('id','unknown')),'--run-url',str(wr.get('html_url','')),'--repo-owner=${{ github.repository_owner }}','--repo-name=${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--copilot-assignment-token','${{ secrets.COPILOT_AGENT_USER_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+
+      - name: Report CI repair handoff result
+        id: ci_result_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('ci-result.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          failure_reason = str(data.get('failure_reason') or '')[:280]
+          failed = bool(failure_reason and data.get('status') == 'REPAIRING' and not data.get('repair_assignment_verified'))
+          print('CI_REPAIR_RESULT:')
+          print(f"STATUS: {data.get('status', '')}")
+          print(f"REPAIR_ATTEMPTED: {str(bool(data.get('repair_attempted'))).lower()}")
+          print(f"REPAIR_ASSIGNMENT_VERIFIED: {str(bool(data.get('repair_assignment_verified'))).lower()}")
+          if failure_reason:
+              print(f"REPAIR_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"repair_handoff_failed={'true' if failed else 'false'}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
 
       - name: Persist automation records
         run: |
@@ -539,4 +741,17 @@ jobs:
             git pull --rebase origin master
             git push origin HEAD:master
           fi
+
+      - name: Fail workflow if CI repair handoff failed
+        if: steps.ci_result_summary.outputs.repair_handoff_failed == 'true'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('ci-result.json').read_text(encoding='utf-8')) if Path('ci-result.json').exists() else {}
+          reason = str(data.get('failure_reason') or 'CI repair handoff failed.')[:280]
+          print(f'CI_REPAIR_HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
 

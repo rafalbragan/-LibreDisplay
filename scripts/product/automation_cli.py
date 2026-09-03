@@ -940,6 +940,28 @@ class GitHubClient:
     def get_issue(self, issue_number: int) -> dict:
         return self._request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
 
+    def find_existing_bugfix_issue(self, bug_id: str, expected_title: str) -> dict | None:
+        encoded_labels = urllib_parse.quote(f"{bug_id},bugfix", safe="")
+        issues = self._request(
+            "GET",
+            f"/repos/{self.owner}/{self.repo}/issues?state=all&labels={encoded_labels}&per_page=100",
+        )
+        for issue in issues or []:
+            if issue.get("pull_request"):
+                continue
+            labels = {
+                str((entry or {}).get("name", "")).strip()
+                for entry in (issue.get("labels") or [])
+                if isinstance(entry, dict)
+            }
+            if bug_id not in labels or "bugfix" not in labels:
+                continue
+            title = str(issue.get("title", ""))
+            body = str(issue.get("body", ""))
+            if title == expected_title or title.startswith(f"[Naprawa] {bug_id}") or f"LIBRECARE_BUG_ID: {bug_id}" in body:
+                return issue
+        return None
+
     def _request_bytes(self, method: str, path: str, extra_headers: dict[str, str] | None = None) -> bytes:
         url = f"https://api.github.com{path}"
         req = urllib_request.Request(url, method=method)
@@ -1814,6 +1836,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
     issue = dict(bug.get("implementation_issue") or {})
     existing_issue_number = issue.get("number")
     issue_created = False
+    issue_reused = False
     bugfix_label_result = "UNKNOWN"
     bug_label_result = "UNKNOWN"
     handoff_result = "HANDOFF_FAILED"
@@ -1905,11 +1928,18 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
             f"## POWIAZANE_REQ\n{', '.join(bug.get('related_requirement_ids', [])) or 'BRAK'}",
             f"## POWIAZANE_TESTY\n{', '.join(bug.get('related_test_ids', [])) or 'BRAK'}",
         ])
+        expected_issue_title = f"[Naprawa] {bug_id} — {safe_title or 'Naprawa bledu'}"
         if existing_issue_number:
             issue_resp = {"number": int(existing_issue_number), "html_url": issue.get("url") or "", "url": issue.get("url") or ""}
+            issue_reused = True
         else:
-            issue_resp = client.create_issue(title=f"[Naprawa] {bug_id} — {safe_title or 'Naprawa bledu'}", body=issue_body, labels=["bugfix", bug_id])
-            issue_created = True
+            existing_remote_issue = client.find_existing_bugfix_issue(bug_id, expected_issue_title)
+            if existing_remote_issue is not None:
+                issue_resp = existing_remote_issue
+                issue_reused = True
+            else:
+                issue_resp = client.create_issue(title=expected_issue_title, body=issue_body, labels=["bugfix", bug_id])
+                issue_created = True
         assignment_error = None
         assignment_token = str(copilot_assignment_token or "").strip()
         if not assignment_token:
@@ -1936,7 +1966,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
         bug["implementation_issue_url"] = issue_url
         if assignment.get("status") == "ASSIGNED":
             bug["status"] = "IN_PROGRESS"
-            handoff_result = "HANDOFF_CREATED" if issue_created or not existing_issue_number else "HANDOFF_REUSED"
+            handoff_result = "HANDOFF_CREATED" if issue_created and not issue_reused else "HANDOFF_REUSED"
         else:
             bug["status"] = "CONFIRMED_DEFECT"
             handoff_result = "HANDOFF_FAILED"
@@ -1971,7 +2001,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
         return 1
 
 
-def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, run_id: str, run_url: str, failing_step: str = "", failing_tests: str = "", log_excerpt: str = "", repo_owner: str | None = None, repo_name: str | None = None, github_token: str | None = None, output_file: str | None = None) -> int:
+def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, run_id: str, run_url: str, failing_step: str = "", failing_tests: str = "", log_excerpt: str = "", repo_owner: str | None = None, repo_name: str | None = None, github_token: str | None = None, copilot_assignment_token: str | None = None, output_file: str | None = None) -> int:
     req_path, req = find_requirement_by_pr(pr_number)
     if req is not None:
         impl_id = f"IMP-{req['id']}"
@@ -1991,7 +2021,7 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
     corr = f"{run_id}:{str(conclusion).lower()}"
     failures = list(impl.get("ci_failures", []))
     if corr in failures:
-        payload = {"entity": entity, "implementation_id": impl_id, "status": impl.get("status"), "action": "DEDUPLICATED", "attempt_count": int(impl.get("attempt_count", 0))}
+        payload = {"entity": entity, "implementation_id": impl_id, "status": impl.get("status"), "action": "DEDUPLICATED", "attempt_count": int(impl.get("attempt_count", 0)), "repair_attempted": False, "repair_assignment_verified": False, "auto_merge": False}
         if output_file:
             write_json(Path(output_file), payload)
         else:
@@ -2000,7 +2030,7 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
     write_json(TECH_VALIDATIONS_DIR / f"{impl_id}-{run_id}.json", {"implementation_id": impl_id, "entity": entity, "workflow_name": workflow_name, "conclusion": conclusion, "run_id": run_id, "run_url": run_url, "failing_step": failing_step, "failing_tests": failing_tests, "log_excerpt": log_excerpt, "recorded_at": now_iso()})
     if conclusion.lower() == "success":
         upsert_impl({"implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "last_ci_result": "PASS", "ci_failures": failures + [corr]})
-        payload = {"entity": entity, "implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "action": "UPDATED", "repair_attempted": False}
+        payload = {"entity": entity, "implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "action": "UPDATED", "repair_attempted": False, "repair_assignment_verified": False, "auto_merge": False}
         if output_file:
             write_json(Path(output_file), payload)
         else:
@@ -2009,29 +2039,46 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
     attempts = int(impl.get("attempt_count", 0)) + 1
     if attempts >= MAX_AUTOMATIC_REPAIR_ATTEMPTS:
         upsert_impl({"implementation_id": impl_id, "status": "FAILED", "last_ci_result": "FAIL", "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS, "ci_failures": failures + [corr]})
-        payload = {"entity": entity, "implementation_id": impl_id, "status": "FAILED", "action": "UPDATED", "repair_attempted": False, "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS, "human_comment": "Automatyczne naprawy przekroczyly limit 3 prob. Wymagana interwencja czlowieka."}
+        payload = {"entity": entity, "implementation_id": impl_id, "status": "FAILED", "action": "UPDATED", "repair_attempted": False, "repair_assignment_verified": False, "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS, "human_comment": "Automatyczne naprawy przekroczyly limit 3 prob. Wymagana interwencja czlowieka.", "auto_merge": False}
         if output_file:
             write_json(Path(output_file), payload)
         else:
             print(json.dumps(payload, ensure_ascii=False))
         return 0
     repair_attempted = False
+    repair_assignment_verified = False
+    failure_reason = ""
     issue_number = impl.get("implementation_issue_number")
-    if issue_number and repo_owner and repo_name and github_token:
-        client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+    if issue_number:
         if entity == "BUG":
             instructions = f"Napraw tylko regresje CI dla {impl_id} bez rozszerzania zakresu produktu i bez zmiany semantyki medycznej."
         else:
             instructions = f"Napraw tylko defekt CI dla {impl_id}."
-        client.assign_copilot(int(issue_number), base_branch=DEFAULT_BASE_BRANCH, instructions=instructions)
-        repair_attempted = True
+        if not repo_owner or not repo_name:
+            failure_reason = "Brak kontekstu repozytorium dla ponownego przypisania Copilot po awarii CI."
+        else:
+            assignment_token = str(copilot_assignment_token or "").strip()
+            if not assignment_token:
+                failure_reason = "Brak skonfigurowanego sekretu COPILOT_AGENT_USER_TOKEN dla ponownego przypisania Copilot do naprawy błędu."
+            else:
+                assignment_client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, assignment_token)
+                try:
+                    assignment_client.assign_copilot(int(issue_number), base_branch=DEFAULT_BASE_BRANCH, instructions=instructions)
+                    repair_attempted = True
+                    repair_assignment_verified = True
+                except RuntimeError as exc:
+                    failure_reason = sanitize_failure_reason(str(exc))
+    else:
+        failure_reason = "Brak issue implementacyjnego dla automatycznej naprawy CI."
     upsert_impl({"implementation_id": impl_id, "status": "REPAIRING", "last_ci_result": "FAIL", "attempt_count": attempts, "ci_failures": failures + [corr]})
-    payload = {"entity": entity, "implementation_id": impl_id, "status": "REPAIRING", "action": "UPDATED", "repair_attempted": repair_attempted, "attempt_count": attempts}
+    payload = {"entity": entity, "implementation_id": impl_id, "status": "REPAIRING", "action": "UPDATED", "repair_attempted": repair_attempted, "repair_assignment_verified": repair_assignment_verified, "attempt_count": attempts, "auto_merge": False}
+    if failure_reason:
+        payload["failure_reason"] = failure_reason
     if output_file:
         write_json(Path(output_file), payload)
     else:
         print(json.dumps(payload, ensure_ascii=False))
-    return 0
+    return 0 if not failure_reason else 1
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -2105,6 +2152,7 @@ def main(argv: list[str] | None = None) -> int:
     ci.add_argument("--repo-owner")
     ci.add_argument("--repo-name")
     ci.add_argument("--github-token")
+    ci.add_argument("--copilot-assignment-token")
     ci.add_argument("--output-file")
 
     args = parser.parse_args(argv)
@@ -2155,7 +2203,7 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "track-work-pr":
         return cmd_track_pr(args.event_file, args.output_file)
     if args.command == "record-ci-result":
-        return cmd_record_ci_result(args.pr_number, args.workflow_name, args.conclusion, args.run_id, args.run_url, args.failing_step, args.failing_tests, args.log_excerpt, args.repo_owner, args.repo_name, args.github_token, args.output_file)
+        return cmd_record_ci_result(args.pr_number, args.workflow_name, args.conclusion, args.run_id, args.run_url, args.failing_step, args.failing_tests, args.log_excerpt, args.repo_owner, args.repo_name, args.github_token, args.copilot_assignment_token, args.output_file)
     return 2
 
 
