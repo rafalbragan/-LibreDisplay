@@ -1363,6 +1363,88 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.assertIn(persist["status"], {"NO_CHANGES", "PUSHED"})
 		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
 
+	def test_persisted_duplicate_source_keeps_resume_handoff_state(self):
+		self.init_git_origin_with_baseline_bug()
+		source_reference = "workflow=Android CI | run_id=33694534681 | commit=a | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite"
+		canonical_bug = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			source_reference,
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		canonical_bug["classification"] = "CONFIRMED_DEFECT"
+		canonical_bug["status"] = "CONFIRMED_DEFECT"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", canonical_bug)
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(self.root, "commit", "-m", "add canonical bug0002").returncode)
+		self.assertEqual(0, self.run_git(self.root, "push", "origin", "master").returncode)
+
+		resumed = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		resumed["status"] = "IN_PROGRESS"
+		resumed["implementation_issue"] = {
+			"number": 744,
+			"url": "https://example/issues/744",
+			"assigned_agent": "copilot-swe-agent[bot]",
+			"agent_assignment": {"status": "ASSIGNED", "method": "GRAPHQL"},
+		}
+		resumed["implementation_issue_number"] = 744
+		resumed["implementation_issue_url"] = "https://example/issues/744"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", resumed)
+
+		persist = self.persist_bug_records("persist-resume-state.json")
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+		merged = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		self.assertEqual("IN_PROGRESS", merged["status"])
+		self.assertEqual(744, merged["implementation_issue_number"])
+		self.assertEqual("https://example/issues/744", merged["implementation_issue_url"])
+		self.assertEqual(744, (merged.get("implementation_issue") or {}).get("number"))
+
+	def test_persisted_duplicate_source_preserves_confirmed_defect_classification(self):
+		self.init_git_origin_with_baseline_bug()
+		source_reference = "workflow=Android CI | run_id=33694534681 | commit=a | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite"
+		remote_bug = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			source_reference,
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		remote_bug["classification"] = "INCONCLUSIVE"
+		remote_bug["status"] = "TRIAGED"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", remote_bug)
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(self.root, "commit", "-m", "seed remote bug0002 inconclusive").returncode)
+		self.assertEqual(0, self.run_git(self.root, "push", "origin", "master").returncode)
+
+		newer_local_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		newer_local_bug["classification"] = "CONFIRMED_DEFECT"
+		newer_local_bug["status"] = "CONFIRMED_DEFECT"
+		newer_local_bug["triage_reasoning"] = "Potwierdzona regresja po akceptacji triage."
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", newer_local_bug)
+
+		persist = self.persist_bug_records("persist-classification-preserve.json")
+		self.assertIn(persist["status"], {"NO_CHANGES", "PUSHED"})
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+		self.assertEqual("DUPLICATED_SOURCE", persist["persisted_bugs"][0]["action"])
+
+		persisted_local_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		self.assertEqual("CONFIRMED_DEFECT", persisted_local_bug["classification"])
+
+		remote_show = self.run_git(self.root, "show", "origin/master:product/bugs/BUG-0002.json")
+		self.assertEqual(0, remote_show.returncode, remote_show.stderr)
+		persisted_remote_bug = json.loads(remote_show.stdout)
+		self.assertEqual("CONFIRMED_DEFECT", persisted_remote_bug["classification"])
+
+		resume_gate_allowed_statuses = {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "REPAIRING", "PR_READY"}
+		resume_gate_would_pass = (
+			persisted_local_bug.get("classification") == "CONFIRMED_DEFECT"
+			and str(persisted_local_bug.get("status") or "") in resume_gate_allowed_statuses
+		)
+		self.assertTrue(resume_gate_would_pass)
+
 	def test_different_remote_bug_using_planned_id_allocates_next_free_id_safely(self):
 		_root, remote_dir = self.init_git_origin_with_baseline_bug()
 		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")

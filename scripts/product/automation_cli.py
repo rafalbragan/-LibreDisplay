@@ -404,10 +404,60 @@ def merge_bug_records(existing: dict, candidate: dict) -> dict:
         merged["reproduction"] = candidate.get("reproduction") or "Brak krokow reprodukcji."
     if not merged.get("additional_context") and candidate.get("additional_context"):
         merged["additional_context"] = candidate.get("additional_context")
-    if merged.get("status") == "NEW" and candidate.get("status") not in {None, "", "NEW"}:
-        merged["status"] = candidate.get("status")
+    status_order = {
+        "NEW": 0,
+        "TRIAGED": 1,
+        "CONFIRMED_DEFECT": 2,
+        "QUEUED": 3,
+        "IN_PROGRESS": 4,
+        "REPAIRING": 5,
+        "PR_READY": 6,
+        "VALIDATION_PENDING": 7,
+        "RESOLVED": 8,
+        "CLOSED": 9,
+    }
+    existing_status = str(merged.get("status") or "")
+    candidate_status = str(candidate.get("status") or "")
+    if candidate_status and status_order.get(candidate_status, -1) > status_order.get(existing_status, -1):
+        merged["status"] = candidate_status
+
+    existing_classification = str(merged.get("classification") or "")
+    candidate_classification = str(candidate.get("classification") or "")
+    if existing_classification != "CONFIRMED_DEFECT" and candidate_classification == "CONFIRMED_DEFECT":
+        merged["classification"] = "CONFIRMED_DEFECT"
     if not merged.get("triage_reasoning") and candidate.get("triage_reasoning"):
         merged["triage_reasoning"] = candidate.get("triage_reasoning")
+
+    existing_impl = dict(merged.get("implementation_issue") or {})
+    candidate_impl = dict(candidate.get("implementation_issue") or {})
+    merged_impl = dict(existing_impl)
+    for key, value in candidate_impl.items():
+        if value is not None and value != "":
+            merged_impl[key] = value
+    if merged_impl:
+        merged["implementation_issue"] = merged_impl
+
+    if merged.get("implementation_issue_number") is None and candidate.get("implementation_issue_number") is not None:
+        merged["implementation_issue_number"] = candidate.get("implementation_issue_number")
+    if not merged.get("implementation_issue_url") and candidate.get("implementation_issue_url"):
+        merged["implementation_issue_url"] = candidate.get("implementation_issue_url")
+
+    existing_pr = dict(merged.get("pull_request") or {})
+    candidate_pr = dict(candidate.get("pull_request") or {})
+    merged_pr = dict(existing_pr)
+    for key, value in candidate_pr.items():
+        if value is not None and value != "":
+            merged_pr[key] = value
+    if merged_pr:
+        merged["pull_request"] = merged_pr
+
+    if merged.get("pull_request_number") is None and candidate.get("pull_request_number") is not None:
+        merged["pull_request_number"] = candidate.get("pull_request_number")
+    if not merged.get("pull_request_url") and candidate.get("pull_request_url"):
+        merged["pull_request_url"] = candidate.get("pull_request_url")
+
+    if str(merged.get("validation_state") or "").upper() in {"", "PENDING"} and str(candidate.get("validation_state") or "").upper() not in {"", "PENDING"}:
+        merged["validation_state"] = candidate.get("validation_state")
     traceability = dict(merged.get("triage_traceability") or {})
     candidate_traceability = dict(candidate.get("triage_traceability") or {})
     for key, value in candidate_traceability.items():
