@@ -61,11 +61,11 @@
       }
     }
   },
-  "branch": null,
-  "pull_request_number": null,
-  "pull_request_url": null,
-  "status": "AGENT_ASSIGNED",
-  "created_at": "2026-09-03T21:42:50Z",
+  "branch": "copilot/bug-0004-fix-android-ci-regression",
+  "pull_request_number": 11,
+  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/11",
+  "status": "READY_FOR_HUMAN_REVIEW",
+  "created_at": "2026-09-03T22:39:07Z",
   "attempt_count": 0,
   "last_ci_result": "UNKNOWN",
   "validation_state": "PENDING",
@@ -76,5 +76,5 @@
     "TEST-CI-FAST-SUITE-REGRESSION"
   ],
   "ci_failures": [],
-  "updated_at": "2026-09-03T21:42:50Z"
+  "updated_at": "2026-09-03T22:39:07Z"
 }
