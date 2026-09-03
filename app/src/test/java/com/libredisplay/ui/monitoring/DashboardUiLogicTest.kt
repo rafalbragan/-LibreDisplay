@@ -356,6 +356,49 @@ class DashboardUiLogicTest {
     }
 
     @Test
+    fun buildTrendProjection_usesNextRelevantFallingThreshold() {
+        val reading = GlucoseReading.of(
+            value = 90,
+            timestamp = Instant.parse("2026-07-27T10:15:00Z"),
+            trend = GlucoseTrend.FALLING_FAST,
+            history = listOf(
+                GlucoseHistoryPoint(135, Instant.parse("2026-07-27T10:00:00Z"), GlucoseTrend.FALLING)
+            )
+        )
+
+        val projection = buildTrendProjection(
+            reading = reading,
+            trendWindowMinutes = 20,
+            thresholds = TrendProjectionThresholds(70, 180),
+            now = Instant.parse("2026-07-27T10:16:00Z")
+        )
+
+        assertEquals(70, projection?.thresholdMgDl)
+        assertEquals(6, projection?.minutesToThreshold)
+    }
+
+    @Test
+    fun buildTrendProjection_returnsNullWhenRemainingMinutesExpired() {
+        val reading = GlucoseReading.of(
+            value = 175,
+            timestamp = Instant.parse("2026-07-27T10:15:00Z"),
+            trend = GlucoseTrend.RISING_FAST,
+            history = listOf(
+                GlucoseHistoryPoint(130, Instant.parse("2026-07-27T10:00:00Z"), GlucoseTrend.RISING)
+            )
+        )
+
+        val projection = buildTrendProjection(
+            reading = reading,
+            trendWindowMinutes = 20,
+            thresholds = TrendProjectionThresholds(80, 180),
+            now = Instant.parse("2026-07-27T10:18:00Z")
+        )
+
+        assertEquals(null, projection)
+    }
+
+    @Test
     fun trendWindowSnapshot_returnsNullForZeroMinuteSpan() {
         val timestamp = Instant.parse("2026-07-27T10:15:00Z")
         val reading = GlucoseReading.of(
