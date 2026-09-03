@@ -1,6 +1,6 @@
 {
   "bug_id": "BUG-0004",
-  "classification": "NEEDS_PRODUCT_DECISION",
-  "status": "NEEDS_PRODUCT_DECISION",
-  "generated_at": "2026-09-03T20:55:25Z"
+  "classification": "CONFIRMED_DEFECT",
+  "status": "CONFIRMED_DEFECT",
+  "generated_at": "2026-09-03T21:34:35Z"
 }

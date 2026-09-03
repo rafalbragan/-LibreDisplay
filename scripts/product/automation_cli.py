@@ -1793,6 +1793,75 @@ def existing_bug_defect_lifecycle_preserved(bug: dict) -> bool:
     return str(bug.get("classification") or "") == "CONFIRMED_DEFECT" and str(bug.get("status") or "") in {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}
 
 
+def reasoning_denies_product_decision(reasoning: str) -> bool:
+    text = normalized_text(reasoning)
+    return any(
+        marker in text
+        for marker in [
+            "nie jest to kwestia wymagająca decyzji produktowej",
+            "nie wymaga decyzji produktowej",
+            "nie wymaga żadnej decyzji produktowej",
+            "nie jest to zmiana zachowania produktu",
+            "nie ma żadnych udokumentowanych, zaakceptowanych kryteriów sugerujących, że to zamierzona zmiana",
+            "jest to zwykły błąd kompilacji",
+        ]
+    )
+
+
+def reasoning_describes_concrete_implementation_defect(reasoning: str) -> bool:
+    text = normalized_text(reasoning)
+    return any(
+        marker in text
+        for marker in [
+            "no value passed for parameter",
+            "unresolved reference",
+            "broken import",
+            "błąd kompilacji",
+            "compiledebugkotlin",
+            "niekompletny commit",
+            "niekompletny refaktor",
+            "niedokończony/porzucony refaktor",
+            "missing required argument",
+            "api call-site mismatch",
+            "brakującej definicji",
+            "defekt implementacyjny",
+            "przywraca kompilację",
+            "kompletność refaktoru",
+        ]
+    )
+
+
+def review_requires_product_behavior_decision(review: dict, bug: dict, safety_requires_product: bool) -> bool:
+    if "requires_product_behavior_decision" in review:
+        return bool(review.get("requires_product_behavior_decision"))
+    legacy_requires_change = bool(review.get("requires_behavior_change"))
+    if not legacy_requires_change:
+        return False
+    reasoning = str(review.get("reasoning") or "")
+    if (
+        bug_has_useful_ci_diagnostic_evidence(bug)
+        and reasoning_denies_product_decision(reasoning)
+        and reasoning_describes_concrete_implementation_defect(reasoning)
+        and not safety_requires_product
+    ):
+        return False
+    return True
+
+
+def bug_review_consistently_proves_confirmed_defect(review: dict, bug: dict, traceable: bool, requires_product_behavior_decision: bool, safety_requires_product: bool) -> bool:
+    classification = str(review.get("classification") or "").upper()
+    reasoning = str(review.get("reasoning") or "")
+    return (
+        classification in {"CONFIRMED_DEFECT", "NEEDS_PRODUCT_DECISION"}
+        and traceable
+        and bug_has_useful_ci_diagnostic_evidence(bug)
+        and reasoning_describes_concrete_implementation_defect(reasoning)
+        and reasoning_denies_product_decision(reasoning)
+        and not requires_product_behavior_decision
+        and not safety_requires_product
+    )
+
+
 def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
     event = read_json(Path(event_file))
     pr = event.get("pull_request")
@@ -1892,8 +1961,7 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
         e = raw.rfind("}")
         raw = raw[s:e+1] if s >= 0 and e > s else raw
     review = json.loads(raw)
-    cls = review.get("classification", "INCONCLUSIVE")
-    requires_change = bool(review.get("requires_behavior_change"))
+    cls = str(review.get("classification", "INCONCLUSIVE") or "INCONCLUSIVE").upper()
     related = canonical_requirement_ids(list((bug.get("related_requirement_ids") or []) + (review.get("recommended_related_requirements") or [])))
     related_test_ids = list(dict.fromkeys((bug.get("related_test_ids") or []) + (review.get("recommended_related_tests") or [])))
     verified_test_run_ids = canonical_test_run_ids(related_test_ids)
@@ -1909,13 +1977,18 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     bug["triage_reasoning"] = review.get("reasoning", "")
     safety_impact = str(bug.get("safety_impact", "LOW")).upper()
     safety_requires_product = safety_impact in {"MEDIUM", "HIGH"}
+    requires_product_behavior_decision = review_requires_product_behavior_decision(review, bug, safety_requires_product)
+    consistency_confirmed_defect = bug_review_consistently_proves_confirmed_defect(review, bug, traceable, requires_product_behavior_decision, safety_requires_product)
     requested_classification = "INCONCLUSIVE"
     requested_status = "TRIAGED"
-    if cls == "CONFIRMED_DEFECT":
-        if traceable and not requires_change and not safety_requires_product:
+    if consistency_confirmed_defect:
+        requested_classification = "CONFIRMED_DEFECT"
+        requested_status = "CONFIRMED_DEFECT"
+    elif cls == "CONFIRMED_DEFECT":
+        if traceable and not requires_product_behavior_decision and not safety_requires_product:
             requested_classification = "CONFIRMED_DEFECT"
             requested_status = "CONFIRMED_DEFECT"
-        elif requires_change or safety_requires_product:
+        elif requires_product_behavior_decision or safety_requires_product:
             requested_classification = "NEEDS_PRODUCT_DECISION"
             requested_status = "NEEDS_PRODUCT_DECISION"
     elif cls == "INCONCLUSIVE":
@@ -1926,6 +1999,12 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
         requested_status = "NEEDS_PRODUCT_DECISION"
     final_classification = merge_bug_classification(bug.get("classification"), requested_classification)
     final_status = merge_bug_status(bug.get("status"), requested_status, final_classification)
+    if consistency_confirmed_defect:
+        final_classification = "CONFIRMED_DEFECT"
+        if str(existing_snapshot.get("status") or "") in {"QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}:
+            final_status = str(existing_snapshot.get("status"))
+        else:
+            final_status = "CONFIRMED_DEFECT"
     if final_classification == "CONFIRMED_DEFECT" and requested_classification != "CONFIRMED_DEFECT" and existing_bug_defect_lifecycle_preserved(existing_snapshot):
         final_status = str(existing_snapshot.get("status") or final_status)
     bug["classification"] = final_classification
@@ -1939,7 +2018,8 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
         "has_ci_regression_evidence": has_ci_diagnostic_evidence,
         "has_ci_diagnostic_evidence": has_ci_diagnostic_evidence,
         "has_technical_validation_evidence": has_technical_validation,
-        "requires_behavior_change": requires_change,
+        "requires_behavior_change": requires_product_behavior_decision,
+        "requires_product_behavior_decision": requires_product_behavior_decision,
         "safety_requires_product_decision": safety_requires_product,
     }
     if bug["classification"] != "CONFIRMED_DEFECT":
@@ -2619,8 +2699,9 @@ def main(argv: list[str] | None = None) -> int:
         evidence = bug.get("ci_failure_evidence") or {}
         evidence_excerpt = str(evidence.get("excerpt") or "").strip()
         payload = {
-            "instruction": "Klasyfikuj blad jako CONFIRMED_DEFECT/NEEDS_PRODUCT_DECISION/INCONCLUSIVE po analizie wymagan, zaakceptowanych kryteriow, udokumentowanych decyzji, dowodow testowych i zasad bezpieczenstwa.",
-            "required_output_fields": ["classification", "reasoning", "severity", "safety_impact", "requires_behavior_change", "recommended_related_requirements", "recommended_related_tests"],
+            "instruction": "Klasyfikuj blad jako CONFIRMED_DEFECT/NEEDS_PRODUCT_DECISION/INCONCLUSIVE po analizie wymagan, zaakceptowanych kryteriow, udokumentowanych decyzji, dowodow testowych i zasad bezpieczenstwa. Pole requires_product_behavior_decision ustawiaj na true wyłącznie wtedy, gdy naprawa wymaga wyboru lub zmiany zamierzonego zachowania produktu, zakresu, zasad bezpieczeństwa albo zaakceptowanej semantyki. Nie ustawiaj go na true tylko dlatego, że trzeba zmienić kod, dodać brakujący parametr, naprawić import, przywrócić brakującą definicję, naprawić niedokończony refaktor lub przywrócić kompilację.",
+            "required_output_fields": ["classification", "reasoning", "severity", "safety_impact", "requires_product_behavior_decision", "recommended_related_requirements", "recommended_related_tests"],
+            "legacy_field_aliases": {"requires_behavior_change": "Legacy alias; interpret strictly as requires_product_behavior_decision for backward compatibility."},
             "canonical_bug": bug,
             "ci_failure_evidence": evidence,
             "ci_failure_evidence_excerpt": evidence_excerpt,

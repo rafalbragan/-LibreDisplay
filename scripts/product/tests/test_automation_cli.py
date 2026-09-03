@@ -495,6 +495,48 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(0, rc)
 		return self.read_json(output_file)
 
+	def seed_enriched_ci_regression_bug(self, bug_id: str = "BUG-0004", run_id: str = "bug0004") -> Path:
+		bug = self.make_bug_record(
+			bug_id,
+			"CI_REGRESSION",
+			f"workflow=Android CI | run_id={run_id} | commit=sha-{run_id} | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: :app:compileDebugKotlin FAILED",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
+		self.write_json(bug_path, bug)
+		diagnostic = {
+			"artifact_name": "librecare-fast-suite",
+			"artifact_names": ["librecare-fast-suite"],
+			"artifacts_found": 1,
+			"artifact_downloaded": True,
+			"job_logs_fetched": True,
+			"log_file": "0_Fast test suite.txt",
+			"log_files_found": ["0_Fast test suite.txt"],
+			"diagnostic_lines_found": 10,
+			"text_files_scanned": 16,
+			"candidate_files_found": 16,
+			"job_log_http_status": "OK",
+			"artifact_download_status": "UNKNOWN",
+			"artifact_extract_status": "OK",
+			"safe_diagnostic": "compileDebugKotlin excerpt present",
+			"result": "ENRICHED",
+			"failed_job": "Fast test suite",
+			"failed_step": "Fast test suite: Run fast suite",
+			"excerpt": "2026-09-03T20:54:10.2899403Z > Task :app:compileDebugKotlin FAILED\n2026-09-03T20:54:10.2930307Z e: file:///app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:311:45 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T20:54:10.2959812Z e: file:///app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:379:37 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T20:54:10.2991775Z e: file:///app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:57:9 Unresolved reference 'TrendProjectionThresholds'.\n2026-09-03T20:54:10.2996079Z e: file:///app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:92 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T20:54:10.4969248Z Execution failed for task ':app:compileDebugKotlin'.",
+			"fallback_excerpt": "Fast test suite: Run fast suite",
+		}
+		updated = self.cli.apply_ci_regression_diagnostic_to_bug(self.read_json(bug_path), diagnostic)
+		self.write_json(bug_path, updated)
+		return bug_path
+
+	def apply_bug_review_payload(self, bug_id: str, payload: dict):
+		review_file = self.root / f"{bug_id}-review.json"
+		self.write_json(review_file, payload)
+		self.assertEqual(0, self.cli.cmd_bug_apply_ai_triage(bug_id, str(review_file)))
+		return self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
+
 	def test_regression_against_requirement_queues_fix(self):
 		bug_id = self.import_bug(
 			self.bug_issue_event(401, "[Blad LibreCare] Czas wzgledny", "Widoczny surowy ISO", "Naturalny czas", "1. Otworz dashboard")
@@ -1731,6 +1773,122 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
 		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
 		self.assertTrue(bug["triage_traceability"]["has_ci_diagnostic_evidence"])
+
+	def test_bug0004_style_incomplete_refactor_is_confirmed_defect_even_when_legacy_field_is_true(self):
+		self.seed_enriched_ci_regression_bug("BUG-0004", "bug0004-regression")
+		bug = self.apply_bug_review_payload(
+			"BUG-0004",
+			{
+				"classification": "NEEDS_PRODUCT_DECISION",
+				"reasoning": "Analiza kodu źródłowego jednoznacznie potwierdza defekt, nie jest to kwestia wymagająca decyzji produktowej ani sytuacja niejednoznaczna. MonitoringScreen.kt pomija wymagany parametr trendWindowMinutes w istniejących call site, a RedesignedGlucoseCard.kt referencjonuje brakujące TrendProjectionThresholds oraz buildTrendProjection. To niekompletny refaktor, który trafił na master i powoduje deterministyczny compileDebugKotlin failure.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_behavior_change": True,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [
+					"TEST-BUILD-COMPILE-DEBUG-KOTLIN",
+					"TEST-MONITORING-SCREEN-COMPOSE-SMOKE",
+					"TEST-REDESIGNED-GLUCOSE-CARD-TREND-PROJECTION",
+					"TEST-CI-FAST-SUITE-REGRESSION",
+				],
+			},
+		)
+		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
+		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
+		self.assertFalse(bug["triage_traceability"]["requires_behavior_change"])
+		self.assertFalse(bug["triage_traceability"]["requires_product_behavior_decision"])
+
+	def test_true_product_behavior_decision_counterexample_stays_needs_product_decision(self):
+		self.seed_enriched_ci_regression_bug("BUG-0004", "bug0004-needs-product")
+		bug = self.apply_bug_review_payload(
+			"BUG-0004",
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Błąd kompilacji ujawnia dwa niezgodne, wcześniej akceptowane warianty zachowania. Naprawa wymaga decyzji, czy trend ma być liczony według nowego okna projekcji, czy według historycznego zakresu ekranu monitoringu. To wymaga wyboru docelowego zachowania produktu.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_product_behavior_decision": True,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		self.assertEqual("NEEDS_PRODUCT_DECISION", bug["classification"])
+		self.assertEqual("NEEDS_PRODUCT_DECISION", bug["status"])
+		self.assertTrue(bug["triage_traceability"]["requires_product_behavior_decision"])
+
+	def test_inconclusive_counterexample_without_useful_diagnostic_evidence_stays_inconclusive(self):
+		self.assertEqual(
+			0,
+			self.cli.cmd_bug_create(
+				source="CI_REGRESSION",
+				source_reference="workflow=Android CI | run_id=bug0004-inconclusive | commit=sha | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
+				title="Inconclusive compile failure",
+				observed_behavior="Fast test suite failed without useful compiler excerpt",
+				expected_behavior="Build should pass",
+				reproduction="Run Android CI",
+				related_requirement_ids=[],
+				related_test_ids=[],
+			),
+		)
+		bug = self.apply_bug_review_payload(
+			"BUG-0001",
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Podejrzenie regresji istnieje, ale brak pełnego excerptu kompilatora i nie można jeszcze potwierdzić konkretnego root cause.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_product_behavior_decision": False,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		self.assertEqual("INCONCLUSIVE", bug["classification"])
+		self.assertEqual("TRIAGED", bug["status"])
+
+	def test_normal_confirmed_implementation_regression_counterexample_stays_confirmed_defect(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(499, "[Blad LibreCare] Raw ISO timestamp", "Widoczny surowy ISO", "Naturalny czas", "1. Otworz dashboard")
+		)
+		bug = self.apply_bug_review_payload(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "To zwykła regresja implementacyjna wobec zaakceptowanego wymagania. Naprawa przywraca istniejące, już zamierzone zachowanie i nie wymaga decyzji produktowej.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_product_behavior_decision": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0001"],
+			},
+		)
+		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
+		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
+
+	def test_bug_prompt_uses_product_behavior_decision_field_and_definition(self):
+		self.seed_enriched_ci_regression_bug("BUG-0004", "bug0004-prompt")
+		prompt_file = self.root / "bug0004-prompt.json"
+		self.assertEqual(0, self.cli.main(["bug-build-ai-prompt", "--bug-id", "BUG-0004", "--output-file", str(prompt_file)]))
+		prompt = self.read_json(prompt_file)
+		self.assertIn("requires_product_behavior_decision", prompt["required_output_fields"])
+		self.assertNotIn("requires_behavior_change", prompt["required_output_fields"])
+		self.assertIn("Nie ustawiaj go na true tylko dlatego, że trzeba zmienić kod", prompt["instruction"])
+
+	def test_structured_reasoning_consistency_check_prevents_false_product_decision(self):
+		self.seed_enriched_ci_regression_bug("BUG-0004", "bug0004-consistency")
+		bug = self.apply_bug_review_payload(
+			"BUG-0004",
+			{
+				"classification": "NEEDS_PRODUCT_DECISION",
+				"reasoning": "To jasno potwierdzony defekt implementacyjny i nie wymaga żadnej decyzji produktowej ani zmiany zaakceptowanego zachowania. Naprawa tylko przywraca kompilację i kompletność refaktoru.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_behavior_change": True,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": [],
+			},
+		)
+		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
+		self.assertFalse(bug["triage_traceability"]["requires_product_behavior_decision"])
 
 	def test_ci_regression_without_diagnostic_evidence_stays_inconclusive(self):
 		result = self.run_ci_regression_intake(
