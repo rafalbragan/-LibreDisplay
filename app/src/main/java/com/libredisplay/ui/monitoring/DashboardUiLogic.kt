@@ -73,6 +73,17 @@ internal data class TrendRateEstimate(
     val spanMinutes: Double = 0.0
 )
 
+internal data class TrendProjectionThresholds(
+    val lowThresholdMgDl: Int,
+    val highThresholdMgDl: Int
+)
+
+internal data class TrendProjection(
+    val rateMgDlPerMinute: Double,
+    val thresholdMgDl: Int,
+    val minutesToThreshold: Int
+)
+
 internal val TrendRateEstimate.derivedTrend: GlucoseTrend
     get() = GlucoseTrend.fromSlope(mgDlPerMinute)
 
@@ -273,6 +284,45 @@ internal fun estimateTrendRate(
         spanMinutes = snapshot.spanMinutes
     )
 }
+
+internal fun formatTrendRatePerMinute(rateMgDlPerMinute: Double): String {
+    val sign = if (rateMgDlPerMinute >= 0.0) "+" else "−"
+    return "$sign${"%.1f".format(java.util.Locale.US, kotlin.math.abs(rateMgDlPerMinute))} mg/dL/min"
+}
+
+internal fun buildTrendProjection(
+    reading: GlucoseReading,
+    trendWindowMinutes: Int,
+    thresholds: TrendProjectionThresholds,
+    now: Instant
+): TrendProjection? {
+    if (reading.trend != GlucoseTrend.RISING_FAST && reading.trend != GlucoseTrend.FALLING_FAST) return null
+    if (Duration.between(reading.timestamp, now).toMinutes() > 15) return null
+
+    val estimate = estimateTrendRate(reading, trendWindowMinutes) ?: return null
+    if (estimate.derivedTrend != reading.trend) return null
+
+    val target = when (reading.trend) {
+        GlucoseTrend.RISING_FAST -> listOf(thresholds.highThresholdMgDl, 250)
+            .filter { it > reading.value }
+            .minOrNull()
+        GlucoseTrend.FALLING_FAST -> listOf(thresholds.lowThresholdMgDl, 54)
+            .filter { it < reading.value }
+            .maxOrNull()
+        else -> null
+    } ?: return null
+
+    val minutes = ((target - reading.value).toDouble() / estimate.mgDlPerMinute)
+    if (!minutes.isFinite() || minutes <= 0.0 || minutes > 90.0) return null
+    return TrendProjection(
+        rateMgDlPerMinute = estimate.mgDlPerMinute,
+        thresholdMgDl = target,
+        minutesToThreshold = minutes.roundToInt().coerceAtLeast(1)
+    )
+}
+
+internal fun formatTrendProjectionMessage(projection: TrendProjection): String =
+    "W tym tempie: około ${projection.thresholdMgDl} mg/dL za ${projection.minutesToThreshold} min."
 
 internal fun trendWindowSnapshot(
     reading: GlucoseReading,
@@ -493,5 +543,4 @@ internal fun buildDashboardMetrics(
         hba1cValue = null  // TODO: Dodaj HbA1c jeśli dostępne z lab results
     )
 }
-
 

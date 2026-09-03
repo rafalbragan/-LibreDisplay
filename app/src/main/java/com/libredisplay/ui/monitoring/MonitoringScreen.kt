@@ -308,6 +308,7 @@ fun MonitoringScreen(
                                             reading = reading,
                                             targetLow = state.settings.targetLow,
                                             targetHigh = state.settings.targetHigh,
+                                            trendWindowMinutes = state.settings.trendWindowMinutes,
                                             now = currentTime
                                         )
                                         // Range chips moved under the glucose card (above NFZ) so the
@@ -376,6 +377,7 @@ fun MonitoringScreen(
                                     reading = reading,
                                     targetLow = state.settings.targetLow,
                                     targetHigh = state.settings.targetHigh,
+                                    trendWindowMinutes = state.settings.trendWindowMinutes,
                                     now = currentTime
                                 )
                                 GlucoseChartCard(
@@ -1573,5 +1575,4 @@ private fun EmptyConfigurationState(onNavigateToSettings: () -> Unit) {
         }
     }
 }
-
 
