@@ -19,10 +19,12 @@ import zipfile
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCT = ROOT / "product"
 REQUIREMENTS_DIR = PRODUCT / "requirements"
+TEST_RUNS_DIR = PRODUCT / "research" / "test-runs"
 BUGS_DIR = PRODUCT / "bugs"
 IMPLEMENTATION_DIR = PRODUCT / "implementation"
 GENERATED_DIR = PRODUCT / "generated"
 BUG_REVIEWS_DIR = GENERATED_DIR / "bug-reviews"
+BUG_PRODUCT_DECISIONS_DIR = GENERATED_DIR / "bug-product-decisions"
 TECH_VALIDATIONS_DIR = GENERATED_DIR / "technical-validations"
 MAX_AUTOMATIC_REPAIR_ATTEMPTS = 3
 COPILOT_AGENT_LOGIN = "copilot-swe-agent[bot]"
@@ -43,6 +45,29 @@ MASTER_CI_REGRESSION_WORKFLOWS = {"Android CI", "Android APK Build"}
 MASTER_CI_BRANCHES = {"master", "main"}
 PRODUCT_FOUNDATION_CANONICAL_BRANCH_ENV = "PRODUCT_FOUNDATION_CANONICAL_BRANCH"
 MAX_PERSIST_RETRIES = 3
+BUG_CLASSIFICATION_PRIORITY = {
+    "INCONCLUSIVE": 0,
+    "NEEDS_PRODUCT_DECISION": 1,
+    "CONFIRMED_DEFECT": 2,
+}
+BUG_SEVERITY_PRIORITY = {"LOW": 0, "MEDIUM": 1, "HIGH": 2, "CRITICAL": 3}
+BUG_SAFETY_PRIORITY = {"NONE": 0, "LOW": 1, "MEDIUM": 2, "HIGH": 3}
+BUG_STATUS_ALLOWED_TRANSITIONS = {
+    "NEW": {"TRIAGED", "INCONCLUSIVE", "NEEDS_PRODUCT_DECISION", "CONFIRMED_DEFECT"},
+    "TRIAGED": {"INCONCLUSIVE", "NEEDS_PRODUCT_DECISION", "CONFIRMED_DEFECT", "CLOSED"},
+    "INCONCLUSIVE": {"TRIAGED", "NEEDS_PRODUCT_DECISION", "CONFIRMED_DEFECT", "CLOSED"},
+    "NEEDS_PRODUCT_DECISION": {"CLOSED"},
+    "CONFIRMED_DEFECT": {"QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "QUEUED": {"IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "IN_PROGRESS": {"PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "PR_READY": {"REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "REPAIRING": {"IN_PROGRESS", "PR_READY", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "FAILED": {"REPAIRING", "CLOSED"},
+    "FIXED": {"VALIDATION_PENDING", "VALIDATED", "CLOSED"},
+    "VALIDATION_PENDING": {"VALIDATED", "FAILED", "CLOSED"},
+    "VALIDATED": {"CLOSED"},
+    "CLOSED": set(),
+}
 CI_FAILURE_PATTERNS = [
     re.compile(r":app:compile(?:Debug|Release)Kotlin FAILED", re.IGNORECASE),
     re.compile(r"^FAILURE:", re.IGNORECASE),
@@ -127,6 +152,21 @@ def canonical_requirement_ids(values: list[str] | None) -> list[str]:
             continue
         seen.add(req_id)
         canonical.append(req_id)
+    return canonical
+
+
+def canonical_test_run_ids(values: list[str] | None) -> list[str]:
+    canonical: list[str] = []
+    seen: set[str] = set()
+    existing_ids = {path.stem for path in TEST_RUNS_DIR.glob("TESTRUN-*.yaml")} | {path.stem for path in TEST_RUNS_DIR.glob("TESTRUN-*.yml")} | {path.stem for path in TEST_RUNS_DIR.glob("TESTRUN-*.json")}
+    for raw in values or []:
+        test_id = str(raw or "").strip()
+        if not re.fullmatch(r"TESTRUN-[0-9A-Za-z._-]+", test_id):
+            continue
+        if test_id not in existing_ids or test_id in seen:
+            continue
+        seen.add(test_id)
+        canonical.append(test_id)
     return canonical
 
 
@@ -324,6 +364,246 @@ def bug_impl_record_path(bug_id: str) -> Path:
     return impl_path(f"IMP-{bug_id}")
 
 
+def bug_product_decision_path(bug_id: str) -> Path:
+    return BUG_PRODUCT_DECISIONS_DIR / f"{bug_id}.json"
+
+
+def cloned_json(value):
+    return json.loads(json.dumps(value))
+
+
+def json_stable(value) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True)
+
+
+def bug_evidence_key(entry: dict) -> str:
+    return f"{entry.get('source')}::{entry.get('source_reference')}"
+
+
+def merge_evidence_entries(existing_entries: list[dict] | None, candidate_entries: list[dict] | None) -> list[dict]:
+    merged: list[dict] = []
+    indexed: dict[str, dict] = {}
+    for raw in list(existing_entries or []) + list(candidate_entries or []):
+        if not isinstance(raw, dict):
+            continue
+        entry = cloned_json(raw)
+        key = bug_evidence_key(entry)
+        if key in indexed:
+            current = indexed[key]
+            for field, value in entry.items():
+                if current.get(field) in {None, ""} and value is not None and value != "":
+                    current[field] = value
+            continue
+        indexed[key] = entry
+        merged.append(entry)
+    return merged
+
+
+def diagnostic_text_score(value: str) -> int:
+    text = normalize_log_text(str(value or "")).strip()
+    if not text:
+        return 0
+    score = min(len(text), 400)
+    score += 40 * text.count("\n")
+    for marker, weight in [
+        (":app:compile", 500),
+        ("execution failed for task", 250),
+        ("diagnostic excerpt", 180),
+        ("unresolved reference", 140),
+        ("no value passed for parameter", 140),
+        ("type mismatch", 120),
+        ("failure:", 100),
+        (" e:", 80),
+        ("e:", 80),
+    ]:
+        if marker in text.lower():
+            score += weight
+    return score
+
+
+def ci_failure_evidence_score(payload: dict | None) -> int:
+    if not isinstance(payload, dict) or not payload:
+        return 0
+    score = 0
+    if str(payload.get("result") or "").upper() == "ENRICHED":
+        score += 2_000
+    score += diagnostic_text_score(str(payload.get("excerpt") or payload.get("diagnostic_excerpt") or ""))
+    score += 20 * int(payload.get("diagnostic_lines_found") or 0)
+    score += 5 * len(payload.get("artifact_names") or [])
+    score += 5 * len(payload.get("log_files_found") or [])
+    if payload.get("artifact_name"):
+        score += 25
+    if payload.get("log_file"):
+        score += 25
+    if payload.get("job_logs_fetched"):
+        score += 10
+    if payload.get("artifact_downloaded"):
+        score += 10
+    return score
+
+
+def merge_ci_failure_evidence(existing: dict | None, candidate: dict | None) -> dict:
+    existing = dict(existing or {})
+    candidate = dict(candidate or {})
+    if not existing:
+        return cloned_json(candidate)
+    if not candidate:
+        return cloned_json(existing)
+    base = cloned_json(candidate if ci_failure_evidence_score(candidate) > ci_failure_evidence_score(existing) else existing)
+    for key in ["artifact_names", "log_files_found"]:
+        base[key] = list(dict.fromkeys([str(value) for value in (existing.get(key) or []) + (candidate.get(key) or []) if str(value).strip()]))
+    for key in ["artifacts_found", "diagnostic_lines_found", "text_files_scanned", "candidate_files_found"]:
+        base[key] = max(int(existing.get(key) or 0), int(candidate.get(key) or 0))
+    for key in ["artifact_name", "log_file", "failed_job", "failed_step", "safe_diagnostic", "job_log_http_status", "artifact_download_status", "artifact_extract_status", "result", "excerpt", "diagnostic_excerpt"]:
+        if not base.get(key):
+            base[key] = candidate.get(key) or existing.get(key) or ""
+    base["artifact_downloaded"] = bool(existing.get("artifact_downloaded") or candidate.get("artifact_downloaded"))
+    base["job_logs_fetched"] = bool(existing.get("job_logs_fetched") or candidate.get("job_logs_fetched"))
+    return base
+
+
+def choose_more_specific_text(existing: str, candidate: str) -> str:
+    existing_text = str(existing or "").strip()
+    candidate_text = str(candidate or "").strip()
+    if not existing_text:
+        return candidate_text
+    if not candidate_text:
+        return existing_text
+    existing_score = diagnostic_text_score(existing_text)
+    candidate_score = diagnostic_text_score(candidate_text)
+    if candidate_score > existing_score:
+        return candidate_text
+    if existing_score > candidate_score:
+        return existing_text
+    return candidate_text if len(candidate_text) > len(existing_text) else existing_text
+
+
+def merge_traceability(existing: dict | None, candidate: dict | None) -> dict:
+    merged = cloned_json(existing or {})
+    candidate = dict(candidate or {})
+    for key, value in candidate.items():
+        if isinstance(value, bool):
+            merged[key] = bool(merged.get(key)) or value
+        elif isinstance(value, list):
+            merged[key] = list(dict.fromkeys(list(merged.get(key) or []) + list(value or [])))
+        elif value not in {None, ""}:
+            merged[key] = value
+    return merged
+
+
+def choose_ranked_value(existing: str, candidate: str, ranking: dict[str, int]) -> str:
+    existing_value = str(existing or "").upper()
+    candidate_value = str(candidate or "").upper()
+    if ranking.get(candidate_value, -1) > ranking.get(existing_value, -1):
+        return candidate_value
+    return existing_value or candidate_value
+
+
+def merge_bug_classification(existing: str | None, candidate: str | None) -> str:
+    existing_value = str(existing or "").upper() or "INCONCLUSIVE"
+    candidate_value = str(candidate or "").upper() or existing_value
+    if existing_value in {"CONFIRMED_DEFECT", "NEEDS_PRODUCT_DECISION"}:
+        return existing_value
+    if BUG_CLASSIFICATION_PRIORITY.get(candidate_value, -1) > BUG_CLASSIFICATION_PRIORITY.get(existing_value, -1):
+        return candidate_value
+    return existing_value
+
+
+def canonical_bug_status(value: str | None) -> str:
+    status = str(value or "").upper().strip()
+    return status if status in BUG_STATUS_ALLOWED_TRANSITIONS else "NEW"
+
+
+def bug_status_can_reach(source: str, target: str) -> bool:
+    source = canonical_bug_status(source)
+    target = canonical_bug_status(target)
+    if source == target:
+        return True
+    visited: set[str] = set()
+    frontier = [source]
+    while frontier:
+        current = frontier.pop(0)
+        if current in visited:
+            continue
+        visited.add(current)
+        for nxt in BUG_STATUS_ALLOWED_TRANSITIONS.get(current, set()):
+            if nxt == target:
+                return True
+            if nxt not in visited:
+                frontier.append(nxt)
+    return False
+
+
+def merge_bug_status(existing: str | None, candidate: str | None, final_classification: str | None = None) -> str:
+    existing_status = canonical_bug_status(existing)
+    candidate_status = canonical_bug_status(candidate)
+    if final_classification == "INCONCLUSIVE" and existing_status not in {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}:
+        candidate_status = "TRIAGED"
+    elif final_classification == "NEEDS_PRODUCT_DECISION" and existing_status not in {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}:
+        candidate_status = "NEEDS_PRODUCT_DECISION"
+    elif final_classification == "CONFIRMED_DEFECT" and candidate_status in {"TRIAGED", "INCONCLUSIVE", "NEEDS_PRODUCT_DECISION", "NEW"}:
+        candidate_status = "CONFIRMED_DEFECT"
+    if bug_status_can_reach(existing_status, candidate_status):
+        return candidate_status
+    if bug_status_can_reach(candidate_status, existing_status):
+        return existing_status
+    return existing_status
+
+
+def build_bug_product_decision_record(bug: dict) -> dict:
+    return {
+        "bug_id": bug["bug_id"],
+        "classification": bug.get("classification", "NEEDS_PRODUCT_DECISION"),
+        "status": bug.get("status", "NEEDS_PRODUCT_DECISION"),
+        "source_issue_number": bug.get("source_issue_number"),
+        "source_issue_url": bug.get("source_issue_url") or "",
+        "title": bug.get("title") or "",
+        "observed_behavior": bug.get("observed_behavior") or "",
+        "expected_behavior": bug.get("expected_behavior") or "",
+        "reproduction": bug.get("reproduction") or "",
+        "triage_reasoning": bug.get("triage_reasoning") or "",
+        "triage_traceability": cloned_json(bug.get("triage_traceability") or {}),
+        "updated_at": now_iso(),
+    }
+
+
+def sync_bug_product_decision_record(bug: dict) -> None:
+    path = bug_product_decision_path(str(bug.get("bug_id") or ""))
+    if str(bug.get("classification") or "") == "NEEDS_PRODUCT_DECISION":
+        candidate = build_bug_product_decision_record(bug)
+        if path.exists():
+            existing = read_json(path)
+            comparable_existing = cloned_json(existing)
+            comparable_candidate = cloned_json(candidate)
+            comparable_existing.pop("updated_at", None)
+            comparable_candidate.pop("updated_at", None)
+            if json_stable(comparable_existing) == json_stable(comparable_candidate):
+                return
+        write_json(path, candidate)
+    elif path.exists():
+        path.unlink()
+
+
+def bug_has_useful_ci_diagnostic_evidence(bug: dict) -> bool:
+    evidence = bug.get("ci_failure_evidence") or {}
+    return str(evidence.get("result") or "").upper() == "ENRICHED" and bool(str(evidence.get("excerpt") or evidence.get("diagnostic_excerpt") or "").strip())
+
+
+def bug_has_technical_validation_evidence(bug_id: str) -> bool:
+    return any(TECH_VALIDATIONS_DIR.glob(f"IMP-{bug_id}-*.json"))
+
+
+def read_head_json_if_exists(rel_path: str) -> dict | None:
+    shown = run_git(["show", f"HEAD:{rel_path}"])
+    if shown.returncode != 0:
+        return None
+    try:
+        payload = json.loads(shown.stdout)
+    except Exception:
+        return None
+    return payload if isinstance(payload, dict) else None
+
+
 def canonical_branch_name(branch: str | None = None) -> str:
     configured = str(branch or os.environ.get(PRODUCT_FOUNDATION_CANONICAL_BRANCH_ENV) or DEFAULT_BASE_BRANCH).strip()
     return configured or DEFAULT_BASE_BRANCH
@@ -390,43 +670,38 @@ def load_canonical_bug_catalog(branch: str | None = None) -> list[dict]:
 
 
 def merge_bug_records(existing: dict, candidate: dict) -> dict:
-    merged = json.loads(json.dumps(existing))
+    merged = cloned_json(existing)
+    merged["evidence"] = merge_evidence_entries(existing.get("evidence") or [], candidate.get("evidence") or [])
+    append_evidence(merged, str(candidate.get("source") or ""), str(candidate.get("source_reference") or ""))
     merged["title"] = merged.get("title") or candidate.get("title") or "Zgloszony blad"
     merged["source_issue_number"] = merged.get("source_issue_number") if merged.get("source_issue_number") is not None else candidate.get("source_issue_number")
     merged["source_issue_url"] = merged.get("source_issue_url") or candidate.get("source_issue_url") or ""
     merged["related_requirement_ids"] = canonical_requirement_ids(list((merged.get("related_requirement_ids") or []) + (candidate.get("related_requirement_ids") or [])))
-    merged["related_test_ids"] = sorted(set((merged.get("related_test_ids") or []) + (candidate.get("related_test_ids") or [])))
-    if not merged.get("observed_behavior"):
-        merged["observed_behavior"] = candidate.get("observed_behavior") or "Brak opisu zachowania."
-    if not merged.get("expected_behavior"):
-        merged["expected_behavior"] = candidate.get("expected_behavior") or "Brak jednoznacznego opisu."
-    if not merged.get("reproduction"):
-        merged["reproduction"] = candidate.get("reproduction") or "Brak krokow reprodukcji."
-    if not merged.get("additional_context") and candidate.get("additional_context"):
-        merged["additional_context"] = candidate.get("additional_context")
-    status_order = {
-        "NEW": 0,
-        "TRIAGED": 1,
-        "CONFIRMED_DEFECT": 2,
-        "QUEUED": 3,
-        "IN_PROGRESS": 4,
-        "REPAIRING": 5,
-        "PR_READY": 6,
-        "VALIDATION_PENDING": 7,
-        "RESOLVED": 8,
-        "CLOSED": 9,
-    }
-    existing_status = str(merged.get("status") or "")
-    candidate_status = str(candidate.get("status") or "")
-    if candidate_status and status_order.get(candidate_status, -1) > status_order.get(existing_status, -1):
-        merged["status"] = candidate_status
-
-    existing_classification = str(merged.get("classification") or "")
-    candidate_classification = str(candidate.get("classification") or "")
-    if existing_classification != "CONFIRMED_DEFECT" and candidate_classification == "CONFIRMED_DEFECT":
-        merged["classification"] = "CONFIRMED_DEFECT"
-    if not merged.get("triage_reasoning") and candidate.get("triage_reasoning"):
-        merged["triage_reasoning"] = candidate.get("triage_reasoning")
+    merged["related_test_ids"] = list(dict.fromkeys(list(merged.get("related_test_ids") or []) + list(candidate.get("related_test_ids") or [])))
+    merged_ci_failure_evidence = merge_ci_failure_evidence(existing.get("ci_failure_evidence") or {}, candidate.get("ci_failure_evidence") or {})
+    if merged_ci_failure_evidence or "ci_failure_evidence" in existing or "ci_failure_evidence" in candidate:
+        merged["ci_failure_evidence"] = merged_ci_failure_evidence
+    merged["observed_behavior"] = choose_more_specific_text(merged.get("observed_behavior") or "", candidate.get("observed_behavior") or "") or "Brak opisu zachowania."
+    merged["expected_behavior"] = choose_more_specific_text(merged.get("expected_behavior") or "", candidate.get("expected_behavior") or "") or "Brak jednoznacznego opisu."
+    merged["reproduction"] = choose_more_specific_text(merged.get("reproduction") or "", candidate.get("reproduction") or "") or "Brak krokow reprodukcji."
+    merged_additional_context = choose_more_specific_text(merged.get("additional_context") or "", candidate.get("additional_context") or "")
+    if merged_additional_context or "additional_context" in existing or "additional_context" in candidate:
+        merged["additional_context"] = merged_additional_context
+    merged["classification"] = merge_bug_classification(existing.get("classification"), candidate.get("classification"))
+    merged["status"] = merge_bug_status(existing.get("status"), candidate.get("status"), str(merged.get("classification") or ""))
+    candidate_reasoning = str(candidate.get("triage_reasoning") or "").strip()
+    existing_reasoning = str(merged.get("triage_reasoning") or "").strip()
+    if candidate_reasoning and BUG_CLASSIFICATION_PRIORITY.get(str(candidate.get("classification") or "").upper(), -1) >= BUG_CLASSIFICATION_PRIORITY.get(str(existing.get("classification") or "").upper(), -1):
+        merged["triage_reasoning"] = candidate_reasoning if len(candidate_reasoning) >= len(existing_reasoning) else existing_reasoning
+    elif not existing_reasoning and candidate_reasoning:
+        merged["triage_reasoning"] = candidate_reasoning
+    elif existing_reasoning:
+        merged["triage_reasoning"] = existing_reasoning
+    merged_traceability = merge_traceability(existing.get("triage_traceability") or {}, candidate.get("triage_traceability") or {})
+    if merged_traceability or "triage_traceability" in existing or "triage_traceability" in candidate:
+        merged["triage_traceability"] = merged_traceability
+    merged["severity"] = choose_ranked_value(str(existing.get("severity") or "MEDIUM"), str(candidate.get("severity") or "MEDIUM"), BUG_SEVERITY_PRIORITY) or "MEDIUM"
+    merged["safety_impact"] = choose_ranked_value(str(existing.get("safety_impact") or "LOW"), str(candidate.get("safety_impact") or "LOW"), BUG_SAFETY_PRIORITY) or "LOW"
 
     existing_impl = dict(merged.get("implementation_issue") or {})
     candidate_impl = dict(candidate.get("implementation_issue") or {})
@@ -458,15 +733,9 @@ def merge_bug_records(existing: dict, candidate: dict) -> dict:
 
     if str(merged.get("validation_state") or "").upper() in {"", "PENDING"} and str(candidate.get("validation_state") or "").upper() not in {"", "PENDING"}:
         merged["validation_state"] = candidate.get("validation_state")
-    traceability = dict(merged.get("triage_traceability") or {})
-    candidate_traceability = dict(candidate.get("triage_traceability") or {})
-    for key, value in candidate_traceability.items():
-        if key not in traceability:
-            traceability[key] = value
-    if traceability:
-        merged["triage_traceability"] = traceability
-    merged["dedup_signature"] = merged.get("dedup_signature") or bug_signature(candidate)
-    append_evidence(merged, str(candidate.get("source") or ""), str(candidate.get("source_reference") or ""))
+    merged["dedup_signature"] = bug_signature(merged)
+    if json_stable(merged) == json_stable(existing):
+        return cloned_json(existing)
     merged["updated_at"] = now_iso()
     return merged
 
@@ -926,7 +1195,7 @@ def ensure_bug_impl(bug: dict) -> dict:
         "branch": (bug.get("pull_request") or {}).get("branch"),
         "pull_request_number": (bug.get("pull_request") or {}).get("number"),
         "pull_request_url": (bug.get("pull_request") or {}).get("url"),
-        "status": "QUEUED",
+        "status": bug_impl_status_from_bug(bug),
         "created_at": now_iso(),
         "attempt_count": 0,
         "last_ci_result": "UNKNOWN",
@@ -1063,10 +1332,14 @@ class GitHubClient:
         features = ",".join(COPILOT_GRAPHQL_FEATURE_FLAGS)
         return self._request("POST", "/graphql", payload, extra_headers={"GraphQL-Features": features})
 
-    def _copilot_assignee_confirmed(self, issue_number: int) -> tuple[bool, list[str]]:
+    def _copilot_assignee_confirmed(self, issue_number: int, expected_actor_node_id: str | None = None):
         issue = self.get_issue(issue_number)
-        logins = [str((a or {}).get("login")) for a in (issue.get("assignees") or []) if (a or {}).get("login")]
-        return COPILOT_AGENT_LOGIN in logins, logins
+        assignees = [a for a in (issue.get("assignees") or []) if isinstance(a, dict)]
+        logins = [str((a or {}).get("login")) for a in assignees if (a or {}).get("login")]
+        node_ids = [str((a or {}).get("node_id") or (a or {}).get("id")) for a in assignees if (a or {}).get("node_id") or (a or {}).get("id")]
+        if expected_actor_node_id:
+            return expected_actor_node_id in node_ids, logins, node_ids
+        return COPILOT_AGENT_LOGIN in logins, logins, node_ids
 
     def _get_repository_node_id(self) -> str:
         query = """
@@ -1189,8 +1462,9 @@ class GitHubClient:
                 assignable = payload.get("assignable") or {}
                 assignees = ((assignable.get("assignees") or {}).get("nodes") or [])
                 assignee_logins = [str((node or {}).get("login")) for node in assignees if (node or {}).get("login")]
-                mutation_confirmed = COPILOT_AGENT_LOGIN in assignee_logins
-                rest_confirmed, current_logins = self._copilot_assignee_confirmed(issue_number)
+                assignee_node_ids = [str((node or {}).get("id")) for node in assignees if (node or {}).get("id")]
+                mutation_confirmed = actor_id in assignee_node_ids
+                rest_confirmed, current_logins, current_node_ids = call_assignee_confirmation(self, issue_number, actor_id)
                 if mutation_confirmed and rest_confirmed:
                     return {
                         "status": "ASSIGNED",
@@ -1203,12 +1477,14 @@ class GitHubClient:
                         "assignee_ids": list(spec["variables"].get("assigneeIds") or spec["variables"].get("actorIds") or []),
                         "assignee_id_field": "assigneeIds" if "assigneeIds" in spec["variables"] else "actorIds",
                         "assignees": assignee_logins,
+                        "assignee_node_ids": assignee_node_ids,
                         "verified_assignees": current_logins,
+                        "verified_assignee_node_ids": current_node_ids,
                         "response": response,
                     }
                 last_error = (
                     "Copilot assignee was not confirmed after GraphQL mutation; "
-                    f"mutation_assignees={assignee_logins}, issue_assignees={current_logins}"
+                    f"mutation_assignees={assignee_logins}, mutation_assignee_ids={assignee_node_ids}, issue_assignees={current_logins}, issue_assignee_ids={current_node_ids}"
                 )
             except RuntimeError as exc:
                 last_error = str(exc)
@@ -1449,20 +1725,83 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
 GITHUB_CLIENT_FACTORY = GitHubClient
 
 
+def unpack_assignee_confirmation(result) -> tuple[bool, list[str], list[str]]:
+    if isinstance(result, tuple):
+        if len(result) >= 3:
+            return bool(result[0]), list(result[1] or []), list(result[2] or [])
+        if len(result) == 2:
+            return bool(result[0]), list(result[1] or []), []
+    return False, [], []
+
+
+def call_assignee_confirmation(client, issue_number: int, expected_actor_node_id: str | None = None) -> tuple[bool, list[str], list[str]]:
+    try:
+        return unpack_assignee_confirmation(client._copilot_assignee_confirmed(issue_number, expected_actor_node_id))
+    except TypeError:
+        return unpack_assignee_confirmation(client._copilot_assignee_confirmed(issue_number))
+
+
+def find_requirement_by_implementation_issue_number(issue_number: int):
+    for path, req in iter_requirements():
+        issue = ((req.get("implementation") or {}).get("implementation_issue") or {})
+        if issue.get("number") == issue_number:
+            return path, req
+    return None, None
+
+
+def find_bug_by_implementation_issue_number(issue_number: int):
+    for path, bug in iter_bugs():
+        issue = bug.get("implementation_issue") or {}
+        if issue.get("number") == issue_number:
+            return path, bug
+    return None, None
+
+
+def resolve_pr_canonical_entity(pr: dict):
+    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
+    req_matches = []
+    bug_matches = []
+    for issue_ref in {int(value) for value in re.findall(r"#(\d+)", text)}:
+        req_path, req = find_requirement_by_implementation_issue_number(issue_ref)
+        if req is not None:
+            req_matches.append((req_path, req))
+        bug_path, bug = find_bug_by_implementation_issue_number(issue_ref)
+        if bug is not None:
+            bug_matches.append((bug_path, bug))
+    if len(req_matches) == 1 and not bug_matches:
+        return "REQUIREMENT", req_matches[0][0], req_matches[0][1]
+    if len(bug_matches) == 1 and not req_matches:
+        return "BUG", bug_matches[0][0], bug_matches[0][1]
+    return None, None, None
+
+
+def bug_impl_status_from_bug(bug: dict) -> str:
+    status = str(bug.get("status") or "").upper()
+    return {
+        "QUEUED": "QUEUED",
+        "IN_PROGRESS": "AGENT_ASSIGNED",
+        "PR_READY": "PR_READY",
+        "VALIDATION_PENDING": "VALIDATION_PENDING",
+        "VALIDATED": "VALIDATED",
+        "REPAIRING": "REPAIRING",
+        "FAILED": "FAILED",
+        "FIXED": "READY_FOR_HUMAN_REVIEW",
+    }.get(status, "QUEUED")
+
+
+def existing_bug_defect_lifecycle_preserved(bug: dict) -> bool:
+    return str(bug.get("classification") or "") == "CONFIRMED_DEFECT" and str(bug.get("status") or "") in {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}
+
+
 def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
     event = read_json(Path(event_file))
     pr = event.get("pull_request")
     if not isinstance(pr, dict):
         print("SKIP: not a pull_request payload")
         return 0
-    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_match = re.search(r"REQ-[0-9A-Za-z._-]+", text)
-    bug_match = re.search(r"BUG-[0-9A-Za-z._-]+", text)
-    if req_match:
-        req_path, req = find_requirement(req_match.group(0))
-        if req is None:
-            print("SKIP: no canonical requirement found")
-            return 0
+    entity, linked_path, linked_record = resolve_pr_canonical_entity(pr)
+    if entity == "REQUIREMENT":
+        req_path, req = linked_path, linked_record
         impl = req.get("implementation") or {}
         pr_info = impl.get("implementation_pr") or {}
         pr_info.update({"number": int(pr["number"]), "url": pr.get("html_url"), "head_ref": (pr.get("head") or {}).get("ref"), "state": pr.get("state"), "updated_at": now_iso()})
@@ -1482,11 +1821,8 @@ def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
             "validation_state": "VALIDATION_PENDING" if pr.get("merged") else impl.get("validation_state", "PENDING"),
         })
         summary = {"entity": "REQUIREMENT", "req_id": req["id"], "status": impl["implementation_status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": impl.get("source_inbox_issue_number") or req.get("source_github_issue_number")}
-    elif bug_match:
-        bug_path, bug = find_bug(bug_match.group(0))
-        if bug is None:
-            print("SKIP: no canonical bug found")
-            return 0
+    elif entity == "BUG":
+        bug_path, bug = linked_path, linked_record
         bug["pull_request"] = {"number": int(pr["number"]), "url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "state": pr.get("state"), "updated_at": now_iso()}
         bug["pull_request_number"] = int(pr["number"])
         bug["pull_request_url"] = pr.get("html_url")
@@ -1499,7 +1835,7 @@ def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
         upsert_impl({"implementation_id": f"IMP-{bug['bug_id']}", "pull_request_number": int(pr["number"]), "pull_request_url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "status": "VALIDATION_PENDING" if pr.get("merged") else "READY_FOR_HUMAN_REVIEW"})
         summary = {"entity": "BUG", "bug_id": bug["bug_id"], "status": bug["status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": bug.get("source_issue_number")}
     else:
-        print("SKIP: no REQ/BUG reference in PR")
+        print("SKIP: pull request is not linked to a canonical implementation issue")
         return 0
     if output_file:
         write_json(Path(output_file), summary)
@@ -1549,6 +1885,7 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     if bug is None:
         print(f"ERROR: unknown bug {bug_id}", file=sys.stderr)
         return 1
+    existing_snapshot = cloned_json(bug)
     raw = Path(ai_review_file).read_text(encoding="utf-8").strip()
     if not raw.startswith("{"):
         s = raw.find("{")
@@ -1558,30 +1895,50 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     cls = review.get("classification", "INCONCLUSIVE")
     requires_change = bool(review.get("requires_behavior_change"))
     related = canonical_requirement_ids(list((bug.get("related_requirement_ids") or []) + (review.get("recommended_related_requirements") or [])))
+    related_test_ids = list(dict.fromkeys((bug.get("related_test_ids") or []) + (review.get("recommended_related_tests") or [])))
+    verified_test_run_ids = canonical_test_run_ids(related_test_ids)
+    accepted_related = [rid for rid in related if is_accepted_requirement(rid)]
+    has_verified_test_evidence = bool(verified_test_run_ids)
+    has_technical_validation = bug_has_technical_validation_evidence(bug_id)
+    has_ci_diagnostic_evidence = bug_has_useful_ci_diagnostic_evidence(bug)
+    traceable = bool(accepted_related) or has_verified_test_evidence or has_technical_validation or has_ci_diagnostic_evidence
     bug["related_requirement_ids"] = related
-    bug["related_test_ids"] = list(dict.fromkeys((bug.get("related_test_ids") or []) + (review.get("recommended_related_tests") or [])))
+    bug["related_test_ids"] = related_test_ids
     bug["severity"] = review.get("severity", bug.get("severity", "MEDIUM"))
     bug["safety_impact"] = review.get("safety_impact", bug.get("safety_impact", "LOW"))
     bug["triage_reasoning"] = review.get("reasoning", "")
-    accepted_related = [rid for rid in related if is_accepted_requirement(rid)]
-    has_test_evidence = bool(bug.get("related_test_ids"))
-    has_ci_regression_evidence = str(bug.get("source", "")).upper() == "CI_REGRESSION"
-    traceable = bool(accepted_related) or has_test_evidence or has_ci_regression_evidence
     safety_impact = str(bug.get("safety_impact", "LOW")).upper()
     safety_requires_product = safety_impact in {"MEDIUM", "HIGH"}
-    if cls == "CONFIRMED_DEFECT" and traceable and not requires_change and not safety_requires_product:
-        bug["classification"] = "CONFIRMED_DEFECT"
-        bug["status"] = "CONFIRMED_DEFECT"
+    requested_classification = "INCONCLUSIVE"
+    requested_status = "TRIAGED"
+    if cls == "CONFIRMED_DEFECT":
+        if traceable and not requires_change and not safety_requires_product:
+            requested_classification = "CONFIRMED_DEFECT"
+            requested_status = "CONFIRMED_DEFECT"
+        elif requires_change or safety_requires_product:
+            requested_classification = "NEEDS_PRODUCT_DECISION"
+            requested_status = "NEEDS_PRODUCT_DECISION"
     elif cls == "INCONCLUSIVE":
-        bug["classification"] = "INCONCLUSIVE"
-        bug["status"] = "TRIAGED"
+        requested_classification = "INCONCLUSIVE"
+        requested_status = "TRIAGED"
     else:
-        bug["classification"] = "NEEDS_PRODUCT_DECISION"
-        bug["status"] = "NEEDS_PRODUCT_DECISION"
+        requested_classification = "NEEDS_PRODUCT_DECISION"
+        requested_status = "NEEDS_PRODUCT_DECISION"
+    final_classification = merge_bug_classification(bug.get("classification"), requested_classification)
+    final_status = merge_bug_status(bug.get("status"), requested_status, final_classification)
+    if final_classification == "CONFIRMED_DEFECT" and requested_classification != "CONFIRMED_DEFECT" and existing_bug_defect_lifecycle_preserved(existing_snapshot):
+        final_status = str(existing_snapshot.get("status") or final_status)
+    bug["classification"] = final_classification
+    bug["status"] = final_status
     bug["triage_traceability"] = {
         "accepted_related_requirement_ids": accepted_related,
-        "has_test_evidence": has_test_evidence,
-        "has_ci_regression_evidence": has_ci_regression_evidence,
+        "verified_related_test_run_ids": verified_test_run_ids,
+        "has_test_evidence": has_verified_test_evidence,
+        "has_verified_test_evidence": has_verified_test_evidence,
+        "has_ci_regression_source": str(bug.get("source", "")).upper() == "CI_REGRESSION",
+        "has_ci_regression_evidence": has_ci_diagnostic_evidence,
+        "has_ci_diagnostic_evidence": has_ci_diagnostic_evidence,
+        "has_technical_validation_evidence": has_technical_validation,
         "requires_behavior_change": requires_change,
         "safety_requires_product_decision": safety_requires_product,
     }
@@ -1590,9 +1947,12 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
         stale_impl = impl_path(f"IMP-{bug_id}")
         if stale_impl.exists():
             stale_impl.unlink()
-    bug["updated_at"] = now_iso()
+    sync_bug_product_decision_record(bug)
+    existing_review = read_json(bug_review_path(bug_id)) if bug_review_path(bug_id).exists() else None
+    if json_stable(bug) != json_stable(existing_snapshot):
+        bug["updated_at"] = now_iso()
     write_json(bug_path, bug)
-    write_json(BUG_REVIEWS_DIR / f"{bug_id}.json", {"bug_id": bug_id, "classification": bug["classification"], "status": bug["status"], "generated_at": now_iso()})
+    write_json(BUG_REVIEWS_DIR / f"{bug_id}.json", merge_bug_review(existing_review, {"generated_at": now_iso()}, bug))
     print(json.dumps({"bug_id": bug_id, "classification": bug["classification"], "status": bug["status"]}, ensure_ascii=False))
     return 0
 
@@ -1636,6 +1996,7 @@ def is_bug_persist_path(rel_path: str) -> bool:
     return bool(
         re.fullmatch(r"product/bugs/BUG-\d+\.json", rel_path)
         or re.fullmatch(r"product/generated/bug-reviews/BUG-\d+\.json", rel_path)
+        or re.fullmatch(r"product/generated/bug-product-decisions/BUG-\d+\.json", rel_path)
         or re.fullmatch(r"product/implementation/IMP-BUG-\d+\.json", rel_path)
     )
 
@@ -1649,8 +2010,8 @@ def merge_bug_review(existing: dict | None, candidate: dict | None, bug: dict) -
     payload = dict(existing or {})
     candidate = dict(candidate or {})
     payload["bug_id"] = bug["bug_id"]
-    payload["classification"] = payload.get("classification") or candidate.get("classification") or bug.get("classification", "INCONCLUSIVE")
-    payload["status"] = payload.get("status") or candidate.get("status") or bug.get("status", "NEW")
+    payload["classification"] = bug.get("classification", "INCONCLUSIVE")
+    payload["status"] = bug.get("status", "NEW")
     payload["generated_at"] = candidate.get("generated_at") or payload.get("generated_at") or now_iso()
     return payload
 
@@ -1679,23 +2040,33 @@ def capture_bug_persistence_bundles() -> list[dict]:
         impl_path_value = bug_impl_record_path(bug_id)
         if impl_path_value.exists():
             bundle["implementation"] = read_json(impl_path_value)
+        elif f"product/implementation/IMP-{bug_id}.json" in changed:
+            bundle["implementation_deleted"] = True
+            bundle["deleted_implementation_snapshot"] = read_head_json_if_exists(f"product/implementation/IMP-{bug_id}.json")
         bundles.append(bundle)
     return bundles
 
 
 def reconcile_bug_persistence_bundle(bundle: dict) -> dict:
-    candidate = json.loads(json.dumps(bundle["bug"]))
+    candidate = cloned_json(bundle["bug"])
     candidate["bug_id"] = str(bundle.get("planned_bug_id") or candidate.get("bug_id") or "")
     bug, action = create_or_deduplicate_bug(candidate)
     final_bug_id = str(bug["bug_id"])
     existing_review = read_json(bug_review_path(final_bug_id)) if bug_review_path(final_bug_id).exists() else None
     if bundle.get("review") is not None or existing_review is not None:
         write_json(bug_review_path(final_bug_id), merge_bug_review(existing_review, bundle.get("review"), bug))
-    if bundle.get("implementation") is not None:
+    sync_bug_product_decision_record(bug)
+    final_impl_path = bug_impl_record_path(final_bug_id)
+    if str(bug.get("classification") or "") != "CONFIRMED_DEFECT":
+        if final_impl_path.exists():
+            final_impl_path.unlink()
+    elif bundle.get("implementation") is not None:
         impl_record = dict(bundle["implementation"])
         impl_record["implementation_id"] = f"IMP-{final_bug_id}"
         impl_record["bug_id"] = final_bug_id
-        write_json(bug_impl_record_path(final_bug_id), impl_record)
+        write_json(final_impl_path, impl_record)
+    elif bundle.get("implementation_deleted") and final_impl_path.exists():
+        final_impl_path.unlink()
     return {
         "planned_bug_id": str(bundle.get("planned_bug_id") or ""),
         "final_bug_id": final_bug_id,
@@ -1896,6 +2267,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
     try:
         bugfix_label_result = str(client.ensure_label("bugfix", "d73a4a", "Naprawy bledow LibreCare") or "UNKNOWN")
         bug_label_result = str(client.ensure_label(bug_id, "b60205", f"Sledzenie bledu {bug_id}") or "UNKNOWN")
+        expected_actor_node_id = str((issue.get("agent_assignment") or {}).get("actor_node_id") or "").strip() or None
         if existing_issue_number and issue.get("assigned_agent") == COPILOT_AGENT_LOGIN:
             issue["updated_at"] = now_iso()
             bug["implementation_issue"] = issue
@@ -1927,7 +2299,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
                 print(json.dumps(summary, ensure_ascii=False))
             return 0
         if existing_issue_number:
-            confirmed, _assignees = client._copilot_assignee_confirmed(int(existing_issue_number))
+            confirmed, _assignees, _assignee_ids = call_assignee_confirmation(client, int(existing_issue_number), expected_actor_node_id)
             if confirmed:
                 issue["assigned_agent"] = COPILOT_AGENT_LOGIN
                 issue["updated_at"] = now_iso()
@@ -2018,7 +2390,7 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
             bug["status"] = "IN_PROGRESS"
             handoff_result = "HANDOFF_CREATED" if issue_created and not issue_reused else "HANDOFF_REUSED"
         else:
-            bug["status"] = "CONFIRMED_DEFECT"
+            bug["status"] = "QUEUED"
             handoff_result = "HANDOFF_FAILED"
             failure_reason = assignment_error or failure_reason or "Copilot assignment failed."
         bug["updated_at"] = now_iso()
@@ -2089,6 +2461,12 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
     attempts = int(impl.get("attempt_count", 0)) + 1
     if attempts >= MAX_AUTOMATIC_REPAIR_ATTEMPTS:
         upsert_impl({"implementation_id": impl_id, "status": "FAILED", "last_ci_result": "FAIL", "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS, "ci_failures": failures + [corr]})
+        if entity == "BUG":
+            bug_path, bug = find_bug(impl_id.replace("IMP-", ""))
+            if bug is not None:
+                bug["status"] = "FAILED"
+                bug["updated_at"] = now_iso()
+                write_json(bug_path, bug)
         payload = {"entity": entity, "implementation_id": impl_id, "status": "FAILED", "action": "UPDATED", "repair_attempted": False, "repair_assignment_verified": False, "attempt_count": MAX_AUTOMATIC_REPAIR_ATTEMPTS, "human_comment": "Automatyczne naprawy przekroczyly limit 3 prob. Wymagana interwencja czlowieka.", "auto_merge": False}
         if output_file:
             write_json(Path(output_file), payload)
@@ -2121,6 +2499,12 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
     else:
         failure_reason = "Brak issue implementacyjnego dla automatycznej naprawy CI."
     upsert_impl({"implementation_id": impl_id, "status": "REPAIRING", "last_ci_result": "FAIL", "attempt_count": attempts, "ci_failures": failures + [corr]})
+    if entity == "BUG":
+        bug_path, bug = find_bug(impl_id.replace("IMP-", ""))
+        if bug is not None:
+            bug["status"] = "REPAIRING"
+            bug["updated_at"] = now_iso()
+            write_json(bug_path, bug)
     payload = {"entity": entity, "implementation_id": impl_id, "status": "REPAIRING", "action": "UPDATED", "repair_attempted": repair_attempted, "repair_assignment_verified": repair_assignment_verified, "attempt_count": attempts, "auto_merge": False}
     if failure_reason:
         payload["failure_reason"] = failure_reason

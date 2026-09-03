@@ -329,6 +329,14 @@ def iter_implementation_paths():
     yield from sorted(IMPLEMENTATION_DIR.glob("IMP-*.json"))
 
 
+def iter_bug_paths():
+    yield from sorted(BUGS_DIR.glob("BUG-*.json"))
+
+
+def iter_bug_review_paths():
+    yield from sorted(BUG_REVIEWS_DIR.glob("BUG-*.json"))
+
+
 def implementation_record_path(implementation_id: str) -> Path:
     return IMPLEMENTATION_DIR / f"{implementation_id}.json"
 
@@ -337,6 +345,22 @@ def normalize_implementation_status(status: str | None) -> str:
     if not status:
         return "QUEUED"
     return LEGACY_IMPLEMENTATION_STATUS_MAP.get(status, status)
+
+
+def unpack_assignee_confirmation(result) -> tuple[bool, list[str], list[str]]:
+    if isinstance(result, tuple):
+        if len(result) >= 3:
+            return bool(result[0]), list(result[1] or []), list(result[2] or [])
+        if len(result) == 2:
+            return bool(result[0]), list(result[1] or []), []
+    return False, [], []
+
+
+def call_assignee_confirmation(client, issue_number: int, expected_actor_node_id: str | None = None) -> tuple[bool, list[str], list[str]]:
+    try:
+        return unpack_assignee_confirmation(client._copilot_assignee_confirmed(issue_number, expected_actor_node_id))
+    except TypeError:
+        return unpack_assignee_confirmation(client._copilot_assignee_confirmed(issue_number))
 
 
 def load_implementation_record(implementation_id: str) -> dict | None:
@@ -1167,10 +1191,14 @@ class GitHubIssueAutomationClient:
         features = ",".join(COPILOT_GRAPHQL_FEATURE_FLAGS)
         return self._request("POST", "/graphql", payload, extra_headers={"GraphQL-Features": features})
 
-    def _copilot_assignee_confirmed(self, issue_number: int) -> tuple[bool, list[str]]:
+    def _copilot_assignee_confirmed(self, issue_number: int, expected_actor_node_id: str | None = None):
         issue = self.get_issue(issue_number)
-        logins = [str((a or {}).get("login")) for a in (issue.get("assignees") or []) if (a or {}).get("login")]
-        return COPILOT_AGENT_LOGIN in logins, logins
+        assignees = [a for a in (issue.get("assignees") or []) if isinstance(a, dict)]
+        logins = [str((a or {}).get("login")) for a in assignees if (a or {}).get("login")]
+        node_ids = [str((a or {}).get("node_id") or (a or {}).get("id")) for a in assignees if (a or {}).get("node_id") or (a or {}).get("id")]
+        if expected_actor_node_id:
+            return expected_actor_node_id in node_ids, logins, node_ids
+        return COPILOT_AGENT_LOGIN in logins, logins, node_ids
 
     def _get_repository_node_id(self) -> str:
         query = """
@@ -1293,8 +1321,9 @@ class GitHubIssueAutomationClient:
                 assignable = payload.get("assignable") or {}
                 assignees = ((assignable.get("assignees") or {}).get("nodes") or [])
                 assignee_logins = [str((node or {}).get("login")) for node in assignees if (node or {}).get("login")]
-                mutation_confirmed = COPILOT_AGENT_LOGIN in assignee_logins
-                rest_confirmed, current_logins = self._copilot_assignee_confirmed(issue_number)
+                assignee_node_ids = [str((node or {}).get("id")) for node in assignees if (node or {}).get("id")]
+                mutation_confirmed = actor_id in assignee_node_ids
+                rest_confirmed, current_logins, current_node_ids = call_assignee_confirmation(self, issue_number, actor_id)
                 if mutation_confirmed and rest_confirmed:
                     return {
                         "status": "ASSIGNED",
@@ -1307,12 +1336,14 @@ class GitHubIssueAutomationClient:
                         "assignee_ids": list(spec["variables"].get("assigneeIds") or spec["variables"].get("actorIds") or []),
                         "assignee_id_field": "assigneeIds" if "assigneeIds" in spec["variables"] else "actorIds",
                         "assignees": assignee_logins,
+                        "assignee_node_ids": assignee_node_ids,
                         "verified_assignees": current_logins,
+                        "verified_assignee_node_ids": current_node_ids,
                         "response": response,
                     }
                 last_error = (
                     "Copilot assignee was not confirmed after GraphQL mutation; "
-                    f"mutation_assignees={assignee_logins}, issue_assignees={current_logins}"
+                    f"mutation_assignees={assignee_logins}, mutation_assignee_ids={assignee_node_ids}, issue_assignees={current_logins}, issue_assignee_ids={current_node_ids}"
                 )
             except RuntimeError as exc:  # noqa: PERF203
                 last_error = str(exc)
@@ -1364,8 +1395,9 @@ def sync_requirement_handoff(
     implementation_label_result = str(client.ensure_label("implementation", "1f6feb", "Zadania implementacyjne LibreCare") or "UNKNOWN")
     copilot_label_result = str(client.ensure_label("copilot", "8250df", "Zadanie przekazane do GitHub Copilot") or "UNKNOWN")
     requirement_label_result = str(client.ensure_label(requirement["id"], "0e8a16", f"Śledzenie wymagania {requirement['id']}") or "UNKNOWN")
+    expected_actor_node_id = str((issue_info.get("agent_assignment") or {}).get("actor_node_id") or "").strip() or None
     if issue_info.get("number"):
-        confirmed, _assignees = client._copilot_assignee_confirmed(int(issue_info["number"]))
+        confirmed, _assignees, _assignee_ids = call_assignee_confirmation(client, int(issue_info["number"]), expected_actor_node_id)
         if confirmed:
             implementation["implementation_status"] = "AGENT_ASSIGNED"
             issue_info["assigned_agent"] = COPILOT_AGENT_LOGIN
@@ -1514,11 +1546,8 @@ def build_assignment_failure_comment(req_id: str, issue_number: int, reason: str
 
 def find_requirement_for_pr(pr: dict) -> tuple[Path | None, dict | None]:
     text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_match = re.search(r"REQ-[0-9A-Za-z._-]+", text)
-    if req_match:
-        return load_requirement_by_id(req_match.group(0))
-    for issue_ref in re.findall(r"#(\d+)", text):
-        path, record = find_requirement_by_implementation_issue(int(issue_ref))
+    for issue_ref in {int(value) for value in re.findall(r"#(\d+)", text)}:
+        path, record = find_requirement_by_implementation_issue(issue_ref)
         if path is not None:
             return path, record
     return None, None
@@ -1627,16 +1656,25 @@ def cmd_validate() -> int:
     inbox_schema = load_schema("inbox_item.schema.json")
     inbox_ai_review_schema = load_schema("inbox_ai_review.schema.json")
     implementation_schema = load_schema("implementation.schema.json")
+    bug_schema = load_schema("bug.schema.json")
 
     real_observations, example_observations = collect_split(OBSERVATIONS_DIR, "observation")
     real_requirements, example_requirements = collect_split(REQUIREMENTS_DIR, "requirement")
     real_decisions, example_decisions = collect_split(DECISIONS_DIR, "decision")
     real_test_runs, example_test_runs = collect_split(TEST_RUNS_DIR, "test-run")
     real_inbox_items, example_inbox_items = collect_split(INBOX_DIR, "inbox-item")
+    real_bugs = []
+    for path in iter_bug_paths():
+        record, problem, is_error = load_record(path)
+        real_bugs.append((path, record, problem, is_error))
     real_implementations = []
     for path in iter_implementation_paths():
         record, problem, is_error = load_record(path)
         real_implementations.append((path, record, problem, is_error))
+    real_bug_reviews = []
+    for path in iter_bug_review_paths():
+        record, problem, is_error = load_record(path)
+        real_bug_reviews.append((path, record, problem, is_error))
 
     all_observations = real_observations + example_observations
     all_requirements = real_requirements + example_requirements
@@ -1647,7 +1685,7 @@ def cmd_validate() -> int:
     errors: list[str] = []
     notes: list[str] = []
 
-    obs_ids, req_ids, dec_ids, test_run_ids, inbox_ids = set(), set(), set(), set(), set()
+    obs_ids, req_ids, dec_ids, test_run_ids, inbox_ids, bug_ids = set(), set(), set(), set(), set(), set()
     all_ids: Counter = Counter()
 
     def process(records, schema, id_bucket):
@@ -1672,6 +1710,21 @@ def cmd_validate() -> int:
     process(all_decisions, dec_schema, dec_ids)
     process(all_test_runs, test_run_schema, test_run_ids)
     process(all_inbox_items, inbox_schema, inbox_ids)
+    for path, record, problem, is_error in real_bugs:
+        if record is None:
+            if is_error and problem:
+                errors.append(f"{rel(path)}: {problem}")
+            elif problem:
+                notes.append(f"{rel(path)}: {problem}")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"{rel(path)}: top-level record must be an object")
+            continue
+        validate_value(bug_schema, record, rel(path), errors)
+        bug_id = record.get("bug_id")
+        if isinstance(bug_id, str):
+            bug_ids.add(bug_id)
+            all_ids[bug_id] += 1
     for _path, record, _problem, _is_error in all_inbox_items:
         if isinstance(record, dict) and isinstance(record.get("inbox_id"), str):
             inbox_ids.add(record["inbox_id"])
@@ -1686,6 +1739,20 @@ def cmd_validate() -> int:
             errors.append(f"{rel(path)}: top-level record must be an object")
             continue
         validate_value(implementation_schema, record, rel(path), errors)
+
+    for path, record, problem, is_error in real_bug_reviews:
+        if record is None:
+            if is_error and problem:
+                errors.append(f"{rel(path)}: {problem}")
+            elif problem:
+                notes.append(f"{rel(path)}: {problem}")
+            continue
+        if not isinstance(record, dict):
+            errors.append(f"{rel(path)}: top-level record must be an object")
+            continue
+        bug_id = record.get("bug_id")
+        if not isinstance(bug_id, str) or bug_id not in bug_ids:
+            errors.append(f"{rel(path)}: bug_id references unknown canonical bug '{bug_id}'")
 
     if INBOX_REVIEWS_DIR.exists():
         for path in sorted(INBOX_REVIEWS_DIR.glob("INBOX-GH-*.json")):
@@ -1756,24 +1823,77 @@ def cmd_validate() -> int:
                 errors.append(f"{rel(path)}: linked_observations references unknown observation '{oid}'")
 
     # cross-references: implementations -> requirements / inbox items
+    bugs_by_id = {
+        record.get("bug_id"): record
+        for _path, record, _problem, _is_error in real_bugs
+        if isinstance(record, dict) and isinstance(record.get("bug_id"), str)
+    }
+    bug_reviews_by_id = {
+        record.get("bug_id"): record
+        for _path, record, _problem, _is_error in real_bug_reviews
+        if isinstance(record, dict) and isinstance(record.get("bug_id"), str)
+    }
+    for path, record, _problem, _is_error in real_bugs:
+        if not isinstance(record, dict):
+            continue
+        for reqid in record.get("related_requirement_ids", []) or []:
+            if reqid not in req_ids:
+                errors.append(f"{rel(path)}: related_requirement_ids references unknown requirement '{reqid}'")
+        for test_id in record.get("related_test_ids", []) or []:
+            if isinstance(test_id, str) and test_id.startswith("TESTRUN-") and test_id not in test_run_ids:
+                errors.append(f"{rel(path)}: related_test_ids references unknown canonical test run '{test_id}'")
+        review = bug_reviews_by_id.get(record.get("bug_id"))
+        if isinstance(review, dict):
+            if review.get("classification") != record.get("classification"):
+                errors.append(f"product/generated/bug-reviews/{record.get('bug_id')}.json: classification must match canonical bug")
+            if review.get("status") != record.get("status"):
+                errors.append(f"product/generated/bug-reviews/{record.get('bug_id')}.json: status must match canonical bug")
+
     for path, record, _problem, _is_error in real_implementations:
         if not isinstance(record, dict):
             continue
         req_id = record.get("requirement_id")
+        bug_id = record.get("bug_id")
+        has_req = bool(req_id)
+        has_bug = bool(bug_id)
+        if has_req == has_bug:
+            errors.append(f"{rel(path)}: exactly one of requirement_id or bug_id must identify the implementation source")
         if req_id and req_id not in req_ids:
             errors.append(f"{rel(path)}: requirement_id references unknown requirement '{req_id}'")
+        if bug_id and bug_id not in bug_ids:
+            errors.append(f"{rel(path)}: bug_id references unknown canonical bug '{bug_id}'")
         source_inbox_id = record.get("source_inbox_id")
         if source_inbox_id and source_inbox_id not in inbox_ids:
             errors.append(f"{rel(path)}: source_inbox_id references unknown inbox item '{source_inbox_id}'")
         status = normalize_implementation_status(record.get("status"))
         if status != record.get("status"):
             errors.append(f"{rel(path)}: uses legacy implementation status '{record.get('status')}'")
+        if req_id and record.get("implementation_id") != f"IMP-{req_id}":
+            errors.append(f"{rel(path)}: implementation_id must equal IMP-{{requirement_id}}")
+        if bug_id and record.get("implementation_id") != f"IMP-{bug_id}":
+            errors.append(f"{rel(path)}: implementation_id must equal IMP-{{bug_id}}")
+        if bug_id:
+            bug = bugs_by_id.get(bug_id)
+            if isinstance(bug, dict):
+                if bug.get("classification") != "CONFIRMED_DEFECT":
+                    errors.append(f"{rel(path)}: active IMP-BUG requires canonical bug classification CONFIRMED_DEFECT")
+                if bug.get("status") not in {"CONFIRMED_DEFECT", "QUEUED", "IN_PROGRESS", "PR_READY", "REPAIRING", "FAILED", "FIXED", "VALIDATION_PENDING", "VALIDATED", "CLOSED"}:
+                    errors.append(f"{rel(path)}: active IMP-BUG requires eligible canonical bug lifecycle status")
+                if record.get("implementation_issue_number") != bug.get("implementation_issue_number"):
+                    errors.append(f"{rel(path)}: implementation_issue_number must match canonical bug")
+                if record.get("implementation_issue_url") != bug.get("implementation_issue_url"):
+                    errors.append(f"{rel(path)}: implementation_issue_url must match canonical bug")
+                if record.get("pull_request_number") != bug.get("pull_request_number"):
+                    errors.append(f"{rel(path)}: pull_request_number must match canonical bug")
+                if record.get("pull_request_url") != bug.get("pull_request_url"):
+                    errors.append(f"{rel(path)}: pull_request_url must match canonical bug")
 
     n_real_obs = sum(1 for _, r, _, _ in real_observations if isinstance(r, dict))
     n_real_reqs = sum(1 for _, r, _, _ in real_requirements if isinstance(r, dict))
     n_real_decs = sum(1 for _, r, _, _ in real_decisions if isinstance(r, dict))
     n_real_runs = sum(1 for _, r, _, _ in real_test_runs if isinstance(r, dict))
     n_real_inbox = sum(1 for _, r, _, _ in real_inbox_items if isinstance(r, dict))
+    n_real_bugs = sum(1 for _, r, _, _ in real_bugs if isinstance(r, dict))
     n_real_impl = sum(1 for _, r, _, _ in real_implementations if isinstance(r, dict))
 
     for note in notes:
@@ -1794,6 +1914,7 @@ def cmd_validate() -> int:
         f"decisions={n_real_decs} "
         f"test_runs={n_real_runs} "
         f"inbox_items={n_real_inbox} "
+        f"bugs={n_real_bugs} "
         f"implementations={n_real_impl}"
     )
     return 0

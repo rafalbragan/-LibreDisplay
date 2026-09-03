@@ -18,6 +18,7 @@ ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "product-inbox
 BUG_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-implementation-automation.yml"
 BUG_ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "librecare-bug.yml"
 ANDROID_CI_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml"
+ANDROID_BUILD_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-build.yml"
 PRODUCT_QUALITY_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-quality.yml"
 
 
@@ -44,6 +45,7 @@ class ProductCliInboxTest(unittest.TestCase):
             labels = []
             next_issue_number = 500
             issue_assignees = {}
+            issue_assignee_nodes = {}
             assign_should_fail = False
             existing_issues_by_req = {}
             find_existing_calls = 0
@@ -82,11 +84,18 @@ class ProductCliInboxTest(unittest.TestCase):
                     "req_id": re.search(r"REQ-[0-9A-Za-z._-]+", title).group(0),
                 })
                 self.__class__.issue_assignees.setdefault(issue_number, [])
+                self.__class__.issue_assignee_nodes.setdefault(issue_number, [])
                 return response
 
-            def _copilot_assignee_confirmed(self, issue_number: int):
-                logins = list(self.__class__.issue_assignees.get(issue_number, []))
-                return "copilot-swe-agent[bot]" in logins, logins
+            def _copilot_assignee_confirmed(self, issue_number: int, expected_actor_node_id: str | None = None):
+                nodes = list(self.__class__.issue_assignee_nodes.get(issue_number, []))
+                if not nodes:
+                    nodes = [{"login": login, "node_id": "BOT_NODE_ID"} for login in self.__class__.issue_assignees.get(issue_number, [])]
+                logins = [str((node or {}).get("login")) for node in nodes if (node or {}).get("login")]
+                node_ids = [str((node or {}).get("node_id") or (node or {}).get("id")) for node in nodes if (node or {}).get("node_id") or (node or {}).get("id")]
+                if expected_actor_node_id:
+                    return expected_actor_node_id in node_ids, logins, node_ids
+                return "copilot-swe-agent[bot]" in logins or "BOT_NODE_ID" in node_ids, logins, node_ids
 
             def assign_copilot(self, issue_number: int, base_branch: str, instructions: str):
                 if self.__class__.assign_should_fail:
@@ -95,6 +104,9 @@ class ProductCliInboxTest(unittest.TestCase):
                 logins = set(self.__class__.issue_assignees.get(issue_number, []))
                 logins.add("copilot-swe-agent[bot]")
                 self.__class__.issue_assignees[issue_number] = sorted(logins)
+                nodes = [node for node in self.__class__.issue_assignee_nodes.get(issue_number, []) if str((node or {}).get("node_id") or (node or {}).get("id")) != "BOT_NODE_ID"]
+                nodes.append({"login": "Copilot", "node_id": "BOT_NODE_ID"})
+                self.__class__.issue_assignee_nodes[issue_number] = nodes
                 payload = {
                     "issue_number": issue_number,
                     "base_branch": base_branch,
@@ -103,6 +115,7 @@ class ProductCliInboxTest(unittest.TestCase):
                     "method": "GRAPHQL",
                     "mutation": "addAssigneesToAssignable",
                     "field": "agent_assignment",
+                    "actor_node_id": "BOT_NODE_ID",
                 }
                 self.__class__.assigned.append(payload)
                 return payload
@@ -115,6 +128,7 @@ class ProductCliInboxTest(unittest.TestCase):
         self.fake_client.labels = []
         self.fake_client.next_issue_number = 500
         self.fake_client.issue_assignees = {}
+        self.fake_client.issue_assignee_nodes = {}
         self.fake_client.assign_should_fail = False
         self.fake_client.existing_issues_by_req = {}
         self.fake_client.find_existing_calls = 0
@@ -891,6 +905,28 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual("VALIDATION_PENDING", implementation["validation_state"])
         self.assertEqual("copilot/req-222", implementation["branch"])
 
+    def test_requirement_pr_mentioning_bug_history_stays_requirement(self):
+        event = self.make_issue_event(229, "Problem", "REQ tracking with bug mention")
+        self.assertEqual(0, self.run_import(event))
+        self.assertEqual(0, self.run_apply_ai(229, self.ai_payload(229, "PRODUCT_PROBLEM", "ACCEPT")))
+        decision_event = self.make_comment_event(event, "/accept", author="repo-owner")
+        self.assertEqual(0, self.run_decision(decision_event))
+        handoff = self.run_handoff(decision_event)
+        summary = self.run_pr_track({
+            "action": "opened",
+            "pull_request": {
+                "number": 35,
+                "html_url": "https://github.com/example/repo/pull/35",
+                "title": f"{handoff['req_id']} — implementacja z historią BUG-0003",
+                "body": f"Closes #{handoff['implementation_issue_number']}\nHistoria: BUG-0003",
+                "state": "open",
+                "merged": False,
+                "head": {"ref": "copilot/req-229"},
+            }
+        })
+        self.assertEqual(handoff["req_id"], summary["req_id"])
+        self.assertEqual("PR_READY", summary["status"])
+
     def test_validate_passes_with_canonical_implementation_record(self):
         event = self.make_issue_event(228, "Problem", "Walidacja implementacji")
         self.assertEqual(0, self.run_import(event))
@@ -907,6 +943,38 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertEqual("NEEDS_PRODUCT_DECISION", bug.get("status"))
         self.assertFalse((self.root / "product" / "implementation" / "IMP-BUG-0001.json").exists())
         self.assertEqual(0, self.run_validate())
+
+    def test_validate_fails_for_inconclusive_bug_with_active_bug_impl(self):
+        impl_path = self.root / "product" / "implementation" / "IMP-BUG-0003.json"
+        self.write_json(impl_path, {
+            "implementation_id": "IMP-BUG-0003",
+            "requirement_id": None,
+            "bug_id": "BUG-0003",
+            "source_inbox_id": None,
+            "source_issue_number": None,
+            "implementation_issue_number": 9,
+            "implementation_issue_url": "https://github.com/example/repo/issues/9",
+            "copilot_assignment": {"status": "ASSIGNMENT_FAILED"},
+            "branch": None,
+            "pull_request_number": None,
+            "pull_request_url": None,
+            "status": "QUEUED",
+            "created_at": "2026-09-03T00:00:00Z",
+            "updated_at": "2026-09-03T00:00:00Z",
+            "attempt_count": 0,
+            "last_ci_result": "UNKNOWN",
+            "validation_state": "PENDING",
+            "acceptance_test_ids": [],
+            "ci_failures": [],
+        })
+        self.assertEqual(1, self.run_validate())
+
+    def test_validate_fails_when_bug_review_mismatches_canonical_bug(self):
+        review_path = self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json"
+        review = json.loads(review_path.read_text(encoding="utf-8"))
+        review["classification"] = "CONFIRMED_DEFECT"
+        self.write_json(review_path, review)
+        self.assertEqual(1, self.run_validate())
 
     def test_req0002_bootstrap_implementation_record_is_honest(self):
         implementation = self.implementation_record("IMP-REQ-0002")
@@ -1126,7 +1194,7 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         client._get_repository_node_id = lambda: "R_repo"
         client._get_issue_node_id = lambda issue_number: "I_issue"
         client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
 
         def fake_graphql(query: str, variables: dict | None = None):
             captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
@@ -1135,7 +1203,7 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
                     "addAssigneesToAssignable": {
                         "assignable": {
                             "number": 7,
-                            "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                            "assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
                         }
                     }
                 }
@@ -1166,7 +1234,7 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         client._get_repository_node_id = lambda: "R_repo"
         client._get_issue_node_id = lambda issue_number: "I_issue"
         client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
 
         def fake_graphql(query: str, variables: dict | None = None):
             captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
@@ -1177,7 +1245,7 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
                     "replaceActorsForAssignable": {
                         "assignable": {
                             "number": 7,
-                            "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                            "assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
                         }
                     }
                 }
@@ -1203,13 +1271,13 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         client._get_repository_node_id = lambda: "R_repo"
         client._get_issue_node_id = lambda issue_number: "I_issue"
         client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-        client._copilot_assignee_confirmed = lambda issue_number: (False, ["someone-else"])
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (False, ["Copilot"], ["OTHER_NODE_ID"])
         client._graphql = lambda query, variables=None: {
             "data": {
                 "addAssigneesToAssignable": {
                     "assignable": {
                         "number": 7,
-                        "assignees": {"nodes": [{"login": "someone-else", "id": "OTHER"}]},
+                        "assignees": {"nodes": [{"login": "Copilot", "id": "OTHER_NODE_ID"}]},
                     }
                 }
             }
@@ -1223,13 +1291,13 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         client._get_repository_node_id = lambda: "R_repo"
         client._get_issue_node_id = lambda issue_number: "I_issue"
         client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-        client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
         client._graphql = lambda query, variables=None: {
             "data": {
                 "addAssigneesToAssignable": {
                     "assignable": {
                         "number": 7,
-                        "assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+                        "assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
                     }
                 }
             }
@@ -1238,7 +1306,46 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
         result = client.assign_copilot(7, "master", "Instrukcje testowe")
         self.assertEqual("ASSIGNED", result["status"])
         self.assertEqual("GRAPHQL", result["method"])
-        self.assertEqual([self.cli.COPILOT_AGENT_LOGIN], result["verified_assignees"])
+        self.assertEqual(["Copilot"], result["verified_assignees"])
+
+    def test_graphql_login_alias_is_accepted_when_node_id_matches(self):
+        client = self.make_client()
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
+        client._graphql = lambda query, variables=None: {
+            "data": {
+                "addAssigneesToAssignable": {
+                    "assignable": {
+                        "number": 7,
+                        "assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
+                    }
+                }
+            }
+        }
+        result = client.assign_copilot(7, "master", "Instrukcje testowe")
+        self.assertEqual("ASSIGNED", result["status"])
+        self.assertEqual(["BOT_NODE_ID"], result["verified_assignee_node_ids"])
+
+    def test_graphql_login_alias_is_rejected_when_node_id_differs(self):
+        client = self.make_client()
+        client._get_repository_node_id = lambda: "R_repo"
+        client._get_issue_node_id = lambda issue_number: "I_issue"
+        client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+        client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (expected_actor_node_id == "OTHER_NODE_ID", ["Copilot"], ["OTHER_NODE_ID"])
+        client._graphql = lambda query, variables=None: {
+            "data": {
+                "addAssigneesToAssignable": {
+                    "assignable": {
+                        "number": 7,
+                        "assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
+                    }
+                }
+            }
+        }
+        with self.assertRaisesRegex(RuntimeError, "Copilot assignee was not confirmed"):
+            client.assign_copilot(7, "master", "Instrukcje testowe")
 
     def test_explicit_model_constant_is_configured_and_not_auto(self):
         self.assertEqual("GPT-5.4 mini", self.cli.COPILOT_AGENT_MODEL)
@@ -1286,6 +1393,15 @@ class ProductCliLabelIdempotencyTest(unittest.TestCase):
 
 
 class ProductInboxWorkflowStaticTest(unittest.TestCase):
+
+    def workflow_push_paths(self, workflow_path: Path) -> list[str]:
+        data = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        return list((((data or {}).get("on") or {}).get("push") or {}).get("paths") or [])
+
+    def matches_workflow_paths(self, changed_paths: list[str], workflow_paths: list[str]) -> bool:
+        import fnmatch
+        return any(any(fnmatch.fnmatch(path, pattern) for pattern in workflow_paths) for path in changed_paths)
+
     def test_android_ci_fast_suite_captures_gradle_log_and_uploads_it(self):
         text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
         script_text = (WORKSPACE_ROOT / "scripts" / "test-fast.sh").read_text(encoding="utf-8")
@@ -1333,9 +1449,42 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product: apply inbox decision issue", text)
 
     def test_workflows_are_valid_yaml(self):
-        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH]:
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH, ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH]:
             loaded = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
             self.assertIsInstance(loaded, dict)
+
+    def test_android_push_workflows_ignore_product_only_commits(self):
+        android_ci_paths = self.workflow_push_paths(ANDROID_CI_WORKFLOW_PATH)
+        android_build_paths = self.workflow_push_paths(ANDROID_BUILD_WORKFLOW_PATH)
+        product_only_commit = [
+            "product/bugs/BUG-0002.json",
+            "product/generated/bug-reviews/BUG-0002.json",
+            "scripts/product/automation_cli.py",
+            ".github/workflows/librecare-implementation-automation.yml",
+        ]
+        android_change_commit = ["app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt"]
+        self.assertFalse(self.matches_workflow_paths(product_only_commit, android_ci_paths))
+        self.assertFalse(self.matches_workflow_paths(product_only_commit, android_build_paths))
+        self.assertTrue(self.matches_workflow_paths(android_change_commit, android_ci_paths))
+        self.assertTrue(self.matches_workflow_paths(android_change_commit, android_build_paths))
+
+    def test_android_push_workflows_contain_expected_allowlist(self):
+        for workflow_path in [ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH]:
+            paths = self.workflow_push_paths(workflow_path)
+            expected = {
+                "app/**",
+                "gradle/**",
+                "gradlew",
+                "gradlew.bat",
+                "build.gradle.kts",
+                "settings.gradle.kts",
+                "gradle.properties",
+                "scripts/test-fast.sh",
+                "scripts/verify-environment.sh",
+            }
+            self.assertTrue(expected.issubset(set(paths)))
+        self.assertIn(".github/workflows/android-ci.yml", self.workflow_push_paths(ANDROID_CI_WORKFLOW_PATH))
+        self.assertIn(".github/workflows/android-build.yml", self.workflow_push_paths(ANDROID_BUILD_WORKFLOW_PATH))
 
     def test_workflow_permission_keys_are_supported(self):
         allowed = {
@@ -1469,7 +1618,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("Verify enriched evidence reached the triage prompt", text)
         self.assertIn("COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}", text)
         self.assertIn('--copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN"', text)
-        self.assertIn('workflows: ["Android CI", "Android APK Build"]', text)
+        self.assertIn('workflows: ["Android CI"]', text)
         self.assertIn("master-ci-regression-intake", text)
         self.assertIn("ci-regression-intake", text)
         self.assertIn("github.event.workflow_run.event != 'pull_request'", text)
@@ -1480,6 +1629,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("group: product-foundation-state", text)
         self.assertIn("models: read", text)
         self.assertIn("continue-on-error: true", text)
+        self.assertIn("BUG_PRODUCT_DECISION_BRIDGE", text)
         self.assertNotIn("ci-regression-evidence.json || true", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)

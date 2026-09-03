@@ -12,7 +12,7 @@ on:
         required: true
         type: string
   workflow_run:
-    workflows: ["Android CI", "Android APK Build"]
+    workflows: ["Android CI"]
     types: [completed]
 
 permissions:
@@ -113,40 +113,40 @@ jobs:
       - name: Determine if auto-fix is allowed
         id: triage
         run: |
-          python -c "import json; from pathlib import Path; data=json.loads(Path('bug-triage-result.json').read_text(encoding='utf-8')); allowed=(data.get('classification')=='CONFIRMED_DEFECT'); Path('triage-allowed.txt').write_text('true' if allowed else 'false', encoding='utf-8'); print(f'allowed={str(allowed).lower()}')"
-          echo "allowed=$(cat triage-allowed.txt)" >> "$GITHUB_OUTPUT"
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
 
-      - name: Route to Product Inbox decision
-        if: steps.triage.outputs.allowed != 'true'
-        uses: actions/github-script@v7
-        with:
-          script: |
-            const issue_number = Number(context.payload.issue.number);
-            try {
-              await github.rest.issues.getLabel({ owner: context.repo.owner, repo: context.repo.repo, name: 'product-inbox' });
-            } catch (_err) {
-              await github.rest.issues.createLabel({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                name: 'product-inbox',
-                color: '1f6feb',
-                description: 'Zgłoszenia do skrzynki produktu LibreCare',
-              });
-            }
-            await github.rest.issues.addLabels({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-              labels: ['product-inbox'],
-            });
-            const marker = '<!-- LIBRECARE_BUG_PRODUCT_GATE -->';
-            const body = `${marker}\n## LibreCare — decyzja wymagana\n\nZgłoszenie błędu zostało sklasyfikowane jako wymagające decyzji produktowej człowieka.\nAutomatyczna naprawa została zablokowana.`;
-            await github.rest.issues.createComment({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              issue_number,
-              body,
-            });
+          data = json.loads(Path('bug-triage-result.json').read_text(encoding='utf-8'))
+          classification = str(data.get('classification') or 'INCONCLUSIVE')
+          allowed = classification == 'CONFIRMED_DEFECT'
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"allowed={'true' if allowed else 'false'}",
+              f"classification={classification}",
+          ]) + "\n", encoding='utf-8')
+          print(f"classification={classification}")
+          print(f"allowed={str(allowed).lower()}")
+          PY
+
+      - name: Report Product decision bridge
+        if: steps.triage.outputs.classification == 'NEEDS_PRODUCT_DECISION'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path('product/generated/bug-product-decisions') / f"{Path('bug-id.txt').read_text(encoding='utf-8').strip()}.json"
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          print('BUG_PRODUCT_DECISION_BRIDGE:')
+          print(f"BUG_ID: {data.get('bug_id', '')}")
+          print(f"CLASSIFICATION: {data.get('classification', '')}")
+          print(f"STATUS: {data.get('status', '')}")
+          PY
+
+      - name: Report inconclusive bug stop
+        if: steps.triage.outputs.classification == 'INCONCLUSIVE'
+        run: echo "Bug triage remained inconclusive; no Product Inbox decision bridge and no auto-fix handoff were created."
 
       - name: Attempt bug fix handoff for confirmed defects
         if: steps.triage.outputs.allowed == 'true'

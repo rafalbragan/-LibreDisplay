@@ -31,6 +31,7 @@ class FakeGitHubClient:
 	existing_bugfix_issues = {}
 	next_issue_number = 700
 	issue_assignees = {}
+	issue_assignee_nodes = {}
 	assign_should_fail = False
 	job_list_should_fail = False
 	artifact_list_should_fail = False
@@ -70,6 +71,7 @@ class FakeGitHubClient:
 		}
 		self.__class__.created_issues.append(response)
 		self.__class__.issue_assignees.setdefault(issue_number, [])
+		self.__class__.issue_assignee_nodes.setdefault(issue_number, [])
 		return response
 
 	def find_existing_bugfix_issue(self, bug_id: str, expected_title: str) -> dict | None:
@@ -82,9 +84,15 @@ class FakeGitHubClient:
 				return dict(issue)
 		return None
 
-	def _copilot_assignee_confirmed(self, issue_number: int):
-		logins = list(self.__class__.issue_assignees.get(issue_number, []))
-		return "copilot-swe-agent[bot]" in logins, logins
+	def _copilot_assignee_confirmed(self, issue_number: int, expected_actor_node_id: str | None = None):
+		nodes = list(self.__class__.issue_assignee_nodes.get(issue_number, []))
+		if not nodes:
+			nodes = [{"login": login, "node_id": "BOT_NODE_ID"} for login in self.__class__.issue_assignees.get(issue_number, [])]
+		logins = [str((node or {}).get("login")) for node in nodes if (node or {}).get("login")]
+		node_ids = [str((node or {}).get("node_id") or (node or {}).get("id")) for node in nodes if (node or {}).get("node_id") or (node or {}).get("id")]
+		if expected_actor_node_id:
+			return expected_actor_node_id in node_ids, logins, node_ids
+		return "copilot-swe-agent[bot]" in logins or "BOT_NODE_ID" in node_ids, logins, node_ids
 
 	def assign_copilot(self, issue_number: int, base_branch: str, instructions: str) -> dict:
 		if self.__class__.assign_should_fail:
@@ -93,12 +101,16 @@ class FakeGitHubClient:
 		logins = set(self.__class__.issue_assignees.get(issue_number, []))
 		logins.add("copilot-swe-agent[bot]")
 		self.__class__.issue_assignees[issue_number] = sorted(logins)
+		nodes = [node for node in self.__class__.issue_assignee_nodes.get(issue_number, []) if str((node or {}).get("node_id") or (node or {}).get("id")) != "BOT_NODE_ID"]
+		nodes.append({"login": "Copilot", "node_id": "BOT_NODE_ID"})
+		self.__class__.issue_assignee_nodes[issue_number] = nodes
 		payload = {
 			"issue_number": issue_number,
 			"base_branch": base_branch,
 			"instructions": instructions,
 			"status": "ASSIGNED",
 			"method": "GRAPHQL",
+			"actor_node_id": "BOT_NODE_ID",
 		}
 		self.__class__.assignments.append(payload)
 		return payload
@@ -145,10 +157,12 @@ class AutomationCliTest(unittest.TestCase):
 		self.cli.ROOT = self.root
 		self.cli.PRODUCT = self.root / "product"
 		self.cli.REQUIREMENTS_DIR = self.cli.PRODUCT / "requirements"
+		self.cli.TEST_RUNS_DIR = self.cli.PRODUCT / "research" / "test-runs"
 		self.cli.BUGS_DIR = self.cli.PRODUCT / "bugs"
 		self.cli.IMPLEMENTATION_DIR = self.cli.PRODUCT / "implementation"
 		self.cli.GENERATED_DIR = self.cli.PRODUCT / "generated"
 		self.cli.BUG_REVIEWS_DIR = self.cli.GENERATED_DIR / "bug-reviews"
+		self.cli.BUG_PRODUCT_DECISIONS_DIR = self.cli.GENERATED_DIR / "bug-product-decisions"
 		self.cli.TECH_VALIDATIONS_DIR = self.cli.GENERATED_DIR / "technical-validations"
 		self.cli.GITHUB_CLIENT_FACTORY = FakeGitHubClient
 
@@ -162,6 +176,7 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.existing_bugfix_issues = {}
 		FakeGitHubClient.next_issue_number = 700
 		FakeGitHubClient.issue_assignees = {}
+		FakeGitHubClient.issue_assignee_nodes = {}
 		FakeGitHubClient.assign_should_fail = False
 		FakeGitHubClient.job_list_should_fail = False
 		FakeGitHubClient.artifact_list_should_fail = False
@@ -708,7 +723,7 @@ class AutomationCliTest(unittest.TestCase):
 		summary = self.read_json(out)
 		self.assertEqual("HANDOFF_FAILED", summary["handoff_result"])
 		self.assertFalse(summary["copilot_real_assignee_confirmed"])
-		self.assertEqual("CONFIRMED_DEFECT", summary["status"])
+		self.assertEqual("QUEUED", summary["status"])
 		self.assertIn("failure_reason", summary)
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertNotIn("assigned_agent", bug["implementation_issue"])
@@ -1445,6 +1460,197 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		)
 		self.assertTrue(resume_gate_would_pass)
 
+	def test_persisted_duplicate_source_preserves_enriched_ci_evidence_and_prompt(self):
+		_root, remote_dir = self.init_git_origin_with_baseline_bug()
+		source_reference = "workflow=Android CI | run_id=4001 | commit=sha4001 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite"
+		remote_bug = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			source_reference,
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		remote_bug["classification"] = "INCONCLUSIVE"
+		remote_bug["status"] = "TRIAGED"
+		remote_bug["additional_context"] = "Workflow: Android CI\nFailure excerpt: Fast test suite: Run fast suite"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", remote_bug)
+		self.write_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json", self.make_bug_review("BUG-0002"))
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(self.root, "commit", "-m", "seed generic bug0002").returncode)
+		self.assertEqual(0, self.run_git(self.root, "push", "origin", "master").returncode)
+
+		diagnostic = {
+			"artifact_name": "librecare-fast-suite",
+			"artifact_names": ["librecare-fast-suite"],
+			"artifacts_found": 1,
+			"artifact_downloaded": True,
+			"job_logs_fetched": True,
+			"log_file": "gradle-fast-suite.log",
+			"log_files_found": ["gradle-fast-suite.log"],
+			"diagnostic_lines_found": 3,
+			"text_files_scanned": 1,
+			"candidate_files_found": 1,
+			"job_log_http_status": "OK",
+			"artifact_download_status": "OK",
+			"artifact_extract_status": "OK",
+			"safe_diagnostic": "compileDebugKotlin excerpt present",
+			"result": "ENRICHED",
+			"failed_job": "Fast test suite",
+			"failed_step": "Fast test suite: Run fast suite",
+			"excerpt": ":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/MonitoringScreen.kt:11: No value passed for parameter 'trendWindowMinutes'",
+			"fallback_excerpt": "Fast test suite: Run fast suite",
+		}
+		local_bug = self.cli.apply_ci_regression_diagnostic_to_bug(remote_bug, diagnostic)
+		local_bug["classification"] = "CONFIRMED_DEFECT"
+		local_bug["status"] = "CONFIRMED_DEFECT"
+		local_bug["triage_reasoning"] = "Wzbogacony excerpt kompilacji deterministycznie potwierdza defekt." 
+		local_bug["triage_traceability"] = {
+			"accepted_related_requirement_ids": [],
+			"verified_related_test_run_ids": [],
+			"has_test_evidence": False,
+			"has_ci_diagnostic_evidence": True,
+			"has_ci_regression_evidence": True,
+			"has_technical_validation_evidence": False,
+			"requires_behavior_change": False,
+			"safety_requires_product_decision": False,
+		}
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", local_bug)
+		self.write_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json", self.cli.merge_bug_review(self.make_bug_review("BUG-0002"), {"generated_at": "2026-09-03T00:00:00Z"}, local_bug))
+
+		persist = self.persist_bug_records("persist-enriched-evidence.json")
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+		persisted_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		self.assertEqual("CONFIRMED_DEFECT", persisted_bug["classification"])
+		self.assertEqual("ENRICHED", persisted_bug["ci_failure_evidence"]["result"])
+		self.assertIn("compileDebugKotlin", persisted_bug["ci_failure_evidence"]["excerpt"])
+		self.assertIn("Diagnostic excerpt:", persisted_bug["additional_context"])
+		self.assertTrue(persisted_bug["triage_traceability"]["has_ci_diagnostic_evidence"])
+		review = self.read_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json")
+		self.assertEqual(persisted_bug["classification"], review["classification"])
+		self.assertEqual(persisted_bug["status"], review["status"])
+
+		fresh = self.clone_origin(remote_dir, "fresh-reader")
+		original_root = self.cli.ROOT
+		original_product = self.cli.PRODUCT
+		original_requirements = self.cli.REQUIREMENTS_DIR
+		original_bug_dir = self.cli.BUGS_DIR
+		original_generated = self.cli.GENERATED_DIR
+		original_bug_reviews = self.cli.BUG_REVIEWS_DIR
+		original_impl = self.cli.IMPLEMENTATION_DIR
+		try:
+			self.cli.ROOT = fresh
+			self.cli.PRODUCT = fresh / "product"
+			self.cli.REQUIREMENTS_DIR = self.cli.PRODUCT / "requirements"
+			self.cli.BUGS_DIR = self.cli.PRODUCT / "bugs"
+			self.cli.GENERATED_DIR = self.cli.PRODUCT / "generated"
+			self.cli.BUG_REVIEWS_DIR = self.cli.GENERATED_DIR / "bug-reviews"
+			self.cli.IMPLEMENTATION_DIR = self.cli.PRODUCT / "implementation"
+			prompt_file = fresh / "bug-ai-prompt.json"
+			self.assertEqual(0, self.cli.main(["bug-build-ai-prompt", "--bug-id", "BUG-0002", "--output-file", str(prompt_file)]))
+			prompt = json.loads(prompt_file.read_text(encoding="utf-8"))
+			self.assertIn("compileDebugKotlin", prompt["ci_failure_evidence_excerpt"])
+		finally:
+			self.cli.ROOT = original_root
+			self.cli.PRODUCT = original_product
+			self.cli.REQUIREMENTS_DIR = original_requirements
+			self.cli.BUGS_DIR = original_bug_dir
+			self.cli.GENERATED_DIR = original_generated
+			self.cli.BUG_REVIEWS_DIR = original_bug_reviews
+			self.cli.IMPLEMENTATION_DIR = original_impl
+
+	def test_persisted_duplicate_source_preserves_needs_product_decision_and_bridge(self):
+		self.init_git_origin_with_baseline_bug()
+		source_reference = "workflow=Android CI | run_id=4002 | commit=sha4002 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite"
+		remote_bug = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			source_reference,
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		remote_bug["classification"] = "INCONCLUSIVE"
+		remote_bug["status"] = "TRIAGED"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", remote_bug)
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(self.root, "commit", "-m", "seed bug0002 triaged").returncode)
+		self.assertEqual(0, self.run_git(self.root, "push", "origin", "master").returncode)
+
+		local_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		local_bug["classification"] = "NEEDS_PRODUCT_DECISION"
+		local_bug["status"] = "NEEDS_PRODUCT_DECISION"
+		local_bug["triage_reasoning"] = "Naprawa wymaga świadomej decyzji produktowej człowieka."
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", local_bug)
+		self.cli.sync_bug_product_decision_record(local_bug)
+
+		persist = self.persist_bug_records("persist-needs-product-decision.json")
+		self.assertEqual("BUG-0002", persist["persisted_bugs"][0]["final_bug_id"])
+		persisted_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		self.assertEqual("NEEDS_PRODUCT_DECISION", persisted_bug["classification"])
+		self.assertEqual("NEEDS_PRODUCT_DECISION", persisted_bug["status"])
+		bridge = self.read_json(self.root / "product" / "generated" / "bug-product-decisions" / "BUG-0002.json")
+		self.assertEqual("NEEDS_PRODUCT_DECISION", bridge["classification"])
+		self.assertEqual("NEEDS_PRODUCT_DECISION", bridge["status"])
+
+	def test_non_confirmed_persistence_deletes_stale_impl_and_review_matches_bug(self):
+		self.init_git_origin_with_baseline_bug()
+		bug = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			"workflow=Android CI | run_id=4003 | commit=sha4003 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
+			"Generic failure",
+		)
+		bug["classification"] = "INCONCLUSIVE"
+		bug["status"] = "TRIAGED"
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", bug)
+		self.write_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json", {"bug_id": "BUG-0002", "classification": "CONFIRMED_DEFECT", "status": "IN_PROGRESS", "generated_at": "2026-09-03T00:00:00Z"})
+		self.write_json(self.root / "product" / "implementation" / "IMP-BUG-0002.json", {
+			"implementation_id": "IMP-BUG-0002",
+			"requirement_id": None,
+			"bug_id": "BUG-0002",
+			"source_inbox_id": None,
+			"source_issue_number": None,
+			"implementation_issue_number": 9,
+			"implementation_issue_url": "https://example/issues/9",
+			"copilot_assignment": {"status": "ASSIGNMENT_FAILED"},
+			"branch": None,
+			"pull_request_number": None,
+			"pull_request_url": None,
+			"status": "QUEUED",
+			"created_at": "2026-09-03T00:00:00Z",
+			"updated_at": "2026-09-03T00:00:00Z",
+			"attempt_count": 0,
+			"last_ci_result": "UNKNOWN",
+			"validation_state": "PENDING",
+			"acceptance_test_ids": [],
+			"ci_failures": [],
+		})
+		self.assertEqual(0, self.run_git(self.root, "add", ".").returncode)
+		self.assertEqual(0, self.run_git(self.root, "commit", "-m", "seed stale bug impl").returncode)
+		self.assertEqual(0, self.run_git(self.root, "push", "origin", "master").returncode)
+
+		RemoveLocal = self.root / "product" / "implementation" / "IMP-BUG-0002.json"
+		RemoveLocal.unlink()
+		persist = self.persist_bug_records("persist-delete-stale-impl.json")
+		self.assertIn(persist["status"], {"NO_CHANGES", "PUSHED"})
+		self.assertFalse((self.root / "product" / "implementation" / "IMP-BUG-0002.json").exists())
+		review = self.read_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0002.json")
+		persisted_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0002.json")
+		self.assertEqual(persisted_bug["classification"], review["classification"])
+		self.assertEqual(persisted_bug["status"], review["status"])
+
+	def test_no_op_persistence_after_duplicate_workflow_run_returns_no_changes(self):
+		self.init_git_origin_with_baseline_bug()
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="4004")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="4004")
+		self.run_ci_regression_intake(event, metadata, output_name="ci-noop-source-1.json")
+		first = self.persist_bug_records("persist-noop-first.json")
+		self.assertEqual("PUSHED", first["status"])
+		self.run_ci_regression_intake(event, metadata, output_name="ci-noop-source-2.json")
+		second = self.persist_bug_records("persist-noop-second.json")
+		self.assertEqual("NO_CHANGES", second["status"])
+
 	def test_different_remote_bug_using_planned_id_allocates_next_free_id_safely(self):
 		_root, remote_dir = self.init_git_origin_with_baseline_bug()
 		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33694534681")
@@ -1504,6 +1710,12 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 			self.ci_regression_metadata(workflow_name="Android CI", run_id="2009"),
 			output_name="ci-triage-source.json",
 		)
+		self.configure_workflow_failure_diagnostics(
+			"2009",
+			artifact_name="librecare-fast-suite",
+			artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/MonitoringScreen.kt:11: No value passed for parameter 'trendWindowMinutes'\n",
+		)
+		self.enrich_ci_regression_bug(result["bug_id"], "2009", "ci-triage-source-enriched.json")
 		self.triage_bug(
 			result["bug_id"],
 			{
@@ -1518,7 +1730,31 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		)
 		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
 		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
-		self.assertTrue(bug["triage_traceability"]["has_ci_regression_evidence"])
+		self.assertTrue(bug["triage_traceability"]["has_ci_diagnostic_evidence"])
+
+	def test_ci_regression_without_diagnostic_evidence_stays_inconclusive(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="2009b"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="2009b", log_excerpt="Fast test suite: Run fast suite"),
+			output_name="ci-triage-without-diagnostic.json",
+		)
+		self.triage_bug(
+			result["bug_id"],
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "AI sugeruje defekt, ale bez wzbogaconego excerptu.",
+				"severity": "HIGH",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [],
+				"recommended_related_tests": ["TEST-DO-WYKONANIA-W-PRZYSZLOSCI"],
+			},
+		)
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("INCONCLUSIVE", bug["classification"])
+		self.assertEqual("TRIAGED", bug["status"])
+		self.assertFalse(bug["triage_traceability"]["has_ci_diagnostic_evidence"])
+		self.assertFalse(bug["triage_traceability"]["has_verified_test_evidence"])
 
 	def test_ci_regression_new_behavior_or_safety_change_still_routes_to_product_decision(self):
 		result = self.run_ci_regression_intake(
@@ -1647,6 +1883,9 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		bug_id = "BUG-0001"
 		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
 		bug = self.read_json(bug_path)
+		bug["implementation_issue"] = {"number": 81, "url": "https://example/issues/81"}
+		bug["implementation_issue_number"] = 81
+		bug["implementation_issue_url"] = "https://example/issues/81"
 		bug["status"] = "PR_READY"
 		self.write_json(bug_path, bug)
 
@@ -1655,7 +1894,7 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 				"number": 91,
 				"html_url": "https://example/pr/91",
 				"title": f"{bug_id} - fix",
-				"body": f"Closes #1\n{bug_id}",
+				"body": f"Closes #81\n{bug_id}",
 				"state": "closed",
 				"merged": True,
 				"head": {"ref": "copilot/bug-91"},
@@ -1667,6 +1906,44 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		updated = self.read_json(bug_path)
 		self.assertEqual("VALIDATION_PENDING", updated["status"])
 		self.assertEqual(91, updated["pull_request_number"])
+
+	def test_bug_pr_mentioning_requirement_history_stays_bug(self):
+		self.assertEqual(
+			0,
+			self.cli.cmd_bug_create(
+				source="MANUAL",
+				source_reference="MANUAL-REQ-MENTION",
+				title="Bug PR ownership",
+				observed_behavior="x",
+				expected_behavior="y",
+				reproduction="z",
+				related_requirement_ids=[self.accepted_req_id],
+				related_test_ids=[],
+			),
+		)
+		bug_path = self.root / "product" / "bugs" / "BUG-0001.json"
+		bug = self.read_json(bug_path)
+		bug["implementation_issue"] = {"number": 82, "url": "https://example/issues/82"}
+		bug["implementation_issue_number"] = 82
+		bug["implementation_issue_url"] = "https://example/issues/82"
+		self.write_json(bug_path, bug)
+		pr_event = {
+			"pull_request": {
+				"number": 92,
+				"html_url": "https://example/pr/92",
+				"title": "BUG-0001 fix with REQ history",
+				"body": f"Closes #82\nPowiązany kontekst: {self.accepted_req_id}",
+				"state": "open",
+				"merged": False,
+				"head": {"ref": "copilot/bug-92"},
+			}
+		}
+		event_file = self.root / "bug-pr-with-req-history.json"
+		self.write_json(event_file, pr_event)
+		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file)))
+		updated_bug = self.read_json(bug_path)
+		self.assertEqual(92, updated_bug["pull_request_number"])
+		self.assertEqual("PR_READY", updated_bug["status"])
 
 	def test_canonical_bug_intake_sources_are_supported(self):
 		for idx, source in enumerate(
@@ -1775,6 +2052,30 @@ class AutomationCliLabelIdempotencyTest(unittest.TestCase):
 		self.assertEqual(["GET", "POST", "GET"], [method for method, _path in calls])
 
 
+class AutomationCliBugLifecycleContractTest(unittest.TestCase):
+	def setUp(self):
+		self.cli = load_cli_module()
+
+	def test_forward_bug_lifecycle_transitions_are_allowed(self):
+		for source, target in [
+			("NEW", "TRIAGED"),
+			("TRIAGED", "NEEDS_PRODUCT_DECISION"),
+			("TRIAGED", "CONFIRMED_DEFECT"),
+			("CONFIRMED_DEFECT", "QUEUED"),
+			("QUEUED", "IN_PROGRESS"),
+			("IN_PROGRESS", "PR_READY"),
+			("PR_READY", "VALIDATION_PENDING"),
+			("VALIDATION_PENDING", "VALIDATED"),
+			("VALIDATED", "CLOSED"),
+		]:
+			self.assertTrue(self.cli.bug_status_can_reach(source, target), f"expected {source} -> {target} to be allowed")
+
+	def test_stale_bug_lifecycle_cannot_move_backward(self):
+		self.assertEqual("PR_READY", self.cli.merge_bug_status("PR_READY", "QUEUED", "CONFIRMED_DEFECT"))
+		self.assertEqual("IN_PROGRESS", self.cli.merge_bug_status("IN_PROGRESS", "CONFIRMED_DEFECT", "CONFIRMED_DEFECT"))
+		self.assertEqual("NEEDS_PRODUCT_DECISION", self.cli.merge_bug_status("NEEDS_PRODUCT_DECISION", "TRIAGED", "NEEDS_PRODUCT_DECISION"))
+
+
 class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 	def setUp(self):
 		self.cli = load_cli_module()
@@ -1789,7 +2090,7 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 		client._get_repository_node_id = lambda: "R_repo"
 		client._get_issue_node_id = lambda issue_number: "I_issue"
 		client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-		client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+		client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
 
 		def fake_graphql(query: str, variables: dict | None = None):
 			captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
@@ -1798,7 +2099,7 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 					"addAssigneesToAssignable": {
 						"assignable": {
 							"number": 7,
-							"assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+							"assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
 						}
 					}
 				}
@@ -1825,7 +2126,7 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 		client._get_repository_node_id = lambda: "R_repo"
 		client._get_issue_node_id = lambda issue_number: "I_issue"
 		client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-		client._copilot_assignee_confirmed = lambda issue_number: (True, [self.cli.COPILOT_AGENT_LOGIN])
+		client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
 
 		def fake_graphql(query: str, variables: dict | None = None):
 			captured.append({"query": query, "variables": json.loads(json.dumps(variables or {}))})
@@ -1836,7 +2137,7 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 					"replaceActorsForAssignable": {
 						"assignable": {
 							"number": 7,
-							"assignees": {"nodes": [{"login": self.cli.COPILOT_AGENT_LOGIN, "id": "BOT_NODE_ID"}]},
+							"assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
 						}
 					}
 				}
@@ -1859,18 +2160,57 @@ class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):
 		client._get_repository_node_id = lambda: "R_repo"
 		client._get_issue_node_id = lambda issue_number: "I_issue"
 		client._get_actor_node_id = lambda login: "BOT_NODE_ID"
-		client._copilot_assignee_confirmed = lambda issue_number: (False, ["someone-else"])
+		client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (False, ["Copilot"], ["OTHER_NODE_ID"])
 		client._graphql = lambda query, variables=None: {
 			"data": {
 				"addAssigneesToAssignable": {
 					"assignable": {
 						"number": 7,
-						"assignees": {"nodes": [{"login": "someone-else", "id": "OTHER"}]},
+						"assignees": {"nodes": [{"login": "Copilot", "id": "OTHER_NODE_ID"}]},
 					}
 				}
 			}
 		}
 
+		with self.assertRaisesRegex(RuntimeError, "Copilot assignee was not confirmed"):
+			client.assign_copilot(7, "master", "Instrukcje testowe")
+
+	def test_graphql_login_alias_is_accepted_when_node_id_matches(self):
+		client = self.make_client()
+		client._get_repository_node_id = lambda: "R_repo"
+		client._get_issue_node_id = lambda issue_number: "I_issue"
+		client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+		client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (True, ["Copilot"], ["BOT_NODE_ID"])
+		client._graphql = lambda query, variables=None: {
+			"data": {
+				"addAssigneesToAssignable": {
+					"assignable": {
+						"number": 7,
+						"assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
+					}
+				}
+			}
+		}
+		result = client.assign_copilot(7, "master", "Instrukcje testowe")
+		self.assertEqual("ASSIGNED", result["status"])
+		self.assertEqual(["BOT_NODE_ID"], result["verified_assignee_node_ids"])
+
+	def test_graphql_login_alias_is_rejected_when_node_id_differs(self):
+		client = self.make_client()
+		client._get_repository_node_id = lambda: "R_repo"
+		client._get_issue_node_id = lambda issue_number: "I_issue"
+		client._get_actor_node_id = lambda login: "BOT_NODE_ID"
+		client._copilot_assignee_confirmed = lambda issue_number, expected_actor_node_id=None: (expected_actor_node_id == "OTHER_NODE_ID", ["Copilot"], ["OTHER_NODE_ID"])
+		client._graphql = lambda query, variables=None: {
+			"data": {
+				"addAssigneesToAssignable": {
+					"assignable": {
+						"number": 7,
+						"assignees": {"nodes": [{"login": "Copilot", "id": "BOT_NODE_ID"}]},
+					}
+				}
+			}
+		}
 		with self.assertRaisesRegex(RuntimeError, "Copilot assignee was not confirmed"):
 			client.assign_copilot(7, "master", "Instrukcje testowe")
 
