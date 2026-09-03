@@ -15,7 +15,7 @@
     "app/src/test/java/com/libredisplay/ui/monitoring/DashboardUiLogicTest.kt (formatTrendRatePerMinute_roundsToOneDecimalWithSign, trendWindowSnapshot_returnsNullForZeroMinuteSpan, buildTrendProjection/TrendProjectionThresholds - te testy definiują oczekiwany kontrakt brakującej implementacji i powinny posłużyć jako specyfikacja przy dopisywaniu funkcji)",
     "app/src/test/java/com/libredisplay/ui/monitoring/HomeScreenshotTest.kt"
   ],
-  "observed_behavior": "Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+  "observed_behavior": "Deterministyczny workflow Android CI na gałęzi master kończy się błędem: 2026-09-03T17:52:49.2165847Z > Task :app:compileDebugKotlin FAILED",
   "expected_behavior": "Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
   "reproduction": "Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
   "classification": "INCONCLUSIVE",
@@ -39,12 +39,22 @@
       "source": "CI_REGRESSION",
       "source_reference": "workflow=Android CI | run_id=33786724794 | commit=9ec4b3caa959b8393595c2640b967b4ae72bcd13 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
       "captured_at": "2026-09-03T17:51:05Z"
+    },
+    {
+      "source": "CI_REGRESSION",
+      "source_reference": "workflow=Android CI | run_id=33786960904 | commit=9ec4b3caa959b8393595c2640b967b4ae72bcd13 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
+      "captured_at": "2026-09-03T17:53:10Z"
+    },
+    {
+      "source": "CI_REGRESSION",
+      "source_reference": "workflow=Android CI | run_id=33694534692 | commit=a9cf5c35c8ff65445249e9c52c7363c8a57f6761 | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite | log_file=0_Fast test suite.txt | job_log=0_Fast test suite.txt",
+      "captured_at": "2026-09-03T17:53:11Z"
     }
   ],
-  "dedup_signature": "deterministyczny workflow android ci na gałęzi master kończy się błędem: fast test suite: run fast suite||gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację ci.||uruchom deterministyczny workflow android ci na gałęzi master i potwierdź powtarzalny błąd.||",
+  "dedup_signature": "deterministyczny workflow android ci na gałęzi master kończy się błędem: 2026-09-03t17:52:49.2165847z > task :app:compiledebugkotlin failed||gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację ci.||uruchom deterministyczny workflow android ci na gałęzi master i potwierdź powtarzalny błąd.||",
   "created_at": "2026-09-02T23:21:39Z",
-  "updated_at": "2026-09-03T17:51:14Z",
-  "additional_context": "Workflow: Android CI\nRun ID: 33694534692\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33694534692\nCommit: a9cf5c35c8ff65445249e9c52c7363c8a57f6761\nBranch: master\nFailed job: Fast test suite\nFailed step: Fast test suite: Run fast suite\nFailure excerpt: Fast test suite: Run fast suite",
+  "updated_at": "2026-09-03T17:53:20Z",
+  "additional_context": "Workflow: Android CI\nRun ID: 33694534692\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33694534692\nCommit: a9cf5c35c8ff65445249e9c52c7363c8a57f6761\nBranch: master\nFailed job: Fast test suite\nFailed step: Fast test suite: Run fast suite\nLog file: 0_Fast test suite.txt\nDiagnostic excerpt:\n2026-09-03T17:52:49.2165847Z > Task :app:compileDebugKotlin FAILED\n2026-09-03T17:52:49.2217010Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:311:45 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T17:52:49.2219965Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:379:37 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T17:52:49.2223034Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:32 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2226451Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:64 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2229584Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:57:9 Unresolved reference 'TrendProjectionThresholds'.\n2026-09-03T17:52:49.2232939Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:27 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2236609Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:92 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.4166337Z Execution failed for task ':app:compileDebugKotlin'.\n2026-09-03T17:52:49.4169634Z    > Compilation error. See log for more details",
   "triage_reasoning": "Dostępny dowod ogranicza się do metadanych workflow (workflow=Android CI, job=Fast test suite, step=Run fast suite, conclusion=failure) bez treści logu błędu, nazwy nieudanego testu, komunikatu Gradle/stack trace ani kodu wyjścia. Skrypt scripts/test-fast.sh wykonuje cztery odrębne kroki (testDebugUnitTest, lint, assembleDebug) - dowolny z nich mógł zawieść z różnych przyczyn: (a) prawdziwy defekt w kodzie/regresja logiki (np. HomeScreenshotTest - test golden/Roborazzi wrażliwy na wersję czcionek/renderer w środowisku CI, co bywa false-positive a nie realnym defektem), (b) problem środowiskowy (pobieranie komponentów Android SDK 35, limity sieciowe, cache Gradle), (c) niestabilność (flaky test) niezwiązana z żadną zmianą funkcjonalną. Brak related_requirement_ids i related_test_ids w zgłoszeniu oraz brak udokumentowanej decyzji produktowej odnoszącej się do tej awarii. Bez pełnego logu joba (stdout/stderr kroku 'Run fast suite') nie można potwierdzić defektu (CONFIRMED_DEFECT) ani stwierdzić, że wymagane jest świadome zaakceptowanie zmiany zachowania (NEEDS_PRODUCT_DECISION). Rekomendacja: pobrać pełny log kroku 'Run fast suite' z run_id=33694534692 (np. przez `gh run view 33694534692 --log-failed`) i ponownie sklasyfikować po ustaleniu konkretnego błędu.",
   "triage_traceability": {
     "accepted_related_requirement_ids": [],
@@ -52,5 +62,45 @@
     "has_ci_regression_evidence": true,
     "requires_behavior_change": false,
     "safety_requires_product_decision": false
+  },
+  "ci_failure_evidence": {
+    "artifact_name": "",
+    "artifact_names": [
+      "librecare-fast-suite"
+    ],
+    "artifacts_found": 1,
+    "artifact_downloaded": false,
+    "job_logs_fetched": true,
+    "log_file": "0_Fast test suite.txt",
+    "log_files_found": [
+      "0_Fast test suite.txt",
+      "Fast test suite/10_Upload build outputs and reports.txt",
+      "Fast test suite/18_Post Set up Gradle.txt",
+      "Fast test suite/19_Post Set up JDK 17.txt",
+      "Fast test suite/1_Set up job.txt",
+      "Fast test suite/20_Post Checkout repository.txt",
+      "Fast test suite/21_Complete job.txt",
+      "Fast test suite/2_Checkout repository.txt",
+      "Fast test suite/3_Set up JDK 17.txt",
+      "Fast test suite/4_Set up Gradle.txt",
+      "Fast test suite/5_Set up Android SDK.txt",
+      "Fast test suite/6_Install Android SDK 35 components.txt",
+      "Fast test suite/7_Grant execute permission for scripts.txt",
+      "Fast test suite/8_Verify build environment.txt",
+      "Fast test suite/9_Run fast suite.txt",
+      "Fast test suite/system.txt"
+    ],
+    "diagnostic_lines_found": 10,
+    "text_files_scanned": 16,
+    "candidate_files_found": 16,
+    "job_log_http_status": "OK",
+    "artifact_download_status": "UNKNOWN",
+    "artifact_extract_status": "OK",
+    "safe_diagnostic": "JOB_LOG_HTTP_STATUS: OK | ARTIFACT_DOWNLOAD_STATUS: UNKNOWN | ARTIFACT_EXTRACT_STATUS: OK | TEXT_FILES_SCANNED: 16 | CANDIDATE_FILES_FOUND: 16 | JOB_LOG_ERROR: GitHub API failed GET /repos/rafalbragan/-LibreDisplay/actions/jobs/100753967402/logs: ﻿<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>InvalidAuthenticationInfo</Code><Message>Server failed to authenticate the request. Please refer to t | ARTIFACT_ERROR: GitHub API failed GET /repos/rafalbragan/-LibreDisplay/actions/artifacts/9905852730/zip: ﻿<?xml version=\"1.0\" encoding=\"utf-8\"?><Error><Code>InvalidAuthenticationInfo</Code><Message>Server failed to authenticate the request. Please refer to",
+    "result": "ENRICHED",
+    "failed_job": "Fast test suite",
+    "failed_step": "Fast test suite: Run fast suite",
+    "excerpt": "2026-09-03T17:52:49.2165847Z > Task :app:compileDebugKotlin FAILED\n2026-09-03T17:52:49.2217010Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:311:45 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T17:52:49.2219965Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:379:37 No value passed for parameter 'trendWindowMinutes'.\n2026-09-03T17:52:49.2223034Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:32 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2226451Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:56:64 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2229584Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:57:9 Unresolved reference 'TrendProjectionThresholds'.\n2026-09-03T17:52:49.2232939Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:27 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.2236609Z e: file:///home/runner/work/-LibreDisplay/-LibreDisplay/app/src/main/java/com/libredisplay/ui/monitoring/RedesignedGlucoseCard.kt:62:92 Cannot infer type for this parameter. Please specify it explicitly.\n2026-09-03T17:52:49.4166337Z Execution failed for task ':app:compileDebugKotlin'.\n2026-09-03T17:52:49.4169634Z    > Compilation error. See log for more details",
+    "captured_at": "2026-09-03T17:53:11Z"
   }
 }
