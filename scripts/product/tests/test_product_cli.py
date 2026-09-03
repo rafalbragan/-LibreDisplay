@@ -1398,6 +1398,20 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         data = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
         return list((((data or {}).get("on") or {}).get("push") or {}).get("paths") or [])
 
+    def workflow_jobs(self, workflow_path: Path) -> dict:
+        data = yaml.load(workflow_path.read_text(encoding="utf-8"), Loader=yaml.BaseLoader)
+        return (data or {}).get("jobs") or {}
+
+    def jobs_invoking_copilot(self, workflow_path: Path) -> dict:
+        jobs = self.workflow_jobs(workflow_path)
+        result = {}
+        for job_name, job in jobs.items():
+            steps = (job or {}).get("steps") or []
+            copilot_steps = [step for step in steps if "copilot" in str((step or {}).get("run") or "").lower()]
+            if copilot_steps:
+                result[job_name] = {"job": job or {}, "steps": steps, "copilot_steps": copilot_steps}
+        return result
+
     def matches_workflow_paths(self, changed_paths: list[str], workflow_paths: list[str]) -> bool:
         import fnmatch
         return any(any(fnmatch.fnmatch(path, pattern) for pattern in workflow_paths) for path in changed_paths)
@@ -1416,10 +1430,10 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_workflow_has_permissions_and_copilot_install(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
-        self.assertIn("models: read", text)
+        self.assertIn("copilot-requests: write", text)
         self.assertIn("contents: write", text)
         self.assertIn("issues: write", text)
-        self.assertIn("npm install -g @github/copilot", text)
+        self.assertIn("npm install -g @github/copilot@latest", text)
         self.assertIn("workflow_run:", text)
 
     def test_workflow_ai_invocation_is_read_only(self):
@@ -1492,6 +1506,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
             "artifact-metadata",
             "attestations",
             "checks",
+            "copilot-requests",
             "contents",
             "deployments",
             "discussions",
@@ -1514,6 +1529,58 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
             for job_name, job in (data.get("jobs") or {}).items():
                 job_permissions = (job or {}).get("permissions") or {}
                 self.assertTrue(set(job_permissions).issubset(allowed), f"Unsupported job permissions in {workflow_path}:{job_name}: {set(job_permissions) - allowed}")
+
+            def test_copilot_cli_jobs_have_official_permission_and_builtin_github_token(self):
+                audited = {
+                    str(WORKFLOW_PATH): self.jobs_invoking_copilot(WORKFLOW_PATH),
+                    str(BUG_WORKFLOW_PATH): self.jobs_invoking_copilot(BUG_WORKFLOW_PATH),
+                }
+                self.assertEqual(
+                    {
+                        str(WORKFLOW_PATH): {"inbox-review"},
+                        str(BUG_WORKFLOW_PATH): {"bug-intake-triage", "master-ci-regression-intake"},
+                    },
+                    {path: set(jobs.keys()) for path, jobs in audited.items()},
+                )
+                for workflow_path, jobs in audited.items():
+                    for job_name, payload in jobs.items():
+                        permissions = (payload["job"].get("permissions") or {})
+                        self.assertEqual("write", permissions.get("copilot-requests"), f"{workflow_path}:{job_name}")
+                        self.assertNotIn("models", permissions, f"{workflow_path}:{job_name}")
+                        install_steps = [step for step in payload["steps"] if "npm install -g @github/copilot@latest" in str((step or {}).get("run") or "")]
+                        self.assertTrue(install_steps, f"{workflow_path}:{job_name} missing current Copilot install")
+                        analysis_steps = [step for step in payload["steps"] if "run copilot" in str((step or {}).get("name") or "").lower()]
+                        self.assertTrue(analysis_steps, f"{workflow_path}:{job_name} missing Copilot analysis step")
+                        for step in analysis_steps:
+                            env = (step or {}).get("env") or {}
+                            self.assertEqual("${{ github.token }}", env.get("GITHUB_TOKEN"), f"{workflow_path}:{job_name}:{step.get('name')}")
+                            self.assertNotIn("COPILOT_AGENT_USER_TOKEN", env, f"{workflow_path}:{job_name}:{step.get('name')}")
+
+    def test_copilot_agent_user_token_remains_assignment_only(self):
+        allowed_commands = ["bug-sync-fix-handoff", "inbox-sync-implementation-handoff", "record-ci-result"]
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH]:
+            for job_name, job in self.workflow_jobs(workflow_path).items():
+                for step in (job or {}).get("steps") or []:
+                    env = (step or {}).get("env") or {}
+                    if "COPILOT_AGENT_USER_TOKEN" not in env:
+                        continue
+                    run = str((step or {}).get("run") or "")
+                    self.assertTrue(any(command in run for command in allowed_commands), f"{workflow_path}:{job_name}:{step.get('name')}")
+                    self.assertNotIn("| copilot", run)
+                    self.assertNotIn("< inbox-ai-prompt.md", run)
+                    self.assertNotIn("cat bug-ai-prompt.json | copilot", run)
+
+    def test_models_read_is_not_treated_as_copilot_authentication(self):
+        self.assertNotIn("models: read", WORKFLOW_PATH.read_text(encoding="utf-8"))
+        self.assertNotIn("models: read", BUG_WORKFLOW_PATH.read_text(encoding="utf-8"))
+
+    def test_product_quality_workflow_scopes_actionlint_ignore_to_copilot_requests_false_positive(self):
+        text = PRODUCT_QUALITY_WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("uses: rhysd/actionlint@v1", text)
+        self.assertIn("copilot-requests", text)
+        self.assertIn("args: -ignore 'unknown permission scope .*copilot-requests.*'", text)
+        self.assertNotIn("--no-checks", text)
+        self.assertNotIn("permissions: {}", text)
 
     def test_issue_form_has_product_inbox_prefix(self):
         text = ISSUE_FORM_PATH.read_text(encoding="utf-8")
@@ -1627,7 +1694,8 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("COPILOT_AGENT_LOGIN = \"copilot-swe-agent[bot]\"", automation_cli_text)
         self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS = {\"Android CI\", \"Android APK Build\"}", automation_cli_text)
         self.assertIn("group: product-foundation-state", text)
-        self.assertIn("models: read", text)
+        self.assertIn("copilot-requests: write", text)
+        self.assertNotIn("models: read", text)
         self.assertIn("continue-on-error: true", text)
         self.assertIn("BUG_PRODUCT_DECISION_BRIDGE", text)
         self.assertNotIn("ci-regression-evidence.json || true", text)
@@ -1639,6 +1707,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn('".github/workflows/**"', text)
         self.assertIn('".github/ISSUE_TEMPLATE/**"', text)
         self.assertIn("uses: rhysd/actionlint@v1", text)
+        self.assertIn("copilot-requests", text)
 
     def test_android_ci_workflow_uses_current_fast_suite_artifact_name(self):
         text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")

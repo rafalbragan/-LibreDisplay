@@ -41,9 +41,9 @@ jobs:
       )
     runs-on: ubuntu-latest
     permissions:
+      copilot-requests: write
       contents: write
       issues: write
-      models: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -83,7 +83,7 @@ jobs:
 
       - name: Install GitHub Copilot CLI
         run: |
-          npm install -g @github/copilot
+          npm install -g @github/copilot@latest
 
       - name: Copilot CLI smoke check
         run: |
@@ -92,7 +92,7 @@ jobs:
 
       - name: Run Copilot bug triage (read-only)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           cat bug-ai-prompt.json | copilot \
             -s \
@@ -389,9 +389,9 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       actions: read
+      copilot-requests: write
       contents: write
       issues: write
-      models: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -531,7 +531,7 @@ jobs:
       - name: Install GitHub Copilot CLI
         if: steps.ci_regression.outputs.should_route == 'true'
         run: |
-          npm install -g @github/copilot
+          npm install -g @github/copilot@latest
 
       - name: Copilot CLI smoke check
         if: steps.ci_regression.outputs.should_route == 'true'
@@ -565,7 +565,7 @@ jobs:
       - name: Run Copilot bug triage (read-only)
         if: steps.ci_regression.outputs.should_route == 'true'
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ github.token }}
         run: |
           cat bug-ai-prompt.json | copilot \
             -s \
