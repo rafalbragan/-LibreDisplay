@@ -11,6 +11,7 @@
     "app/src/test/java/com/libredisplay/data/local/DatabaseVersionTest.kt",
     "app/src/test/java/com/libredisplay/data/local/ObservedPersonEntityTest.kt",
     "app/src/test/java/com/libredisplay/ui/monitoring/DashboardUiLogicTest.kt (formatTrendRatePerMinute_roundsToOneDecimalWithSign, trendWindowSnapshot_returnsNullForZeroMinuteSpan i pokrewne testy buildTrendProjection/TrendProjectionThresholds)",
+    "app/src/test/java/com/libredisplay/ui/monitoring/DashboardUiLogicTest.kt (formatTrendRatePerMinute_roundsToOneDecimalWithSign, trendWindowSnapshot_returnsNullForZeroMinuteSpan, buildTrendProjection/TrendProjectionThresholds - te testy definiują oczekiwany kontrakt brakującej implementacji i powinny posłużyć jako specyfikacja przy dopisywaniu funkcji)",
     "app/src/test/java/com/libredisplay/ui/monitoring/HomeScreenshotTest.kt"
   ],
   "observed_behavior": "Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
@@ -36,7 +37,7 @@
   ],
   "dedup_signature": "deterministyczny workflow android ci na gałęzi master kończy się błędem: fast test suite: run fast suite||gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację ci.||uruchom deterministyczny workflow android ci na gałęzi master i potwierdź powtarzalny błąd.||",
   "created_at": "2026-09-02T23:21:39Z",
-  "updated_at": "2026-09-03T13:19:27Z",
+  "updated_at": "2026-09-03T13:23:20Z",
   "additional_context": "Workflow: Android CI\nRun ID: 33694534692\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33694534692\nCommit: a9cf5c35c8ff65445249e9c52c7363c8a57f6761\nBranch: master\nFailed job: Fast test suite\nFailed step: Fast test suite: Run fast suite\nFailure excerpt: Fast test suite: Run fast suite",
   "triage_reasoning": "Dostępny dowod ogranicza się do metadanych workflow (workflow=Android CI, job=Fast test suite, step=Run fast suite, conclusion=failure) bez treści logu błędu, nazwy nieudanego testu, komunikatu Gradle/stack trace ani kodu wyjścia. Skrypt scripts/test-fast.sh wykonuje cztery odrębne kroki (testDebugUnitTest, lint, assembleDebug) - dowolny z nich mógł zawieść z różnych przyczyn: (a) prawdziwy defekt w kodzie/regresja logiki (np. HomeScreenshotTest - test golden/Roborazzi wrażliwy na wersję czcionek/renderer w środowisku CI, co bywa false-positive a nie realnym defektem), (b) problem środowiskowy (pobieranie komponentów Android SDK 35, limity sieciowe, cache Gradle), (c) niestabilność (flaky test) niezwiązana z żadną zmianą funkcjonalną. Brak related_requirement_ids i related_test_ids w zgłoszeniu oraz brak udokumentowanej decyzji produktowej odnoszącej się do tej awarii. Bez pełnego logu joba (stdout/stderr kroku 'Run fast suite') nie można potwierdzić defektu (CONFIRMED_DEFECT) ani stwierdzić, że wymagane jest świadome zaakceptowanie zmiany zachowania (NEEDS_PRODUCT_DECISION). Rekomendacja: pobrać pełny log kroku 'Run fast suite' z run_id=33694534692 (np. przez `gh run view 33694534692 --log-failed`) i ponownie sklasyfikować po ustaleniu konkretnego błędu.",
   "triage_traceability": {
