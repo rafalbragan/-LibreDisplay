@@ -2,6 +2,8 @@
 from __future__ import annotations
 
 import argparse
+import gzip
+import io
 import json
 import os
 import re
@@ -12,6 +14,7 @@ from pathlib import Path
 from urllib import error as urllib_error
 from urllib import parse as urllib_parse
 from urllib import request as urllib_request
+import zipfile
 
 ROOT = Path(__file__).resolve().parents[2]
 PRODUCT = ROOT / "product"
@@ -40,6 +43,20 @@ MASTER_CI_REGRESSION_WORKFLOWS = {"Android CI", "Android APK Build"}
 MASTER_CI_BRANCHES = {"master", "main"}
 PRODUCT_FOUNDATION_CANONICAL_BRANCH_ENV = "PRODUCT_FOUNDATION_CANONICAL_BRANCH"
 MAX_PERSIST_RETRIES = 3
+CI_FAILURE_PATTERNS = [
+    re.compile(r":app:compile(?:Debug|Release)Kotlin FAILED", re.IGNORECASE),
+    re.compile(r"^FAILURE:", re.IGNORECASE),
+    re.compile(r"Execution failed for task", re.IGNORECASE),
+    re.compile(r"Compilation error", re.IGNORECASE),
+    re.compile(r"^e:\s", re.IGNORECASE),
+    re.compile(r"Unresolved reference", re.IGNORECASE),
+    re.compile(r"No value passed for parameter", re.IGNORECASE),
+    re.compile(r"Type mismatch", re.IGNORECASE),
+    re.compile(r"\.kt:\d+", re.IGNORECASE),
+]
+MAX_FAILURE_EXCERPT_LINES = 16
+MAX_FAILURE_EXCERPT_CHARS = 1800
+KNOWN_DIAGNOSTIC_LOG_NAMES = {"gradle-debug.log", "gradle-release.log"}
 
 
 def now_iso() -> str:
@@ -93,6 +110,21 @@ def find_requirement(req_id: str):
         if req.get("id") == req_id:
             return path, req
     return None, None
+
+
+def canonical_requirement_ids(values: list[str] | None) -> list[str]:
+    canonical: list[str] = []
+    seen: set[str] = set()
+    for raw in values or []:
+        req_id = str(raw or "").strip()
+        if not re.fullmatch(r"REQ-[0-9A-Za-z._-]+", req_id):
+            continue
+        _path, requirement = find_requirement(req_id)
+        if requirement is None or req_id in seen:
+            continue
+        seen.add(req_id)
+        canonical.append(req_id)
+    return canonical
 
 
 def find_requirement_by_pr(pr_number: int):
@@ -359,7 +391,7 @@ def merge_bug_records(existing: dict, candidate: dict) -> dict:
     merged["title"] = merged.get("title") or candidate.get("title") or "Zgloszony blad"
     merged["source_issue_number"] = merged.get("source_issue_number") if merged.get("source_issue_number") is not None else candidate.get("source_issue_number")
     merged["source_issue_url"] = merged.get("source_issue_url") or candidate.get("source_issue_url") or ""
-    merged["related_requirement_ids"] = sorted(set((merged.get("related_requirement_ids") or []) + (candidate.get("related_requirement_ids") or [])))
+    merged["related_requirement_ids"] = canonical_requirement_ids(list((merged.get("related_requirement_ids") or []) + (candidate.get("related_requirement_ids") or [])))
     merged["related_test_ids"] = sorted(set((merged.get("related_test_ids") or []) + (candidate.get("related_test_ids") or [])))
     if not merged.get("observed_behavior"):
         merged["observed_behavior"] = candidate.get("observed_behavior") or "Brak opisu zachowania."
@@ -436,6 +468,192 @@ def extract_workflow_run_context(event: dict, metadata: dict | None = None) -> d
     }
 
 
+def source_reference_fields(source_reference: str) -> dict[str, str]:
+    fields: dict[str, str] = {}
+    for part in str(source_reference or "").split("|"):
+        key, sep, value = part.partition("=")
+        if not sep:
+            continue
+        key = key.strip()
+        value = value.strip()
+        if key:
+            fields[key] = value
+    return fields
+
+
+def parse_run_id_from_bug(bug: dict) -> str:
+    fields = source_reference_fields(str(bug.get("source_reference") or ""))
+    run_id = str(fields.get("run_id") or "").strip()
+    if run_id:
+        return run_id
+    match = re.search(r"/actions/runs/(\d+)", str(bug.get("source_issue_url") or ""))
+    return match.group(1) if match else ""
+
+
+def normalize_log_text(text: str) -> str:
+    if not text:
+        return ""
+    ansi = re.compile(r"\x1B\[[0-?]*[ -/]*[@-~]")
+    text = ansi.sub("", text)
+    return text.replace("\r\n", "\n").replace("\r", "\n")
+
+
+def line_matches_failure(line: str) -> bool:
+    return any(pattern.search(line) for pattern in CI_FAILURE_PATTERNS)
+
+
+def score_failure_excerpt(excerpt: str) -> int:
+    score = 0
+    for line in normalize_log_text(excerpt).splitlines():
+        for pattern in CI_FAILURE_PATTERNS:
+            if pattern.search(line):
+                score += 3
+        if ":app:compile" in line:
+            score += 5
+    return score
+
+
+def extract_bounded_failure_excerpt(text: str) -> str:
+    normalized = normalize_log_text(text)
+    lines = [line.rstrip() for line in normalized.splitlines()]
+    selected: list[str] = []
+    seen: set[str] = set()
+
+    def add(line: str) -> None:
+        clean = str(line or "").strip()
+        if not clean or clean in seen:
+            return
+        candidate = "\n".join(selected + [clean])
+        if len(selected) >= MAX_FAILURE_EXCERPT_LINES or len(candidate) > MAX_FAILURE_EXCERPT_CHARS:
+            return
+        seen.add(clean)
+        selected.append(clean)
+
+    for index, line in enumerate(lines):
+        if not line_matches_failure(line):
+            continue
+        add(line)
+        if index + 1 < len(lines) and lines[index + 1].lstrip().startswith(("e:", "error:", "Caused by:", "at ")):
+            add(lines[index + 1])
+
+    if not selected:
+        for line in lines[-120:]:
+            if "failed" in line.lower():
+                add(line)
+
+    return "\n".join(selected).strip()
+
+
+def decode_downloaded_text_blobs(payload: bytes, default_name: str) -> list[tuple[str, str]]:
+    if not payload:
+        return []
+    blobs: list[tuple[str, str]] = []
+    if payload[:2] == b"\x1f\x8b":
+        try:
+            payload = gzip.decompress(payload)
+        except Exception:
+            pass
+    if zipfile.is_zipfile(io.BytesIO(payload)):
+        with zipfile.ZipFile(io.BytesIO(payload)) as archive:
+            for info in archive.infolist():
+                if info.is_dir():
+                    continue
+                try:
+                    raw = archive.read(info.filename)
+                except Exception:
+                    continue
+                text = raw.decode("utf-8", errors="replace")
+                blobs.append((info.filename, text))
+        return blobs
+    blobs.append((default_name, payload.decode("utf-8", errors="replace")))
+    return blobs
+
+
+def diagnostic_text_candidates(name: str) -> bool:
+    base = Path(name).name.lower()
+    return (
+        base in KNOWN_DIAGNOSTIC_LOG_NAMES
+        or "gradle" in base
+        or base.endswith(".log")
+        or base.endswith(".txt")
+    )
+
+
+def best_ci_diagnostic_candidate(candidates: list[dict]) -> dict:
+    if not candidates:
+        return {}
+    ranked = sorted(
+        candidates,
+        key=lambda item: (
+            int(item.get("score", 0)),
+            1 if item.get("artifact_name") else 0,
+            1 if "gradle-debug.log" in str(item.get("log_file") or "") else 0,
+        ),
+        reverse=True,
+    )
+    return ranked[0]
+
+
+def build_ci_diagnostic_evidence_source_reference(bug: dict, diagnostic: dict) -> str:
+    parts = [str(bug.get("source_reference") or "")]
+    if diagnostic.get("artifact_name"):
+        parts.append(f"artifact={diagnostic['artifact_name']}")
+    if diagnostic.get("log_file"):
+        parts.append(f"log_file={diagnostic['log_file']}")
+    if diagnostic.get("job_log_name"):
+        parts.append(f"job_log={diagnostic['job_log_name']}")
+    return " | ".join([part for part in parts if part])
+
+
+def build_ci_regression_additional_context(bug: dict, diagnostic: dict) -> str:
+    fields = source_reference_fields(str(bug.get("source_reference") or ""))
+    lines = [
+        f"Workflow: {fields.get('workflow') or 'unknown'}",
+        f"Run ID: {fields.get('run_id') or 'unknown'}",
+        f"Run URL: {bug.get('source_issue_url') or 'n/a'}",
+        f"Commit: {fields.get('commit') or 'unknown'}",
+        f"Branch: {fields.get('branch') or 'unknown'}",
+        f"Failed job: {fields.get('job') or diagnostic.get('failed_job') or 'n/a'}",
+        f"Failed step: {fields.get('step') or diagnostic.get('failed_step') or 'n/a'}",
+    ]
+    if diagnostic.get("artifact_name"):
+        lines.append(f"Artifact: {diagnostic['artifact_name']}")
+    if diagnostic.get("log_file"):
+        lines.append(f"Log file: {diagnostic['log_file']}")
+    if diagnostic.get("excerpt"):
+        lines.append("Diagnostic excerpt:")
+        lines.append(str(diagnostic["excerpt"]))
+    else:
+        lines.append(f"Failure excerpt: {diagnostic.get('fallback_excerpt') or fields.get('step') or fields.get('job') or 'Brak szczegółów.'}")
+    return "\n".join(lines)
+
+
+def apply_ci_regression_diagnostic_to_bug(bug: dict, diagnostic: dict) -> dict:
+    bug = json.loads(json.dumps(bug))
+    bug["related_requirement_ids"] = canonical_requirement_ids(bug.get("related_requirement_ids") or [])
+    excerpt = str(diagnostic.get("excerpt") or "").strip()
+    fallback_excerpt = str(diagnostic.get("fallback_excerpt") or "").strip()
+    summary = excerpt.splitlines()[0] if excerpt else fallback_excerpt or bug.get("observed_behavior") or "Deterministyczny build zakończył się błędem."
+    fields = source_reference_fields(str(bug.get("source_reference") or ""))
+    workflow_name = fields.get("workflow") or "Nieznany workflow"
+    branch = fields.get("branch") or "unknown"
+    bug["observed_behavior"] = f"Deterministyczny workflow {workflow_name} na gałęzi {branch} kończy się błędem: {summary}"
+    bug["additional_context"] = build_ci_regression_additional_context(bug, diagnostic)
+    bug["ci_failure_evidence"] = {
+        "artifact_name": diagnostic.get("artifact_name") or "",
+        "log_file": diagnostic.get("log_file") or diagnostic.get("job_log_name") or "",
+        "failed_job": diagnostic.get("failed_job") or fields.get("job") or "",
+        "failed_step": diagnostic.get("failed_step") or fields.get("step") or "",
+        "excerpt": excerpt,
+        "captured_at": now_iso(),
+    }
+    if excerpt:
+        append_evidence(bug, "CI_REGRESSION", build_ci_diagnostic_evidence_source_reference(bug, diagnostic))
+    bug["dedup_signature"] = bug_signature(bug)
+    bug["updated_at"] = now_iso()
+    return bug
+
+
 def classify_master_ci_regression_route(event: dict, metadata: dict | None = None) -> tuple[bool, str, dict]:
     context = extract_workflow_run_context(event, metadata)
     if context["workflow_name"] not in MASTER_CI_REGRESSION_WORKFLOWS:
@@ -497,6 +715,19 @@ def build_ci_regression_bug_candidate(context: dict) -> dict:
         f"Failure excerpt: {failure_excerpt}",
     ])
     return bug
+
+
+def enrich_ci_regression_context_with_bug(context: dict, bug: dict) -> dict:
+    merged = dict(context or {})
+    fields = source_reference_fields(str(bug.get("source_reference") or ""))
+    for key, source_key in [("workflow_name", "workflow"), ("branch", "branch"), ("run_id", "run_id"), ("head_sha", "commit"), ("failed_job", "job"), ("failed_step", "step")]:
+        if not merged.get(key) and fields.get(source_key):
+            merged[key] = fields[source_key]
+    if not merged.get("run_url"):
+        merged["run_url"] = bug.get("source_issue_url") or ""
+    if not merged.get("log_excerpt"):
+        merged["log_excerpt"] = fields.get("step") or fields.get("job") or ""
+    return merged
 
 
 def is_accepted_requirement(req_id: str) -> bool:
@@ -610,6 +841,49 @@ class GitHubClient:
 
     def get_issue(self, issue_number: int) -> dict:
         return self._request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
+
+    def _request_bytes(self, method: str, path: str, extra_headers: dict[str, str] | None = None) -> bytes:
+        url = f"https://api.github.com{path}"
+        req = urllib_request.Request(url, method=method)
+        req.add_header("Accept", "application/vnd.github+json")
+        req.add_header("Authorization", f"Bearer {self.token}")
+        req.add_header("User-Agent", "LibreCare-Automation")
+        req.add_header("X-GitHub-Api-Version", "2022-11-28")
+        if extra_headers:
+            for key, value in extra_headers.items():
+                req.add_header(key, value)
+        try:
+            with urllib_request.urlopen(req) as res:
+                return res.read()
+        except urllib_error.HTTPError as exc:
+            body = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"GitHub API failed {method} {path}: {body}") from exc
+
+    def _paginate(self, path: str, key: str) -> list[dict]:
+        page = 1
+        items: list[dict] = []
+        while True:
+            payload = self._request("GET", f"{path}{'&' if '?' in path else '?'}per_page=100&page={page}")
+            batch = payload.get(key) if isinstance(payload, dict) else payload
+            if not isinstance(batch, list) or not batch:
+                break
+            items.extend([item for item in batch if isinstance(item, dict)])
+            if len(batch) < 100:
+                break
+            page += 1
+        return items
+
+    def list_workflow_run_jobs(self, run_id: str) -> list[dict]:
+        return self._paginate(f"/repos/{self.owner}/{self.repo}/actions/runs/{int(run_id)}/jobs", "jobs")
+
+    def list_workflow_run_artifacts(self, run_id: str) -> list[dict]:
+        return self._paginate(f"/repos/{self.owner}/{self.repo}/actions/runs/{int(run_id)}/artifacts", "artifacts")
+
+    def download_workflow_job_logs(self, job_id: int) -> bytes:
+        return self._request_bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/jobs/{int(job_id)}/logs", extra_headers={"Accept": "application/vnd.github+json"})
+
+    def download_workflow_artifact(self, artifact_id: int) -> bytes:
+        return self._request_bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/artifacts/{int(artifact_id)}/zip", extra_headers={"Accept": "application/vnd.github+json"})
 
     def _graphql(self, query: str, variables: dict | None = None) -> dict:
         payload = {"query": query, "variables": variables or {}}
@@ -769,6 +1043,84 @@ class GitHubClient:
         raise RuntimeError(last_error or "Copilot assignment failed")
 
 
+def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dict:
+    run_id = str(context.get("run_id") or "").strip()
+    if not run_id:
+        return {"excerpt": "", "fallback_excerpt": str(context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "").strip()}
+    candidates: list[dict] = []
+    failed_jobs: list[dict] = []
+    try:
+        jobs = client.list_workflow_run_jobs(run_id)
+    except RuntimeError:
+        jobs = []
+    for job in jobs:
+        if str(job.get("conclusion") or "").lower() != "failure":
+            continue
+        failed_jobs.append(job)
+        failed_step = ""
+        for step in job.get("steps") or []:
+            if str((step or {}).get("conclusion") or "").lower() == "failure":
+                failed_step = f"{job.get('name')}: {(step or {}).get('name')}"
+                break
+        try:
+            payload = client.download_workflow_job_logs(int(job.get("id")))
+        except Exception:
+            continue
+        for log_name, text in decode_downloaded_text_blobs(payload, f"job-{job.get('id')}.log"):
+            excerpt = extract_bounded_failure_excerpt(text)
+            if not excerpt:
+                continue
+            candidates.append({
+                "failed_job": str(job.get("name") or ""),
+                "failed_step": failed_step,
+                "job_log_name": log_name,
+                "artifact_name": "",
+                "log_file": log_name,
+                "excerpt": excerpt,
+                "score": score_failure_excerpt(excerpt),
+                "fallback_excerpt": str(context.get("log_excerpt") or failed_step or job.get("name") or "").strip(),
+            })
+    try:
+        artifacts = client.list_workflow_run_artifacts(run_id)
+    except RuntimeError:
+        artifacts = []
+    for artifact in artifacts:
+        if artifact.get("expired") is True:
+            continue
+        artifact_name = str(artifact.get("name") or "")
+        try:
+            payload = client.download_workflow_artifact(int(artifact.get("id")))
+        except Exception:
+            continue
+        for log_name, text in decode_downloaded_text_blobs(payload, artifact_name):
+            if not diagnostic_text_candidates(log_name):
+                continue
+            excerpt = extract_bounded_failure_excerpt(text)
+            if not excerpt:
+                continue
+            candidates.append({
+                "failed_job": str(context.get("failed_job") or (failed_jobs[0].get("name") if failed_jobs else "") or ""),
+                "failed_step": str(context.get("failed_step") or ""),
+                "artifact_name": artifact_name,
+                "log_file": log_name,
+                "excerpt": excerpt,
+                "score": score_failure_excerpt(excerpt) + (5 if Path(log_name).name.lower() == "gradle-debug.log" else 0),
+                "fallback_excerpt": str(context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "").strip(),
+            })
+    best = best_ci_diagnostic_candidate(candidates)
+    if best:
+        return best
+    return {
+        "failed_job": str(context.get("failed_job") or (failed_jobs[0].get("name") if failed_jobs else "") or ""),
+        "failed_step": str(context.get("failed_step") or ""),
+        "artifact_name": "",
+        "log_file": "",
+        "excerpt": "",
+        "score": 0,
+        "fallback_excerpt": str(context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "").strip(),
+    }
+
+
 GITHUB_CLIENT_FACTORY = GitHubClient
 
 
@@ -880,7 +1232,7 @@ def cmd_bug_apply_ai_triage(bug_id: str, ai_review_file: str) -> int:
     review = json.loads(raw)
     cls = review.get("classification", "INCONCLUSIVE")
     requires_change = bool(review.get("requires_behavior_change"))
-    related = list(dict.fromkeys((bug.get("related_requirement_ids") or []) + (review.get("recommended_related_requirements") or [])))
+    related = canonical_requirement_ids(list((bug.get("related_requirement_ids") or []) + (review.get("recommended_related_requirements") or [])))
     bug["related_requirement_ids"] = related
     bug["related_test_ids"] = list(dict.fromkeys((bug.get("related_test_ids") or []) + (review.get("recommended_related_tests") or [])))
     bug["severity"] = review.get("severity", bug.get("severity", "MEDIUM"))
@@ -1146,7 +1498,36 @@ def cmd_ci_regression_intake(event_file: str, metadata_file: str | None = None, 
     return 0
 
 
-def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, github_token: str, base_branch: str = DEFAULT_BASE_BRANCH, output_file: str | None = None) -> int:
+def cmd_ci_regression_enrich_evidence(bug_id: str, repo_owner: str, repo_name: str, github_token: str, run_id: str | None = None, output_file: str | None = None) -> int:
+    bug_path, bug = find_bug(bug_id)
+    if bug is None:
+        print(f"ERROR: unknown bug {bug_id}", file=sys.stderr)
+        return 1
+    if str(bug.get("source") or "").upper() != "CI_REGRESSION":
+        print(f"ERROR: bug {bug_id} is not a CI regression", file=sys.stderr)
+        return 1
+    context = enrich_ci_regression_context_with_bug({"run_id": run_id or ""}, bug)
+    context["run_id"] = str(run_id or context.get("run_id") or parse_run_id_from_bug(bug)).strip()
+    client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+    diagnostic = collect_ci_regression_diagnostic(client, context)
+    updated_bug = apply_ci_regression_diagnostic_to_bug(bug, diagnostic)
+    write_json(bug_path, updated_bug)
+    payload = {
+        "bug_id": bug_id,
+        "run_id": context.get("run_id"),
+        "artifact_name": diagnostic.get("artifact_name") or "",
+        "log_file": diagnostic.get("log_file") or diagnostic.get("job_log_name") or "",
+        "excerpt": diagnostic.get("excerpt") or "",
+        "evidence_enriched": bool(diagnostic.get("excerpt")),
+    }
+    if output_file:
+        write_json(Path(output_file), payload)
+    else:
+        print(json.dumps(payload, ensure_ascii=False))
+    return 0
+
+
+def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, github_token: str, copilot_assignment_token: str | None = None, base_branch: str = DEFAULT_BASE_BRANCH, output_file: str | None = None) -> int:
     bug_path, bug = find_bug(bug_id)
     if bug is None:
         print(f"ERROR: unknown bug {bug_id}", file=sys.stderr)
@@ -1211,11 +1592,17 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
     ])
     issue_resp = {"number": issue.get("number"), "html_url": issue.get("url")} if issue.get("number") else client.create_issue(title=f"[Naprawa] {bug_id} — {safe_title or 'Naprawa bledu'}", body=issue_body, labels=["bugfix", bug_id])
     assignment_error = None
-    try:
-        assignment = client.assign_copilot(int(issue_resp["number"]), base_branch=base_branch, instructions=f"Napraw wylacznie kanoniczny regresyjny blad {bug_id} na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.")
-    except RuntimeError as exc:
-        assignment = {"status": "ASSIGNMENT_FAILED", "error": str(exc)}
-        assignment_error = str(exc)
+    assignment_token = str(copilot_assignment_token or "").strip()
+    if not assignment_token:
+        assignment_error = "Brak skonfigurowanego sekretu COPILOT_AGENT_USER_TOKEN dla przypisania Copilot do naprawy błędu."
+        assignment = {"status": "ASSIGNMENT_FAILED", "error": assignment_error}
+    else:
+        assignment_client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, assignment_token)
+        try:
+            assignment = assignment_client.assign_copilot(int(issue_resp["number"]), base_branch=base_branch, instructions=f"Napraw wylacznie kanoniczny regresyjny blad {bug_id} na podstawie tego zgloszenia, powiazanych REQ i testow. Nie dodawaj nowego zachowania ani zmian semantyki medycznej.")
+        except RuntimeError as exc:
+            assignment = {"status": "ASSIGNMENT_FAILED", "error": str(exc)}
+            assignment_error = str(exc)
     bug["implementation_issue"] = {
         "number": int(issue_resp["number"]),
         "url": issue_resp.get("html_url") or issue_resp.get("url"),
@@ -1343,8 +1730,17 @@ def main(argv: list[str] | None = None) -> int:
     bug_handoff.add_argument("--repo-owner", required=True)
     bug_handoff.add_argument("--repo-name", required=True)
     bug_handoff.add_argument("--github-token", required=True)
+    bug_handoff.add_argument("--copilot-assignment-token")
     bug_handoff.add_argument("--base-branch", default=DEFAULT_BASE_BRANCH)
     bug_handoff.add_argument("--output-file")
+
+    enrich = sub.add_parser("ci-regression-enrich-evidence")
+    enrich.add_argument("--bug-id", required=True)
+    enrich.add_argument("--repo-owner", required=True)
+    enrich.add_argument("--repo-name", required=True)
+    enrich.add_argument("--github-token", required=True)
+    enrich.add_argument("--run-id")
+    enrich.add_argument("--output-file")
 
     bug_prompt = sub.add_parser("bug-build-ai-prompt")
     bug_prompt.add_argument("--bug-id", required=True)
@@ -1405,8 +1801,10 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "bug-apply-ai-triage":
         return cmd_bug_apply_ai_triage(args.bug_id, args.ai_review_file)
+    if args.command == "ci-regression-enrich-evidence":
+        return cmd_ci_regression_enrich_evidence(args.bug_id, args.repo_owner, args.repo_name, args.github_token, args.run_id, args.output_file)
     if args.command == "bug-sync-fix-handoff":
-        return cmd_bug_sync_fix_handoff(args.bug_id, args.repo_owner, args.repo_name, args.github_token, args.base_branch, args.output_file)
+        return cmd_bug_sync_fix_handoff(args.bug_id, args.repo_owner, args.repo_name, args.github_token, args.copilot_assignment_token, args.base_branch, args.output_file)
     if args.command == "track-work-pr":
         return cmd_track_pr(args.event_file, args.output_file)
     if args.command == "record-ci-result":

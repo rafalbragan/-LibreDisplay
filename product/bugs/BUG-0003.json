@@ -5,10 +5,7 @@
   "source_reference": "workflow=Android APK Build | run_id=33696123982 | commit=1ccd21b17c5b2f90db1097e3702a1fc7d063d5bb | branch=master | conclusion=failure | job=Build debug APK | step=Build debug APK: Fail if debug APK was not created",
   "source_issue_number": null,
   "source_issue_url": "https://github.com/rafalbragan/-LibreDisplay/actions/runs/33696123982",
-  "related_requirement_ids": [
-    "REQ-BUILD-002: Konfiguracja kompilacji (build.gradle.kts) nie może wykluczać kodu produkcyjnego bez udokumentowanej decyzji architektonicznej",
-    "REQ-CI-001: Gałąź master musi budować debug APK na każdym commicie (bramka jakości release)"
-  ],
+  "related_requirement_ids": [],
   "related_test_ids": [
     "Pobranie i analiza artefaktu 'gradle-reports'/'gradle-debug.log' z run_id=33696123982 jako warunek wstępny dalszej klasyfikacji",
     "TEST-BUILD-002: test/skrypt weryfikujący, że wykluczenia AbstractCompile (data/api/v2, data/api/v3) nie wpływają na kompilację innych modułów",
@@ -39,10 +36,10 @@
   "created_at": "2026-09-02T23:43:41Z",
   "updated_at": "2026-09-02T23:46:16Z",
   "additional_context": "Workflow: Android APK Build\nRun ID: 33696123982\nRun URL: https://github.com/rafalbragan/-LibreDisplay/actions/runs/33696123982\nCommit: 1ccd21b17c5b2f90db1097e3702a1fc7d063d5bb\nBranch: master\nFailed job: Build debug APK\nFailed step: Build debug APK: Fail if debug APK was not created\nFailure excerpt: Build debug APK: Fail if debug APK was not created",
-  "triage_reasoning": "Dowód źródłowy zawiera wyłącznie nazwę kroku bramkującego CI ('Fail if debug APK was not created'), bez faktycznej treści logu Gradle (brak 'FAILURE:', 'e:', stack trace, nazwy zadania które faktycznie padło). Nie da się jednoznacznie odróżnić: (a) rzeczywistej regresji w kodzie produkcyjnym, (b) problemu infrastrukturalnego CI (SDK/toolchain/sieć), (c) celowej zmiany zachowania niewymagającej naprawy. Statyczny przegląd app/build.gradle.kts ujawnił nietypowy blok 'tasks.withType<AbstractCompile>().configureEach { exclude(\"**/data/api/v2/**\", \"**/data/api/v3/**\") }', wykluczający z kompilacji cały nieużywany kod migracji V2/V3 API (potwierdzono grepem: żadne inne pliki main nie referencują klas z tych pakietów) — to obszar ryzyka, ale nie ma dowodu, że jest przyczyną źródłową tego konkretnego niepowodzenia. related_requirement_ids i related_test_ids są puste, więc nie istnieje udokumentowane kryterium akceptacji ani dowód testowy pozwalający potwierdzić regresję względem zaakceptowanego zachowania. Reprodukowalność jest deklarowana ('deterministic_work_executed: true'), co wskazuje na stały, powtarzalny błąd, a nie flaky test — to podnosi prawdopodobieństwo realnej regresji, ale bez treści logu nie można tego potwierdzić z wymaganą pewnością dla CONFIRMED_DEFECT.",
+  "triage_reasoning": "Dowód źródłowy zawiera wyłącznie nazwę kroku bramkującego CI ('Fail if debug APK was not created'), bez faktycznej treści logu Gradle (brak 'FAILURE:', 'e:', stack trace, nazwy zadania które faktycznie padło). Nie da się jednoznacznie odróżnić: (a) rzeczywistej regresji w kodzie produkcyjnym, (b) problemu infrastrukturalnego CI (SDK/toolchain/sieć), (c) celowej zmiany zachowania niewymagającej naprawy. Statyczny przegląd app/build.gradle.kts ujawnił nietypowy blok 'tasks.withType<AbstractCompile>().configureEach { exclude(\"**/data/api/v2/**\", \"**/data/api/v3/**\") }', wykluczający z kompilacji cały nieużywany kod migracji V2/V3 API (potwierdzono grepem: żadne inne pliki main nie referencują klas z tych pakietów) — to obszar ryzyka, ale nie ma dowodu, że jest przyczyną źródłową tego konkretnego niepowodzenia. related_requirement_ids nie zawiera obecnie żadnych prawidłowych kanonicznych REQ, a wpisy w related_test_ids nie stanowią jeszcze wystarczającego dowodu źródłowego do potwierdzenia regresji względem zaakceptowanego zachowania. Reprodukowalność jest deklarowana ('deterministic_work_executed: true'), co wskazuje na stały, powtarzalny błąd, a nie flaky test — to podnosi prawdopodobieństwo realnej regresji, ale bez treści logu nie można tego potwierdzić z wymaganą pewnością dla CONFIRMED_DEFECT.",
   "triage_traceability": {
     "accepted_related_requirement_ids": [],
-    "has_test_evidence": true,
+    "has_test_evidence": false,
     "has_ci_regression_evidence": true,
     "requires_behavior_change": false,
     "safety_requires_product_decision": false

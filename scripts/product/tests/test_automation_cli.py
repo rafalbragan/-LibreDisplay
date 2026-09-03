@@ -1,10 +1,12 @@
 import importlib.util
+import io
 import json
 import shutil
 import subprocess
 import tempfile
 import unittest
 from pathlib import Path
+import zipfile
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 CLI_PATH = WORKSPACE_ROOT / "scripts" / "product" / "automation_cli.py"
@@ -21,10 +23,15 @@ def load_cli_module():
 class FakeGitHubClient:
 	created_issues = []
 	assignments = []
+	assignment_tokens = []
 	labels = []
 	next_issue_number = 700
 	issue_assignees = {}
 	assign_should_fail = False
+	workflow_jobs = {}
+	workflow_artifacts = {}
+	artifact_payloads = {}
+	job_log_payloads = {}
 
 	def __init__(self, owner: str, repo: str, token: str):
 		self.owner = owner
@@ -55,6 +62,7 @@ class FakeGitHubClient:
 	def assign_copilot(self, issue_number: int, base_branch: str, instructions: str) -> dict:
 		if self.__class__.assign_should_fail:
 			raise RuntimeError("GraphQL assignment failed")
+		self.__class__.assignment_tokens.append(self.token)
 		logins = set(self.__class__.issue_assignees.get(issue_number, []))
 		logins.add("copilot-swe-agent[bot]")
 		self.__class__.issue_assignees[issue_number] = sorted(logins)
@@ -67,6 +75,18 @@ class FakeGitHubClient:
 		}
 		self.__class__.assignments.append(payload)
 		return payload
+
+	def list_workflow_run_jobs(self, run_id: str) -> list[dict]:
+		return json.loads(json.dumps(self.__class__.workflow_jobs.get(str(run_id), [])))
+
+	def list_workflow_run_artifacts(self, run_id: str) -> list[dict]:
+		return json.loads(json.dumps(self.__class__.workflow_artifacts.get(str(run_id), [])))
+
+	def download_workflow_artifact(self, artifact_id: int) -> bytes:
+		return self.__class__.artifact_payloads.get(int(artifact_id), b"")
+
+	def download_workflow_job_logs(self, job_id: int) -> bytes:
+		return self.__class__.job_log_payloads.get(int(job_id), b"")
 
 
 class AutomationCliTest(unittest.TestCase):
@@ -94,10 +114,15 @@ class AutomationCliTest(unittest.TestCase):
 
 		FakeGitHubClient.created_issues = []
 		FakeGitHubClient.assignments = []
+		FakeGitHubClient.assignment_tokens = []
 		FakeGitHubClient.labels = []
 		FakeGitHubClient.next_issue_number = 700
 		FakeGitHubClient.issue_assignees = {}
 		FakeGitHubClient.assign_should_fail = False
+		FakeGitHubClient.workflow_jobs = {}
+		FakeGitHubClient.workflow_artifacts = {}
+		FakeGitHubClient.artifact_payloads = {}
+		FakeGitHubClient.job_log_payloads = {}
 
 		self.accepted_req_id = "REQ-9999"
 		self.write_json(
@@ -233,6 +258,7 @@ class AutomationCliTest(unittest.TestCase):
 				"repo_owner": args[1],
 				"repo_name": args[2],
 				"github_token": args[3],
+				"copilot_assignment_token": args[4],
 			})
 			return 0
 
@@ -246,6 +272,8 @@ class AutomationCliTest(unittest.TestCase):
 				f"--repo-name={repo_name}",
 				"--github-token",
 				"token",
+					"--copilot-assignment-token",
+					"user-token",
 			])
 		finally:
 			self.cli.cmd_bug_sync_fix_handoff = original
@@ -366,6 +394,42 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(0, rc)
 		return self.read_json(output_file)
 
+	def make_zip_payload(self, files: dict[str, str]) -> bytes:
+		buffer = io.BytesIO()
+		with zipfile.ZipFile(buffer, "w", zipfile.ZIP_DEFLATED) as archive:
+			for name, text in files.items():
+				archive.writestr(name, text)
+		return buffer.getvalue()
+
+	def configure_workflow_failure_diagnostics(self, run_id: str, *, job_log_text: str = "", artifact_name: str = "gradle-reports", log_file: str = "gradle-debug.log", artifact_log_text: str = ""):
+		FakeGitHubClient.workflow_jobs[str(run_id)] = [{
+			"id": 9001,
+			"name": "Build debug APK",
+			"conclusion": "failure",
+			"steps": [
+				{"name": "Build debug APK", "conclusion": "success"},
+				{"name": "Fail if debug APK was not created", "conclusion": "failure"},
+			],
+		}]
+		if job_log_text:
+			FakeGitHubClient.job_log_payloads[9001] = job_log_text.encode("utf-8")
+		if artifact_log_text:
+			FakeGitHubClient.workflow_artifacts[str(run_id)] = [{"id": 9901, "name": artifact_name, "expired": False}]
+			FakeGitHubClient.artifact_payloads[9901] = self.make_zip_payload({log_file: artifact_log_text})
+
+	def enrich_ci_regression_bug(self, bug_id: str, run_id: str, output_name: str = "ci-enrich.json") -> dict:
+		output_file = self.root / output_name
+		rc = self.cli.cmd_ci_regression_enrich_evidence(
+			bug_id=bug_id,
+			repo_owner="example",
+			repo_name="repo",
+			github_token="token",
+			run_id=run_id,
+			output_file=str(output_file),
+		)
+		self.assertEqual(0, rc)
+		return self.read_json(output_file)
+
 	def test_regression_against_requirement_queues_fix(self):
 		bug_id = self.import_bug(
 			self.bug_issue_event(401, "[Blad LibreCare] Czas wzgledny", "Widoczny surowy ISO", "Naturalny czas", "1. Otworz dashboard")
@@ -383,7 +447,7 @@ class AutomationCliTest(unittest.TestCase):
 			},
 		)
 		out = self.root / "handoff.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(out)))
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
 		self.assertEqual("IN_PROGRESS", bug["status"])
@@ -556,8 +620,8 @@ class AutomationCliTest(unittest.TestCase):
 				"recommended_related_tests": ["TESTRUN-0007"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 		self.assertEqual(1, len(FakeGitHubClient.assignments))
 		impl = self.read_json(self.root / "product" / "implementation" / f"IMP-{bug_id}.json")
@@ -582,7 +646,7 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		FakeGitHubClient.assign_should_fail = True
 		out = self.root / "bug-handoff-fail.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(out)))
 		summary = self.read_json(out)
 		self.assertFalse(summary["copilot_real_assignee_confirmed"])
 		self.assertEqual("CONFIRMED_DEFECT", summary["status"])
@@ -607,13 +671,13 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		FakeGitHubClient.assign_should_fail = True
 		first_out = self.root / "bug-handoff-retry-1.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(first_out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(first_out)))
 		first = self.read_json(first_out)
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 
 		FakeGitHubClient.assign_should_fail = False
 		second_out = self.root / "bug-handoff-retry-2.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", output_file=str(second_out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(second_out)))
 		second = self.read_json(second_out)
 		self.assertEqual(first["implementation_issue_number"], second["implementation_issue_number"])
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
@@ -625,12 +689,14 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(0, rc)
 		self.assertEqual("rafalbragan", captured["repo_owner"])
 		self.assertEqual("LibreDisplay", captured["repo_name"])
+		self.assertEqual("user-token", captured["copilot_assignment_token"])
 
 	def test_bug_handoff_cli_parses_repo_name_with_leading_hyphen(self):
 		rc, captured = self.parse_bug_handoff_args("-LibreDisplay")
 		self.assertEqual(0, rc)
 		self.assertEqual("rafalbragan", captured["repo_owner"])
 		self.assertEqual("-LibreDisplay", captured["repo_name"])
+		self.assertEqual("user-token", captured["copilot_assignment_token"])
 
 	def test_non_confirmed_triage_removes_preexisting_bug_impl_record(self):
 		bug_id = self.import_bug(
@@ -669,7 +735,7 @@ class AutomationCliTest(unittest.TestCase):
 				"recommended_related_tests": ["TESTRUN-0008"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
 		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
 		bug = self.read_json(bug_path)
 		bug["pull_request"] = {"number": 77, "url": "https://example/pr/77", "branch": "copilot/bug"}
@@ -730,6 +796,187 @@ class AutomationCliTest(unittest.TestCase):
 		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
 		self.assertEqual("CI_REGRESSION", bug["source"])
 		self.assertIn("workflow=Android APK Build", bug["source_reference"])
+
+	def test_master_android_failure_with_gradle_reports_artifact_is_inspected(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3001"),
+			self.ci_regression_metadata(
+				workflow_name="Android APK Build",
+				run_id="3001",
+				failed_job="Build debug APK",
+				failed_step="Build debug APK: Fail if debug APK was not created",
+				log_excerpt="Build debug APK: Fail if debug APK was not created",
+			),
+			output_name="ci-artifact-source.json",
+		)
+		self.configure_workflow_failure_diagnostics(
+			"3001",
+			artifact_log_text="FAILURE:\nExecution failed for task ':app:compileDebugKotlin'.\ne: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:42: Unresolved reference: trendProjection\n",
+		)
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001", "ci-artifact-enriched.json")
+		self.assertTrue(payload["evidence_enriched"])
+		self.assertEqual("gradle-reports", payload["artifact_name"])
+		self.assertEqual("gradle-debug.log", payload["log_file"])
+
+	def test_compile_debug_kotlin_failure_captures_concise_compiler_excerpt(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3002"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3002", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-compiler-source.json",
+		)
+		self.configure_workflow_failure_diagnostics(
+			"3002",
+			artifact_log_text="""
+:app:compileDebugKotlin FAILED
+FAILURE: Build failed with an exception.
+Execution failed for task ':app:compileDebugKotlin'.
+e: file:///app/src/main/java/com/libredisplay/ui/monitoring/MonitoringScreen.kt:101: No value passed for parameter 'trendWindowMinutes'
+e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:42: Unresolved reference: trendProjection
+""",
+		)
+		self.enrich_ci_regression_bug(result["bug_id"], "3002", "ci-compiler-enriched.json")
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		excerpt = bug["ci_failure_evidence"]["excerpt"]
+		self.assertIn(":app:compileDebugKotlin FAILED", excerpt)
+		self.assertIn("No value passed for parameter 'trendWindowMinutes'", excerpt)
+		self.assertIn("Unresolved reference: trendProjection", excerpt)
+
+	def test_missing_useful_artifact_keeps_ci_regression_safely_inconclusive(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3003"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3003", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-missing-artifact.json",
+		)
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3003", "ci-missing-artifact-enrich.json")
+		self.assertFalse(payload["evidence_enriched"])
+		self.triage_bug(result["bug_id"], {
+			"classification": "INCONCLUSIVE",
+			"reasoning": "Brak użytecznego artefaktu lub logu.",
+			"severity": "HIGH",
+			"safety_impact": "LOW",
+			"requires_behavior_change": False,
+			"recommended_related_requirements": [],
+			"recommended_related_tests": [],
+		})
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("INCONCLUSIVE", bug["classification"])
+		self.assertEqual("TRIAGED", bug["status"])
+		self.assertEqual([], self.bug_impl_paths())
+
+	def test_huge_gradle_log_is_reduced_to_bounded_excerpt(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3004"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3004", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-huge-log.json",
+		)
+		noise = "\n".join([f"noise line {idx}" for idx in range(400)])
+		artifact_log = noise + "\n:app:compileDebugKotlin FAILED\nFAILURE: Build failed with an exception.\nExecution failed for task ':app:compileDebugKotlin'.\n" + "\n".join([f"e: file:///src/File{idx}.kt:{idx}: Unresolved reference: item{idx}" for idx in range(1, 80)])
+		self.configure_workflow_failure_diagnostics("3004", artifact_log_text=artifact_log)
+		self.enrich_ci_regression_bug(result["bug_id"], "3004", "ci-huge-log-enrich.json")
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		excerpt = bug["ci_failure_evidence"]["excerpt"]
+		self.assertLessEqual(len(excerpt), self.cli.MAX_FAILURE_EXCERPT_CHARS)
+		self.assertLessEqual(len(excerpt.splitlines()), self.cli.MAX_FAILURE_EXCERPT_LINES)
+
+	def test_same_bug_receives_additional_evidence_without_duplicate_bug(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3005"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3005", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-extra-evidence.json",
+		)
+		bug_id = result["bug_id"]
+		self.configure_workflow_failure_diagnostics("3005", artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n")
+		self.enrich_ci_regression_bug(bug_id, "3005", "ci-extra-evidence-enrich.json")
+		self.assertEqual(1, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
+		self.assertGreaterEqual(len(bug.get("evidence", [])), 2)
+
+	def test_enriched_existing_bug_is_retriaged(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3006"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3006", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-retriage.json",
+		)
+		self.configure_workflow_failure_diagnostics("3006", artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n")
+		self.enrich_ci_regression_bug(result["bug_id"], "3006", "ci-retriage-enrich.json")
+		self.triage_bug(result["bug_id"], {
+			"classification": "CONFIRMED_DEFECT",
+			"reasoning": "Rzeczywisty błąd kompilacji Kotlin potwierdza regresję deterministycznego CI.",
+			"severity": "HIGH",
+			"safety_impact": "LOW",
+			"requires_behavior_change": False,
+			"recommended_related_requirements": [],
+			"recommended_related_tests": [],
+		})
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual("CONFIRMED_DEFECT", bug["classification"])
+		self.assertEqual("CONFIRMED_DEFECT", bug["status"])
+
+	def test_confirmed_ci_regression_handoff_uses_user_token_and_creates_one_fix_issue(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3007"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3007", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-confirmed-handoff.json",
+		)
+		self.configure_workflow_failure_diagnostics("3007", artifact_log_text=":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\n")
+		self.enrich_ci_regression_bug(result["bug_id"], "3007", "ci-confirmed-handoff-enrich.json")
+		self.triage_bug(result["bug_id"], {
+			"classification": "CONFIRMED_DEFECT",
+			"reasoning": "To potwierdzona regresja kompilacji.",
+			"severity": "HIGH",
+			"safety_impact": "LOW",
+			"requires_behavior_change": False,
+			"recommended_related_requirements": ["REQ-DOES-NOT-EXIST", self.accepted_req_id],
+			"recommended_related_tests": [],
+		})
+		out = self.root / "ci-confirmed-handoff-result.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(result["bug_id"], "example", "repo", "token", "user-token", output_file=str(out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(result["bug_id"], "example", "repo", "token", "user-token", output_file=str(out)))
+		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
+		self.assertEqual([self.accepted_req_id], bug["related_requirement_ids"])
+		self.assertEqual(1, len(FakeGitHubClient.created_issues))
+		self.assertEqual(1, len(FakeGitHubClient.assignments))
+		self.assertEqual(["user-token"], FakeGitHubClient.assignment_tokens)
+
+	def test_inconclusive_ci_regression_creates_no_implementation_issue(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3008"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3008", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-inconclusive-flow.json",
+		)
+		self.triage_bug(result["bug_id"], {
+			"classification": "INCONCLUSIVE",
+			"reasoning": "Nadal brak wystarczających dowodów.",
+			"severity": "HIGH",
+			"safety_impact": "LOW",
+			"requires_behavior_change": False,
+			"recommended_related_requirements": [],
+			"recommended_related_tests": [],
+		})
+		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(result["bug_id"], "example", "repo", "token", "user-token"))
+		self.assertEqual([], self.bug_impl_paths())
+
+	def test_related_requirement_ids_keep_only_real_canonical_ids(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3009"),
+			self.ci_regression_metadata(workflow_name="Android APK Build", run_id="3009", failed_job="Build debug APK", failed_step="Build debug APK: Fail if debug APK was not created", log_excerpt="Build debug APK: Fail if debug APK was not created"),
+			output_name="ci-canonical-reqs.json",
+		)
+		bug_path = self.root / "product" / "bugs" / f"{result['bug_id']}.json"
+		bug = self.read_json(bug_path)
+		bug["related_requirement_ids"] = ["REQ-CI-001: fake text", self.accepted_req_id]
+		self.write_json(bug_path, bug)
+		self.triage_bug(result["bug_id"], {
+			"classification": "INCONCLUSIVE",
+			"reasoning": "Sanity check.",
+			"severity": "HIGH",
+			"safety_impact": "LOW",
+			"requires_behavior_change": False,
+			"recommended_related_requirements": ["REQ-UNKNOWN", self.accepted_req_id],
+			"recommended_related_tests": [],
+		})
+		updated = self.read_json(bug_path)
+		self.assertEqual([self.accepted_req_id], updated["related_requirement_ids"])
 
 	def test_successful_master_ci_does_not_create_bug(self):
 		event = self.workflow_run_event(workflow_name="Android CI", conclusion="success", branch="master", run_id="2003")
@@ -925,7 +1172,7 @@ class AutomationCliTest(unittest.TestCase):
 				"recommended_related_tests": ["TESTRUN-0009"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
 		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
 		bug = self.read_json(bug_path)
 		bug["pull_request"] = {"number": 78, "url": "https://example/pr/78", "branch": "copilot/bug"}
@@ -1074,6 +1321,11 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertNotIn('"model": "Auto"', text)
 		self.assertIn("MASTER_CI_REGRESSION_WORKFLOWS", text)
 		self.assertIn("def cmd_ci_regression_intake", text)
+		self.assertIn("def cmd_ci_regression_enrich_evidence", text)
+		self.assertIn("download_workflow_artifact", text)
+		self.assertIn("download_workflow_job_logs", text)
+		self.assertIn("extract_bounded_failure_excerpt", text)
+		self.assertIn("canonical_requirement_ids", text)
 		self.assertIn("def cmd_persist_bug_records", text)
 		self.assertIn('persist-bug-records', text)
 		self.assertIn('"CI_REGRESSION"', text)
