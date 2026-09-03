@@ -330,15 +330,21 @@ jobs:
           print('CI_EVIDENCE_RESULT:')
           print(f"BUG_ID: {data.get('bug_id', '')}")
           print(f"RUN_ID: {data.get('run_id', '')}")
+          print(f"GITHUB_TOKEN_PRESENT: {data.get('github_token_present')}")
           print(f"JOB_LOGS_FETCHED: {data.get('job_logs_fetched')}")
           print(f"ARTIFACTS_FOUND: {data.get('artifacts_found')}")
           print(f"ARTIFACT_NAMES: {', '.join(data.get('artifact_names') or []) or 'BRAK'}")
-          print(f"GRADLE_LOG_FOUND: {bool(data.get('artifact_downloaded'))}")
+          print(f"GRADLE_LOG_FOUND: {bool(data.get('useful_diagnostic_found'))}")
           print(f"DIAGNOSTIC_LINES_FOUND: {data.get('diagnostic_lines_found')}")
           print(f"RESULT: {data.get('result')}")
           if data.get('result') == 'RETRIEVAL_FAILED':
-              error = str(data.get('error') or 'Nie udało się pobrać dowodów z GitHub Actions.')
-              print(f"SAFE_DIAGNOSTIC: {error[:200]}")
+              print(f"JOB_LOG_HTTP_STATUS: {data.get('job_log_http_status', 'UNKNOWN')}")
+              print(f"ARTIFACT_DOWNLOAD_STATUS: {data.get('artifact_download_status', 'UNKNOWN')}")
+              print(f"ARTIFACT_EXTRACT_STATUS: {data.get('artifact_extract_status', 'UNKNOWN')}")
+              print(f"TEXT_FILES_SCANNED: {data.get('text_files_scanned', 0)}")
+              print(f"CANDIDATE_FILES_FOUND: {data.get('candidate_files_found', 0)}")
+              error = str(data.get('safe_diagnostic') or data.get('error') or 'Nie udało się pobrać dowodów z GitHub Actions.')
+              print(f"SAFE_DIAGNOSTIC: {error[:280]}")
           PY
 
       - name: Install GitHub Copilot CLI

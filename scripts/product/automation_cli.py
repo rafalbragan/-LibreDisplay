@@ -57,6 +57,9 @@ CI_FAILURE_PATTERNS = [
 MAX_FAILURE_EXCERPT_LINES = 16
 MAX_FAILURE_EXCERPT_CHARS = 1800
 KNOWN_DIAGNOSTIC_LOG_NAMES = {"gradle-debug.log", "gradle-release.log"}
+DIAGNOSTIC_TEXT_SUFFIXES = {".log", ".txt", ".xml", ".html", ".htm", ".md"}
+MAX_DIAGNOSTIC_TEXT_FILE_BYTES = 2_000_000
+MAX_SAFE_DIAGNOSTIC_CHARS = 240
 
 
 def now_iso() -> str:
@@ -498,6 +501,26 @@ def normalize_log_text(text: str) -> str:
     return text.replace("\r\n", "\n").replace("\r", "\n")
 
 
+def sanitize_failure_reason(value: str) -> str:
+    text = normalize_log_text(str(value or "")).strip()
+    text = re.sub(r"\s+", " ", text)
+    # Never leak bearer-like tokens in diagnostics.
+    text = re.sub(r"(?i)bearer\s+[A-Za-z0-9._\-]+", "Bearer [REDACTED]", text)
+    return text[:MAX_SAFE_DIAGNOSTIC_CHARS]
+
+
+def http_status_from_error(value: str) -> str:
+    text = str(value or "")
+    match = re.search(r"[\"']status[\"']\s*:\s*[\"']?([1-5]\d{2})[\"']?", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"HTTP\s+Error\s+([1-5]\d{2})", text, re.IGNORECASE)
+    if not match:
+        match = re.search(r"\b([1-5]\d{2})\b", text)
+    if match:
+        return f"HTTP_{match.group(1)}"
+    return "UNKNOWN"
+
+
 def line_matches_failure(line: str) -> bool:
     return any(pattern.search(line) for pattern in CI_FAILURE_PATTERNS)
 
@@ -569,13 +592,62 @@ def decode_downloaded_text_blobs(payload: bytes, default_name: str) -> list[tupl
     return blobs
 
 
+def is_probably_text_blob(raw: bytes) -> bool:
+    if not raw:
+        return True
+    if b"\x00" in raw[:4096]:
+        return False
+    return True
+
+
+def inspect_downloaded_text_blobs(payload: bytes, default_name: str) -> dict:
+    scanned: list[tuple[str, str]] = []
+    text_files_scanned = 0
+    candidate_files_found = 0
+    extract_error = ""
+    if not payload:
+        return {
+            "blobs": scanned,
+            "text_files_scanned": text_files_scanned,
+            "candidate_files_found": candidate_files_found,
+            "extract_error": extract_error,
+        }
+    try:
+        blobs = decode_downloaded_text_blobs(payload, default_name)
+    except Exception as exc:
+        extract_error = sanitize_failure_reason(str(exc))
+        blobs = []
+    for name, text in blobs:
+        raw = text.encode("utf-8", errors="replace")
+        if len(raw) > MAX_DIAGNOSTIC_TEXT_FILE_BYTES:
+            continue
+        if not is_probably_text_blob(raw):
+            continue
+        text_files_scanned += 1
+        if diagnostic_text_candidates(name):
+            candidate_files_found += 1
+            scanned.append((name, text))
+    return {
+        "blobs": scanned,
+        "text_files_scanned": text_files_scanned,
+        "candidate_files_found": candidate_files_found,
+        "extract_error": extract_error,
+    }
+
+
 def diagnostic_text_candidates(name: str) -> bool:
-    base = Path(name).name.lower()
+    value = str(name or "").lower()
+    base = Path(value).name
+    suffix = Path(base).suffix
     return (
         base in KNOWN_DIAGNOSTIC_LOG_NAMES
         or "gradle" in base
-        or base.endswith(".log")
-        or base.endswith(".txt")
+        or "compile" in base
+        or "kotlin" in base
+        or "report" in value
+        or "test-results" in value
+        or "build/outputs" in value
+        or suffix in DIAGNOSTIC_TEXT_SUFFIXES
     )
 
 
@@ -648,6 +720,12 @@ def apply_ci_regression_diagnostic_to_bug(bug: dict, diagnostic: dict) -> dict:
         "log_file": diagnostic.get("log_file") or diagnostic.get("job_log_name") or "",
         "log_files_found": list(dict.fromkeys([str(name) for name in (diagnostic.get("log_files_found") or []) if str(name).strip()])),
         "diagnostic_lines_found": int(diagnostic.get("diagnostic_lines_found") or (len(excerpt.splitlines()) if excerpt else 0)),
+        "text_files_scanned": int(diagnostic.get("text_files_scanned") or 0),
+        "candidate_files_found": int(diagnostic.get("candidate_files_found") or 0),
+        "job_log_http_status": str(diagnostic.get("job_log_http_status") or "UNKNOWN"),
+        "artifact_download_status": str(diagnostic.get("artifact_download_status") or "UNKNOWN"),
+        "artifact_extract_status": str(diagnostic.get("artifact_extract_status") or "UNKNOWN"),
+        "safe_diagnostic": str(diagnostic.get("safe_diagnostic") or ""),
         "result": str(diagnostic.get("result") or "ENRICHED"),
         "failed_job": diagnostic.get("failed_job") or fields.get("job") or "",
         "failed_step": diagnostic.get("failed_step") or fields.get("step") or "",
@@ -889,6 +967,9 @@ class GitHubClient:
     def download_workflow_job_logs(self, job_id: int) -> bytes:
         return self._request_bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/jobs/{int(job_id)}/logs", extra_headers={"Accept": "application/vnd.github+json"})
 
+    def download_workflow_run_logs(self, run_id: str) -> bytes:
+        return self._request_bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/runs/{int(run_id)}/logs", extra_headers={"Accept": "application/vnd.github+json"})
+
     def download_workflow_artifact(self, artifact_id: int) -> bytes:
         return self._request_bytes("GET", f"/repos/{self.owner}/{self.repo}/actions/artifacts/{int(artifact_id)}/zip", extra_headers={"Accept": "application/vnd.github+json"})
 
@@ -1069,19 +1150,29 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
             "diagnostic_excerpt": "",
             "score": 0,
             "fallback_excerpt": fallback_excerpt,
+            "text_files_scanned": 0,
+            "candidate_files_found": 0,
+            "job_log_http_status": "NOT_AVAILABLE",
+            "artifact_download_status": "NOT_AVAILABLE",
+            "artifact_extract_status": "NOT_AVAILABLE",
+            "safe_diagnostic": "JOB_LOG_HTTP_STATUS: NOT_AVAILABLE | ARTIFACT_DOWNLOAD_STATUS: NOT_AVAILABLE | ARTIFACT_EXTRACT_STATUS: NOT_AVAILABLE | TEXT_FILES_SCANNED: 0 | CANDIDATE_FILES_FOUND: 0",
             "result": "NO_USEFUL_EVIDENCE",
         }
     candidates: list[dict] = []
     failed_jobs: list[dict] = []
     artifact_names: list[str] = []
     log_files_found: list[str] = []
-    retrieval_failed = False
+    job_log_errors: list[str] = []
+    artifact_download_errors: list[str] = []
+    extract_errors: list[str] = []
+    text_files_scanned = 0
+    candidate_files_found = 0
     job_logs_fetched = False
     artifact_downloaded = False
     try:
         jobs = client.list_workflow_run_jobs(run_id)
-    except RuntimeError:
-        retrieval_failed = True
+    except RuntimeError as exc:
+        job_log_errors.append(sanitize_failure_reason(str(exc)))
         jobs = []
     for job in jobs:
         if str(job.get("conclusion") or "").lower() != "failure":
@@ -1094,12 +1185,20 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
                 break
         try:
             payload = client.download_workflow_job_logs(int(job.get("id")))
-            job_logs_fetched = True
-        except Exception:
-            retrieval_failed = True
+            if payload:
+                job_logs_fetched = True
+            else:
+                job_log_errors.append("EMPTY_JOB_LOG_BODY")
+        except Exception as exc:
+            job_log_errors.append(sanitize_failure_reason(str(exc)))
             continue
-        for log_name, text in decode_downloaded_text_blobs(payload, f"job-{job.get('id')}.log"):
-            log_files_found.append(log_name)
+        inspected = inspect_downloaded_text_blobs(payload, f"job-{job.get('id')}.log")
+        text_files_scanned += int(inspected.get("text_files_scanned") or 0)
+        candidate_files_found += int(inspected.get("candidate_files_found") or 0)
+        if inspected.get("extract_error"):
+            extract_errors.append(str(inspected.get("extract_error")))
+        for log_name, text in inspected.get("blobs") or []:
+            log_files_found.append(str(log_name))
             excerpt = extract_bounded_failure_excerpt(text)
             if not excerpt:
                 continue
@@ -1113,10 +1212,47 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
                 "score": score_failure_excerpt(excerpt),
                 "fallback_excerpt": str(context.get("log_excerpt") or failed_step or job.get("name") or "").strip(),
             })
+    if failed_jobs and not job_logs_fetched:
+        try:
+            payload = client.download_workflow_run_logs(run_id)
+            if payload:
+                job_logs_fetched = True
+            else:
+                job_log_errors.append("EMPTY_RUN_LOG_BODY")
+        except Exception as exc:
+            job_log_errors.append(sanitize_failure_reason(str(exc)))
+            payload = b""
+        inspected = inspect_downloaded_text_blobs(payload, f"run-{run_id}.log")
+        text_files_scanned += int(inspected.get("text_files_scanned") or 0)
+        candidate_files_found += int(inspected.get("candidate_files_found") or 0)
+        if inspected.get("extract_error"):
+            extract_errors.append(str(inspected.get("extract_error")))
+        for log_name, text in inspected.get("blobs") or []:
+            log_name = str(log_name)
+            log_files_found.append(log_name)
+            excerpt = extract_bounded_failure_excerpt(text)
+            if not excerpt:
+                continue
+            matched_job = ""
+            for job in failed_jobs:
+                job_name = str(job.get("name") or "").strip().lower()
+                if job_name and job_name in log_name.lower():
+                    matched_job = str(job.get("name") or "")
+                    break
+            candidates.append({
+                "failed_job": matched_job or str(context.get("failed_job") or (failed_jobs[0].get("name") if failed_jobs else "") or ""),
+                "failed_step": str(context.get("failed_step") or ""),
+                "job_log_name": log_name,
+                "artifact_name": "",
+                "log_file": log_name,
+                "excerpt": excerpt,
+                "score": score_failure_excerpt(excerpt),
+                "fallback_excerpt": str(context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "").strip(),
+            })
     try:
         artifacts = client.list_workflow_run_artifacts(run_id)
-    except RuntimeError:
-        retrieval_failed = True
+    except RuntimeError as exc:
+        artifact_download_errors.append(sanitize_failure_reason(str(exc)))
         artifacts = []
     artifact_names.extend([str(artifact.get("name") or "") for artifact in artifacts if str(artifact.get("name") or "").strip()])
     for artifact in artifacts:
@@ -1125,14 +1261,21 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
         artifact_name = str(artifact.get("name") or "")
         try:
             payload = client.download_workflow_artifact(int(artifact.get("id")))
-            artifact_downloaded = True
-        except Exception:
-            retrieval_failed = True
+            if payload:
+                artifact_downloaded = True
+            else:
+                artifact_download_errors.append("EMPTY_ARTIFACT_BODY")
+        except Exception as exc:
+            artifact_download_errors.append(sanitize_failure_reason(str(exc)))
             continue
-        for log_name, text in decode_downloaded_text_blobs(payload, artifact_name):
+        inspected = inspect_downloaded_text_blobs(payload, artifact_name)
+        text_files_scanned += int(inspected.get("text_files_scanned") or 0)
+        candidate_files_found += int(inspected.get("candidate_files_found") or 0)
+        if inspected.get("extract_error"):
+            extract_errors.append(str(inspected.get("extract_error")))
+        for log_name, text in inspected.get("blobs") or []:
+            log_name = str(log_name)
             log_files_found.append(log_name)
-            if not diagnostic_text_candidates(log_name):
-                continue
             excerpt = extract_bounded_failure_excerpt(text)
             if not excerpt:
                 continue
@@ -1145,6 +1288,32 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
                 "score": score_failure_excerpt(excerpt) + (5 if Path(log_name).name.lower() == "gradle-debug.log" else 0),
                 "fallback_excerpt": str(context.get("log_excerpt") or context.get("failed_step") or context.get("failed_job") or "").strip(),
             })
+
+    job_log_http_status = "OK" if job_logs_fetched else (
+        http_status_from_error(job_log_errors[0]) if job_log_errors else ("NOT_AVAILABLE" if not failed_jobs else "NO_LOG_BODY")
+    )
+    artifact_download_status = "OK" if artifact_downloaded else (
+        http_status_from_error(artifact_download_errors[0]) if artifact_download_errors else ("NOT_AVAILABLE" if not artifact_names else "NO_ARTIFACT_BODY")
+    )
+    artifact_extract_status = "FAILED" if extract_errors else (
+        "OK" if artifact_downloaded or job_logs_fetched else "NOT_AVAILABLE"
+    )
+
+    safe_diagnostic_parts = [
+        f"JOB_LOG_HTTP_STATUS: {job_log_http_status}",
+        f"ARTIFACT_DOWNLOAD_STATUS: {artifact_download_status}",
+        f"ARTIFACT_EXTRACT_STATUS: {artifact_extract_status}",
+        f"TEXT_FILES_SCANNED: {text_files_scanned}",
+        f"CANDIDATE_FILES_FOUND: {candidate_files_found}",
+    ]
+    if job_log_errors:
+        safe_diagnostic_parts.append(f"JOB_LOG_ERROR: {sanitize_failure_reason(job_log_errors[0])}")
+    if artifact_download_errors:
+        safe_diagnostic_parts.append(f"ARTIFACT_ERROR: {sanitize_failure_reason(artifact_download_errors[0])}")
+    if extract_errors:
+        safe_diagnostic_parts.append(f"EXTRACT_ERROR: {sanitize_failure_reason(extract_errors[0])}")
+    safe_diagnostic = " | ".join(safe_diagnostic_parts)[:MAX_SAFE_DIAGNOSTIC_CHARS * 4]
+
     best = best_ci_diagnostic_candidate(candidates)
     if best:
         excerpt = str(best.get("excerpt") or "").strip()
@@ -1155,8 +1324,18 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
         best.setdefault("log_files_found", sorted(dict.fromkeys(log_files_found)))
         best.setdefault("diagnostic_lines_found", len(excerpt.splitlines()) if excerpt else 0)
         best.setdefault("diagnostic_excerpt", excerpt)
+        best.setdefault("text_files_scanned", text_files_scanned)
+        best.setdefault("candidate_files_found", candidate_files_found)
+        best.setdefault("job_log_http_status", job_log_http_status)
+        best.setdefault("artifact_download_status", artifact_download_status)
+        best.setdefault("artifact_extract_status", artifact_extract_status)
+        best.setdefault("safe_diagnostic", safe_diagnostic)
         best.setdefault("result", "ENRICHED")
         return best
+    channels_available = (1 if failed_jobs else 0) + (1 if artifact_names else 0)
+    channels_succeeded = (1 if job_logs_fetched else 0) + (1 if artifact_downloaded else 0)
+    had_retrieval_errors = bool(job_log_errors or artifact_download_errors or extract_errors)
+    result = "RETRIEVAL_FAILED" if channels_succeeded == 0 and (channels_available > 0 or had_retrieval_errors) else "NO_USEFUL_EVIDENCE"
     return {
         "failed_job": str(context.get("failed_job") or (failed_jobs[0].get("name") if failed_jobs else "") or ""),
         "failed_step": str(context.get("failed_step") or ""),
@@ -1172,7 +1351,13 @@ def collect_ci_regression_diagnostic(client: GitHubClient, context: dict) -> dic
         "diagnostic_excerpt": "",
         "score": 0,
         "fallback_excerpt": fallback_excerpt,
-        "result": "RETRIEVAL_FAILED" if retrieval_failed else "NO_USEFUL_EVIDENCE",
+        "text_files_scanned": text_files_scanned,
+        "candidate_files_found": candidate_files_found,
+        "job_log_http_status": job_log_http_status,
+        "artifact_download_status": artifact_download_status,
+        "artifact_extract_status": artifact_extract_status,
+        "safe_diagnostic": safe_diagnostic,
+        "result": result,
     }
 
 
@@ -1572,16 +1757,24 @@ def cmd_ci_regression_enrich_evidence(bug_id: str, repo_owner: str, repo_name: s
         "bug_id": bug_id,
         "run_id": context.get("run_id"),
         "workflow_name": context.get("workflow_name") or source_reference_fields(str(bug.get("source_reference") or "")).get("workflow") or "",
+        "github_token_present": bool(str(github_token or "").strip()),
         "job_logs_fetched": bool(diagnostic.get("job_logs_fetched")),
         "artifacts_found": int(diagnostic.get("artifacts_found") or len(artifact_names)),
         "artifact_names": list(dict.fromkeys(artifact_names)),
         "artifact_downloaded": bool(diagnostic.get("artifact_downloaded")),
         "log_files_found": list(dict.fromkeys(log_files_found)),
+        "text_files_scanned": int(diagnostic.get("text_files_scanned") or 0),
+        "candidate_files_found": int(diagnostic.get("candidate_files_found") or 0),
+        "job_log_http_status": str(diagnostic.get("job_log_http_status") or "UNKNOWN"),
+        "artifact_download_status": str(diagnostic.get("artifact_download_status") or "UNKNOWN"),
+        "artifact_extract_status": str(diagnostic.get("artifact_extract_status") or "UNKNOWN"),
+        "safe_diagnostic": str(diagnostic.get("safe_diagnostic") or ""),
         "diagnostic_lines_found": int(diagnostic.get("diagnostic_lines_found") or (len(excerpt.splitlines()) if excerpt else 0)),
         "diagnostic_excerpt": excerpt,
         "result": str(diagnostic.get("result") or "NO_USEFUL_EVIDENCE"),
         "artifact_name": diagnostic.get("artifact_name") or (artifact_names[0] if artifact_names else ""),
         "log_file": diagnostic.get("log_file") or diagnostic.get("job_log_name") or "",
+        "useful_diagnostic_found": bool(excerpt),
         "evidence_enriched": False,
     }
     if payload["result"] == "ENRICHED":

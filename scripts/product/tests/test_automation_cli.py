@@ -31,11 +31,13 @@ class FakeGitHubClient:
 	job_list_should_fail = False
 	artifact_list_should_fail = False
 	job_log_should_fail = False
+	run_log_should_fail = False
 	artifact_download_should_fail = False
 	workflow_jobs = {}
 	workflow_artifacts = {}
 	artifact_payloads = {}
 	job_log_payloads = {}
+	run_log_payloads = {}
 
 	def __init__(self, owner: str, repo: str, token: str):
 		self.owner = owner
@@ -100,6 +102,11 @@ class FakeGitHubClient:
 			raise RuntimeError("GitHub Actions job log download failed")
 		return self.__class__.job_log_payloads.get(int(job_id), b"")
 
+	def download_workflow_run_logs(self, run_id: str) -> bytes:
+		if self.__class__.run_log_should_fail:
+			raise RuntimeError("GitHub Actions workflow run log download failed")
+		return self.__class__.run_log_payloads.get(str(run_id), b"")
+
 
 class AutomationCliTest(unittest.TestCase):
 	def setUp(self):
@@ -134,11 +141,13 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.job_list_should_fail = False
 		FakeGitHubClient.artifact_list_should_fail = False
 		FakeGitHubClient.job_log_should_fail = False
+		FakeGitHubClient.run_log_should_fail = False
 		FakeGitHubClient.artifact_download_should_fail = False
 		FakeGitHubClient.workflow_jobs = {}
 		FakeGitHubClient.workflow_artifacts = {}
 		FakeGitHubClient.artifact_payloads = {}
 		FakeGitHubClient.job_log_payloads = {}
+		FakeGitHubClient.run_log_payloads = {}
 
 		self.accepted_req_id = "REQ-9999"
 		self.write_json(
@@ -853,6 +862,56 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual("librecare-fast-suite", payload["artifact_name"])
 		self.assertIn("librecare-fast-suite", payload["artifact_names"])
 
+	def test_job_log_downloadable_zip_body_is_parsed(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="3001zip"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="3001zip", failed_job="Fast test suite", failed_step="Fast test suite: Run fast suite", log_excerpt="Fast test suite: Run fast suite"),
+			output_name="ci-job-log-zip-source.json",
+		)
+		self.configure_workflow_failure_diagnostics("3001zip")
+		FakeGitHubClient.workflow_artifacts["3001zip"] = []
+		FakeGitHubClient.job_log_payloads[9001] = self.make_zip_payload({
+			"logs/fast-suite.log": ":app:compileDebugKotlin FAILED\nExecution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/MonitoringScreen.kt:12: No value passed for parameter 'trendWindowMinutes'\n"
+		})
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001zip", "ci-job-log-zip-enriched.json")
+		self.assertEqual("ENRICHED", payload["result"])
+		self.assertTrue(payload["job_logs_fetched"])
+		self.assertTrue(payload["evidence_enriched"])
+
+	def test_run_level_log_fallback_is_used_when_job_log_download_fails(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="3001run"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="3001run", failed_job="Fast test suite", failed_step="Fast test suite: Run fast suite", log_excerpt="Fast test suite: Run fast suite"),
+			output_name="ci-run-log-fallback-source.json",
+		)
+		self.configure_workflow_failure_diagnostics("3001run")
+		FakeGitHubClient.workflow_artifacts["3001run"] = []
+		FakeGitHubClient.job_log_should_fail = True
+		FakeGitHubClient.run_log_payloads["3001run"] = self.make_zip_payload({
+			"Fast test suite/8_Run fast suite.txt": "FAILURE:\nExecution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/MonitoringScreen.kt:11: No value passed for parameter 'trendWindowMinutes'\n"
+		})
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001run", "ci-run-log-fallback-enriched.json")
+		self.assertEqual("ENRICHED", payload["result"])
+		self.assertTrue(payload["job_logs_fetched"])
+		self.assertIn("compileDebugKotlin", payload["diagnostic_excerpt"])
+
+	def test_recursive_artifact_scan_finds_non_gradle_debug_file(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="3001scan"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="3001scan", failed_job="Fast test suite", failed_step="Fast test suite: Run fast suite", log_excerpt="Fast test suite: Run fast suite"),
+			output_name="ci-artifact-scan-source.json",
+		)
+		self.configure_workflow_failure_diagnostics(
+			"3001scan",
+			artifact_name="librecare-fast-suite",
+			log_file="reports/fast-suite/compile-output.txt",
+			artifact_log_text="Execution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/RedesignedGlucoseCard.kt:44: Unresolved reference: projection\n",
+		)
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001scan", "ci-artifact-scan-enriched.json")
+		self.assertEqual("ENRICHED", payload["result"])
+		self.assertEqual("reports/fast-suite/compile-output.txt", payload["log_file"])
+		self.assertGreaterEqual(payload["candidate_files_found"], 1)
+
 	def test_retrieval_failure_returns_structured_failure_without_silent_success(self):
 		result = self.run_ci_regression_intake(
 			self.workflow_run_event(workflow_name="Android APK Build", conclusion="failure", branch="master", run_id="3001b"),
@@ -860,12 +919,35 @@ class AutomationCliTest(unittest.TestCase):
 			output_name="ci-retrieval-failure-source.json",
 		)
 		FakeGitHubClient.job_list_should_fail = True
+		FakeGitHubClient.artifact_list_should_fail = True
 		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001b", "ci-retrieval-failure.json")
 		self.assertEqual("RETRIEVAL_FAILED", payload["result"])
 		self.assertFalse(payload["evidence_enriched"])
 		self.assertFalse(payload["job_logs_fetched"])
+		self.assertIn("JOB_LOG_HTTP_STATUS", payload["safe_diagnostic"])
+		self.assertIn("ARTIFACT_DOWNLOAD_STATUS", payload["safe_diagnostic"])
+		self.assertIn("TEXT_FILES_SCANNED", payload["safe_diagnostic"])
 		bug = self.read_json(self.root / "product" / "bugs" / f"{result['bug_id']}.json")
 		self.assertNotIn("ci_failure_evidence", bug)
+
+	def test_binary_and_huge_artifact_files_are_skipped_safely(self):
+		result = self.run_ci_regression_intake(
+			self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="3001bin"),
+			self.ci_regression_metadata(workflow_name="Android CI", run_id="3001bin", failed_job="Fast test suite", failed_step="Fast test suite: Run fast suite", log_excerpt="Fast test suite: Run fast suite"),
+			output_name="ci-binary-skip-source.json",
+		)
+		self.configure_workflow_failure_diagnostics("3001bin")
+		FakeGitHubClient.workflow_artifacts["3001bin"] = [{"id": 9902, "name": "librecare-fast-suite", "expired": False}]
+		huge = "x" * (self.cli.MAX_DIAGNOSTIC_TEXT_FILE_BYTES + 200)
+		binary = b"\x00\x01\x02\x03" * 400
+		zip_buf = io.BytesIO()
+		with zipfile.ZipFile(zip_buf, "w", zipfile.ZIP_DEFLATED) as archive:
+			archive.writestr("reports/huge.log", huge)
+			archive.writestr("reports/blob.bin", binary)
+		FakeGitHubClient.artifact_payloads[9902] = zip_buf.getvalue()
+		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001bin", "ci-binary-skip-enrich.json")
+		self.assertEqual("NO_USEFUL_EVIDENCE", payload["result"])
+		self.assertFalse(payload["evidence_enriched"])
 
 	def test_compile_debug_kotlin_failure_captures_concise_compiler_excerpt(self):
 		result = self.run_ci_regression_intake(
@@ -1093,6 +1175,31 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.assertEqual("CREATED", first["action"])
 		self.assertEqual("DUPLICATED_SOURCE", second["action"])
 		self.assertEqual(1, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
+
+	def test_existing_bug0002_is_reused_when_bug0003_exists(self):
+		bug2 = self.make_bug_record(
+			"BUG-0002",
+			"CI_REGRESSION",
+			"workflow=Android CI | run_id=33694534692 | commit=a | branch=master | conclusion=failure | job=Fast test suite | step=Fast test suite: Run fast suite",
+			"Deterministyczny workflow Android CI na gałęzi master kończy się błędem: Fast test suite: Run fast suite",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android CI na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		bug3 = self.make_bug_record(
+			"BUG-0003",
+			"CI_REGRESSION",
+			"workflow=Android APK Build | run_id=33696123982 | commit=b | branch=master | conclusion=failure | job=Build debug APK | step=Build debug APK: Fail if debug APK was not created",
+			"Deterministyczny workflow Android APK Build na gałęzi master kończy się błędem: Build debug APK: Fail if debug APK was not created",
+			"Gałąź master powinna kompilować się i przechodzić wymaganą deterministyczną walidację CI.",
+			"Uruchom deterministyczny workflow Android APK Build na gałęzi master i potwierdź powtarzalny błąd.",
+		)
+		self.write_json(self.root / "product" / "bugs" / "BUG-0002.json", bug2)
+		self.write_json(self.root / "product" / "bugs" / "BUG-0003.json", bug3)
+		event = self.workflow_run_event(workflow_name="Android CI", conclusion="failure", branch="master", run_id="33749901410")
+		metadata = self.ci_regression_metadata(workflow_name="Android CI", run_id="33749901410", failed_job="Fast test suite", failed_step="Fast test suite: Run fast suite", log_excerpt="Fast test suite: Run fast suite")
+		result = self.run_ci_regression_intake(event, metadata, output_name="ci-reuse-bug0002.json")
+		self.assertEqual("BUG-0002", result["bug_id"])
+		self.assertEqual(2, len(list((self.root / "product" / "bugs").glob("BUG-*.json"))))
 
 	def test_two_writers_start_with_bug0002_and_only_one_canonical_bug0002_survives(self):
 		_root, remote_dir = self.init_git_origin_with_baseline_bug()
@@ -1394,7 +1501,9 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.assertIn("def cmd_ci_regression_enrich_evidence", text)
 		self.assertIn("download_workflow_artifact", text)
 		self.assertIn("download_workflow_job_logs", text)
+		self.assertIn("download_workflow_run_logs", text)
 		self.assertIn("extract_bounded_failure_excerpt", text)
+		self.assertIn("safe_diagnostic", text)
 		self.assertIn("canonical_requirement_ids", text)
 		self.assertIn("def cmd_persist_bug_records", text)
 		self.assertIn('persist-bug-records', text)
