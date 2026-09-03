@@ -24,7 +24,10 @@ class FakeGitHubClient:
 	created_issues = []
 	assignments = []
 	assignment_tokens = []
+	init_tokens = []
 	labels = []
+	label_events = []
+	existing_labels = set()
 	next_issue_number = 700
 	issue_assignees = {}
 	assign_should_fail = False
@@ -43,9 +46,16 @@ class FakeGitHubClient:
 		self.owner = owner
 		self.repo = repo
 		self.token = token
+		self.__class__.init_tokens.append(token)
 
 	def ensure_label(self, name: str, color: str, description: str):
+		if name in self.__class__.existing_labels:
+			self.__class__.label_events.append(("REUSED", name))
+			return "REUSED"
+		self.__class__.existing_labels.add(name)
 		self.__class__.labels.append((name, color, description))
+		self.__class__.label_events.append(("CREATED", name))
+		return "CREATED"
 
 	def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
 		issue_number = self.__class__.next_issue_number
@@ -134,7 +144,10 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.created_issues = []
 		FakeGitHubClient.assignments = []
 		FakeGitHubClient.assignment_tokens = []
+		FakeGitHubClient.init_tokens = []
 		FakeGitHubClient.labels = []
+		FakeGitHubClient.label_events = []
+		FakeGitHubClient.existing_labels = set()
 		FakeGitHubClient.next_issue_number = 700
 		FakeGitHubClient.issue_assignees = {}
 		FakeGitHubClient.assign_should_fail = False
@@ -645,10 +658,18 @@ class AutomationCliTest(unittest.TestCase):
 				"recommended_related_tests": ["TESTRUN-0007"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token"))
+		first_out = self.root / "bug-handoff-first.json"
+		second_out = self.root / "bug-handoff-second.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(first_out)))
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(second_out)))
+		first = self.read_json(first_out)
+		second = self.read_json(second_out)
+		self.assertEqual("HANDOFF_CREATED", first["handoff_result"])
+		self.assertEqual("HANDOFF_REUSED", second["handoff_result"])
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 		self.assertEqual(1, len(FakeGitHubClient.assignments))
+		self.assertEqual(2, len(FakeGitHubClient.labels))
+		self.assertEqual(["token", "user-token", "token"], FakeGitHubClient.init_tokens)
 		impl = self.read_json(self.root / "product" / "implementation" / f"IMP-{bug_id}.json")
 		self.assertIsNone(impl["source_inbox_id"])
 		self.assertEqual(407, impl["source_issue_number"])
@@ -671,10 +692,12 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		FakeGitHubClient.assign_should_fail = True
 		out = self.root / "bug-handoff-fail.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(out)))
+		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(out)))
 		summary = self.read_json(out)
+		self.assertEqual("HANDOFF_FAILED", summary["handoff_result"])
 		self.assertFalse(summary["copilot_real_assignee_confirmed"])
 		self.assertEqual("CONFIRMED_DEFECT", summary["status"])
+		self.assertIn("failure_reason", summary)
 		bug = self.read_json(self.root / "product" / "bugs" / f"{bug_id}.json")
 		self.assertNotIn("assigned_agent", bug["implementation_issue"])
 
@@ -696,18 +719,44 @@ class AutomationCliTest(unittest.TestCase):
 		)
 		FakeGitHubClient.assign_should_fail = True
 		first_out = self.root / "bug-handoff-retry-1.json"
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(first_out)))
+		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(first_out)))
 		first = self.read_json(first_out)
+		self.assertEqual("HANDOFF_FAILED", first["handoff_result"])
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 
 		FakeGitHubClient.assign_should_fail = False
 		second_out = self.root / "bug-handoff-retry-2.json"
 		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token", "user-token", output_file=str(second_out)))
 		second = self.read_json(second_out)
+		self.assertEqual("HANDOFF_REUSED", second["handoff_result"])
 		self.assertEqual(first["implementation_issue_number"], second["implementation_issue_number"])
 		self.assertEqual(1, len(FakeGitHubClient.created_issues))
 		self.assertEqual(1, len(FakeGitHubClient.assignments))
 		self.assertTrue(second["copilot_real_assignee_confirmed"])
+
+	def test_bug_handoff_uses_github_token_for_issues_and_user_token_only_for_assignment(self):
+		bug_id = self.import_bug(
+			self.bug_issue_event(422, "[Blad LibreCare] Token routing", "ISO", "Naturalny czas", "1. Otworz dashboard")
+		)
+		self.triage_bug(
+			bug_id,
+			{
+				"classification": "CONFIRMED_DEFECT",
+				"reasoning": "Regresja potwierdzona.",
+				"severity": "MEDIUM",
+				"safety_impact": "LOW",
+				"requires_behavior_change": False,
+				"recommended_related_requirements": [self.accepted_req_id],
+				"recommended_related_tests": ["TESTRUN-0014"],
+			},
+		)
+		out = self.root / "bug-handoff-token-routing.json"
+		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "github-token", "copilot-user-token", output_file=str(out)))
+		summary = self.read_json(out)
+		self.assertEqual("HANDOFF_CREATED", summary["handoff_result"])
+		self.assertEqual(["github-token", "copilot-user-token"], FakeGitHubClient.init_tokens)
+		self.assertEqual(["copilot-user-token"], FakeGitHubClient.assignment_tokens)
+		self.assertTrue(summary["copilot_real_assignee_confirmed"])
 
 	def test_bug_handoff_cli_parses_repo_name_without_hyphen(self):
 		rc, captured = self.parse_bug_handoff_args("LibreDisplay")
@@ -1386,7 +1435,7 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 				"recommended_related_tests": ["TESTRUN-0010"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
+		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
 		bug_path = self.root / "product" / "bugs" / f"{bug_id}.json"
 		bug = self.read_json(bug_path)
 		bug["pull_request"] = {"number": 79, "url": "https://example/pr/79", "branch": "copilot/bug"}
@@ -1420,7 +1469,7 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 				"recommended_related_tests": ["TESTRUN-0011"],
 			},
 		)
-		self.assertEqual(0, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
+		self.assertEqual(1, self.cli.cmd_bug_sync_fix_handoff(bug_id, "example", "repo", "token"))
 		created = FakeGitHubClient.created_issues[-1]
 		self.assertIn("OGRANICZENIA_AUTOMATYZACJI", created["body"])
 		self.assertNotIn("```", created["body"])
@@ -1510,6 +1559,63 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		self.assertIn("def cmd_persist_bug_records", text)
 		self.assertIn('persist-bug-records', text)
 		self.assertIn('"CI_REGRESSION"', text)
+
+
+class AutomationCliLabelIdempotencyTest(unittest.TestCase):
+	def setUp(self):
+		self.cli = load_cli_module()
+
+	def test_missing_bugfix_label_is_created_successfully(self):
+		client = self.cli.GitHubClient("rafalbragan", "-LibreDisplay", "token")
+		calls: list[tuple[str, str]] = []
+
+		def fake_request(method: str, path: str, payload: dict | None = None, extra_headers: dict[str, str] | None = None):
+			calls.append((method, path))
+			if method == "GET":
+				raise RuntimeError("GitHub API failed GET /repos/rafalbragan/-LibreDisplay/labels/bugfix: {\"message\": \"Not Found\"}")
+			if method == "POST":
+				return {"name": "bugfix"}
+			raise AssertionError(method)
+
+		client._request = fake_request
+		self.assertEqual("CREATED", client.ensure_label("bugfix", "d73a4a", "Naprawy bledow LibreCare"))
+		self.assertEqual([("GET", "/repos/rafalbragan/-LibreDisplay/labels/bugfix"), ("POST", "/repos/rafalbragan/-LibreDisplay/labels")], calls)
+
+	def test_existing_bugfix_label_is_reused(self):
+		client = self.cli.GitHubClient("rafalbragan", "-LibreDisplay", "token")
+		calls: list[tuple[str, str]] = []
+
+		def fake_request(method: str, path: str, payload: dict | None = None, extra_headers: dict[str, str] | None = None):
+			calls.append((method, path))
+			if method == "GET":
+				return {"name": "bugfix"}
+			raise AssertionError(method)
+
+		client._request = fake_request
+		self.assertEqual("REUSED", client.ensure_label("bugfix", "d73a4a", "Naprawy bledow LibreCare"))
+		self.assertEqual([("GET", "/repos/rafalbragan/-LibreDisplay/labels/bugfix")], calls)
+
+	def test_concurrent_label_creation_is_reused(self):
+		client = self.cli.GitHubClient("rafalbragan", "-LibreDisplay", "token")
+		calls: list[tuple[str, str]] = []
+		state = {"post_calls": 0}
+
+		def fake_request(method: str, path: str, payload: dict | None = None, extra_headers: dict[str, str] | None = None):
+			calls.append((method, path))
+			if method == "GET" and len(calls) == 1:
+				raise RuntimeError("GitHub API failed GET /repos/rafalbragan/-LibreDisplay/labels/bugfix: {\"message\": \"Not Found\"}")
+			if method == "POST":
+				state["post_calls"] += 1
+				if state["post_calls"] == 1:
+					raise RuntimeError("GitHub API failed POST /repos/rafalbragan/-LibreDisplay/labels: {\"message\": \"already exists\"}")
+				return {"name": "bugfix"}
+			if method == "GET":
+				return {"name": "bugfix"}
+			raise AssertionError(method)
+
+		client._request = fake_request
+		self.assertEqual("REUSED", client.ensure_label("bugfix", "d73a4a", "Naprawy bledow LibreCare"))
+		self.assertEqual(["GET", "POST", "GET"], [method for method, _path in calls])
 
 
 class AutomationCliGraphQLAssignmentContractTest(unittest.TestCase):

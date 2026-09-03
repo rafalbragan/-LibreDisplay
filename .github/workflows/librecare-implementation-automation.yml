@@ -9,6 +9,13 @@ on:
     workflows: ["Android CI", "Android APK Build"]
     types: [completed]
 
+permissions:
+  actions: read
+  contents: write
+  copilot-requests: write
+  issues: write
+  metadata: read
+
 concurrency:
   group: product-foundation-state
   cancel-in-progress: false
@@ -412,6 +419,8 @@ jobs:
 
       - name: Attempt bug fix handoff for confirmed CI regressions
         if: steps.ci_regression.outputs.should_route == 'true' && steps.ci_triage.outputs.allowed == 'true'
+        id: bug_handoff
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           COPILOT_AGENT_USER_TOKEN: ${{ secrets.COPILOT_AGENT_USER_TOKEN }}
@@ -423,10 +432,49 @@ jobs:
             --github-token "$GITHUB_TOKEN" \
             --copilot-assignment-token "$COPILOT_AGENT_USER_TOKEN" \
             --base-branch master \
-            --output-file bug-handoff.json || true
+            --output-file bug-handoff.json
+
+      - name: Report bug fix handoff result
+        if: steps.ci_regression.outputs.should_route == 'true' && steps.ci_triage.outputs.allowed == 'true'
+        id: bug_handoff_summary
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          path = Path('bug-handoff.json')
+          data = json.loads(path.read_text(encoding='utf-8')) if path.exists() else {}
+          result = str(data.get('handoff_result') or 'HANDOFF_FAILED')
+          issue_number = str(data.get('implementation_issue_number') or '')
+          issue_url = str(data.get('implementation_issue_url') or '')
+          assigned = str(bool(data.get('copilot_real_assignee_confirmed'))).lower()
+          label_status = data.get('bugfix_label_result') or 'UNKNOWN'
+          failure_reason = str(data.get('failure_reason') or data.get('assignment_error') or '')[:280]
+
+          print('FIX_HANDOFF_RESULT:')
+          print(f"HANDOFF_RESULT: {result}")
+          print(f"FIX_ISSUE_NUMBER: {issue_number}")
+          print(f"FIX_ISSUE_URL: {issue_url}")
+          print(f"COPILOT_AGENT_ASSIGNED: {assigned}")
+          print(f"COPILOT_ASSIGNMENT_VERIFIED_ON_GITHUB: {assigned}")
+          print(f"BUGFIX_LABEL_CREATED_OR_REUSED: {label_status in {'CREATED', 'REUSED'}}")
+          if failure_reason:
+              print(f"HANDOFF_FAILURE_REASON: {failure_reason}")
+
+          output = Path(os.environ['GITHUB_OUTPUT'])
+          output.write_text("\n".join([
+              f"handoff_result={result}",
+              f"issue_number={issue_number}",
+              f"issue_url={issue_url}",
+              f"copilot_assigned={assigned}",
+              f"label_status={label_status}",
+              f"failure_reason={failure_reason}",
+          ]) + "\n", encoding='utf-8')
+          PY
 
       - name: Persist CI regression automation records
-        if: steps.ci_regression.outputs.should_route == 'true'
+        if: always() && steps.ci_regression.outputs.should_route == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -435,6 +483,19 @@ jobs:
             --commit-message "product: record master ci regression run #${{ github.event.workflow_run.id }}" \
             --validate-product \
             --output-file bug-persist.json
+
+      - name: Fail workflow if confirmed-defect handoff failed
+        if: steps.ci_regression.outputs.should_route == 'true' && steps.ci_triage.outputs.allowed == 'true' && steps.bug_handoff_summary.outputs.handoff_result == 'HANDOFF_FAILED'
+        run: |
+          python - <<'PY'
+          import json
+          from pathlib import Path
+
+          data = json.loads(Path('bug-handoff.json').read_text(encoding='utf-8')) if Path('bug-handoff.json').exists() else {}
+          reason = str(data.get('failure_reason') or data.get('assignment_error') or 'Handoff failed.')[:280]
+          print(f'HANDOFF_FAILED: {reason}')
+          raise SystemExit(1)
+          PY
 
   ci-repair-loop:
     if: github.event_name == 'workflow_run' && github.event.workflow_run.name == 'Android CI' && github.event.workflow_run.event == 'pull_request'
