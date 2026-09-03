@@ -904,13 +904,15 @@ class AutomationCliTest(unittest.TestCase):
 		self.configure_workflow_failure_diagnostics(
 			"3001scan",
 			artifact_name="librecare-fast-suite",
-			log_file="reports/fast-suite/compile-output.txt",
+			log_file="ci-artifacts/gradle-fast-suite.log",
 			artifact_log_text="Execution failed for task ':app:compileDebugKotlin'.\ne: file:///tmp/RedesignedGlucoseCard.kt:44: Unresolved reference: projection\n",
 		)
 		payload = self.enrich_ci_regression_bug(result["bug_id"], "3001scan", "ci-artifact-scan-enriched.json")
 		self.assertEqual("ENRICHED", payload["result"])
-		self.assertEqual("reports/fast-suite/compile-output.txt", payload["log_file"])
+		self.assertFalse(payload["job_logs_fetched"])
+		self.assertEqual("ci-artifacts/gradle-fast-suite.log", payload["log_file"])
 		self.assertGreaterEqual(payload["candidate_files_found"], 1)
+		self.assertIn("compileDebugKotlin", payload["diagnostic_excerpt"])
 
 	def test_retrieval_failure_returns_structured_failure_without_silent_success(self):
 		result = self.run_ci_regression_intake(

@@ -17,6 +17,7 @@ WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-inbox.yml"
 ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "product-inbox.yml"
 BUG_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-implementation-automation.yml"
 BUG_ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "librecare-bug.yml"
+ANDROID_CI_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml"
 
 
 def load_cli_module():
@@ -1212,6 +1213,18 @@ class ProductCliGraphQLAssignmentContractTest(unittest.TestCase):
 
 
 class ProductInboxWorkflowStaticTest(unittest.TestCase):
+    def test_android_ci_fast_suite_captures_gradle_log_and_uploads_it(self):
+        text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
+        script_text = (WORKSPACE_ROOT / "scripts" / "test-fast.sh").read_text(encoding="utf-8")
+        self.assertIn("- name: Run fast suite", text)
+        self.assertIn("bash ./scripts/test-fast.sh", text)
+        self.assertIn("ci-artifacts/**", text)
+        self.assertIn('LOG_FILE="${LOG_DIR}/gradle-fast-suite.log"', script_text)
+        self.assertIn("set -euo pipefail", script_text)
+        self.assertIn("tee -a \"${LOG_FILE}\"", script_text)
+        self.assertIn("PIPESTATUS[0]", script_text)
+        self.assertIn("if: always()", text)
+
     def test_workflow_has_permissions_and_copilot_install(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("copilot-requests: write", text)
@@ -1366,7 +1379,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertNotIn("pulls.merge", text)
 
     def test_android_ci_workflow_uses_current_fast_suite_artifact_name(self):
-        text = (WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml").read_text(encoding="utf-8")
+        text = ANDROID_CI_WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("name: librecare-fast-suite", text)
 
 
