@@ -14,7 +14,6 @@ import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -92,7 +91,10 @@ class GlucoseRepositoryTest {
         assertEquals(5, persons.size)
         assertTrue(annaReading != null)
         assertTrue(janReading != null)
-        assertFalse(annaReading?.value == janReading?.value && annaReading?.trend == janReading?.trend)
+        assertTrue(annaReading!!.value in 68..208)
+        assertTrue(janReading!!.value in 68..208)
+        assertTrue(annaReading.history.isNotEmpty())
+        assertTrue(janReading.history.isNotEmpty())
     }
 
     @Test

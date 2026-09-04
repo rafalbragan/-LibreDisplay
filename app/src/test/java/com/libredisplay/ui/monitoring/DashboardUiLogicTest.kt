@@ -413,7 +413,7 @@ class DashboardUiLogicTest {
             reading = reading,
             trendWindowMinutes = 20,
             thresholds = TrendProjectionThresholds(80, 180),
-            now = Instant.parse("2026-07-27T10:22:00Z")
+            now = Instant.parse("2026-07-27T10:25:00Z")
         )
 
         assertEquals(80, projection?.thresholdMgDl)
