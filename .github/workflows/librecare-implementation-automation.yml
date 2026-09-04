@@ -393,6 +393,7 @@ jobs:
       copilot-requests: write
       contents: write
       issues: write
+      pull-requests: read
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -473,6 +474,39 @@ jobs:
               && deterministicWorkExecuted;
             core.setOutput('should_route', shouldRoute ? 'true' : 'false');
 
+            let successPr = null;
+            let implementationIssueNumber = '';
+            if (recognized.has(workflowName)
+              && conclusion === 'success'
+              && ['master', 'main'].includes(branch)
+              && triggeringEvent !== 'pull_request'
+              && String(wr.head_sha || '').trim()) {
+              try {
+                const associated = await github.rest.repos.listPullRequestsAssociatedWithCommit({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  commit_sha: String(wr.head_sha || '').trim(),
+                });
+                const mergedPrs = (associated.data || []).filter(pr => pr && pr.merged_at);
+                successPr = mergedPrs[0] || null;
+                if (successPr) {
+                  const body = String(successPr.body || '');
+                  const refs = [...body.matchAll(/#(\d+)/g)].map(m => String(m[1] || '').trim()).filter(Boolean);
+                  implementationIssueNumber = refs[0] || '';
+                }
+              } catch (error) {
+                core.warning(`Unable to resolve merged PR for successful master CI run: ${error}`);
+              }
+            }
+            core.setOutput('success_pr_number', successPr ? String(successPr.number || '') : '');
+            core.setOutput('success_pr_url', successPr ? String(successPr.html_url || '') : '');
+            core.setOutput('success_pr_branch', successPr ? String((successPr.head || {}).ref || '') : '');
+            core.setOutput('success_pr_merged_by', successPr ? String(((successPr.merged_by || {}).login) || '') : '');
+            core.setOutput('success_pr_merged_at', successPr ? String(successPr.merged_at || '') : '');
+            core.setOutput('implementation_issue_number', implementationIssueNumber);
+            const shouldReconcileSuccess = Boolean(successPr && implementationIssueNumber);
+            core.setOutput('should_reconcile_success', shouldReconcileSuccess ? 'true' : 'false');
+
       - name: Create canonical CI regression bug evidence
         if: steps.ci_regression.outputs.should_route == 'true'
         run: |
@@ -487,6 +521,30 @@ jobs:
         run: |
           python -c "import json; from pathlib import Path; data=json.loads(Path('ci-regression-result.json').read_text(encoding='utf-8')); Path('ci-regression-bug-id.txt').write_text(str(data.get('bug_id','')), encoding='utf-8')"
           echo "bug_id=$(cat ci-regression-bug-id.txt)" >> "$GITHUB_OUTPUT"
+
+      - name: Reconcile merged bug validation after successful master CI
+        if: steps.ci_regression.outputs.should_reconcile_success == 'true'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python scripts/product/automation_cli.py record-ci-result \
+            --pr-number "${{ steps.ci_regression.outputs.success_pr_number }}" \
+            --workflow-name "${{ github.event.workflow_run.name }}" \
+            --conclusion "${{ github.event.workflow_run.conclusion }}" \
+            --run-id "${{ github.event.workflow_run.id }}" \
+            --run-url "${{ github.event.workflow_run.html_url }}" \
+            --repo-owner="${{ github.repository_owner }}" \
+            --repo-name="${{ github.event.repository.name }}" \
+            --github-token "$GITHUB_TOKEN" \
+            --implementation-issue-number "${{ steps.ci_regression.outputs.implementation_issue_number }}" \
+            --merged true \
+            --merged-by "${{ steps.ci_regression.outputs.success_pr_merged_by }}" \
+            --merged-at "${{ steps.ci_regression.outputs.success_pr_merged_at }}" \
+            --head-sha "${{ github.event.workflow_run.head_sha }}" \
+            --pr-url "${{ steps.ci_regression.outputs.success_pr_url }}" \
+            --pr-branch "${{ steps.ci_regression.outputs.success_pr_branch }}" \
+            --pr-state closed \
+            --output-file ci-result-success.json
 
       - name: Enrich CI regression bug evidence from workflow logs and artifacts
         id: ci_regression_evidence
@@ -649,13 +707,17 @@ jobs:
           PY
 
       - name: Persist CI regression automation records
-        if: always() && steps.ci_regression.outputs.should_route == 'true'
+        if: always() && (steps.ci_regression.outputs.should_route == 'true' || steps.ci_regression.outputs.should_reconcile_success == 'true')
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          COMMIT_MESSAGE="product: record master ci regression run #${{ github.event.workflow_run.id }}"
+          if [ "${{ steps.ci_regression.outputs.should_reconcile_success }}" = "true" ] && [ "${{ steps.ci_regression.outputs.should_route }}" != "true" ]; then
+            COMMIT_MESSAGE="product: reconcile merged bug validation run #${{ github.event.workflow_run.id }}"
+          fi
           python scripts/product/automation_cli.py persist-bug-records \
             --branch master \
-            --commit-message "product: record master ci regression run #${{ github.event.workflow_run.id }}" \
+            --commit-message "$COMMIT_MESSAGE" \
             --validate-product \
             --output-file bug-persist.json
 

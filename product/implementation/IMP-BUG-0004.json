@@ -61,20 +61,22 @@
       }
     }
   },
-  "branch": "copilot/bug-0004-fix-android-ci-regression",
-  "pull_request_number": 11,
-  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/11",
-  "status": "READY_FOR_HUMAN_REVIEW",
+  "branch": "copilot/fix-fast-test-suite",
+  "pull_request_number": 12,
+  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/12",
+  "status": "VALIDATED",
   "created_at": "2026-09-03T22:39:07Z",
   "attempt_count": 0,
-  "last_ci_result": "UNKNOWN",
-  "validation_state": "PENDING",
+  "last_ci_result": "PASS",
+  "validation_state": "VALIDATED",
   "acceptance_test_ids": [
     "TEST-BUILD-COMPILE-DEBUG-KOTLIN",
     "TEST-MONITORING-SCREEN-COMPOSE-SMOKE",
     "TEST-REDESIGNED-GLUCOSE-CARD-TREND-PROJECTION",
     "TEST-CI-FAST-SUITE-REGRESSION"
   ],
-  "ci_failures": [],
-  "updated_at": "2026-09-03T22:39:07Z"
+  "ci_failures": [
+    "33900250965:success"
+  ],
+  "updated_at": "2026-09-04T20:37:36Z"
 }

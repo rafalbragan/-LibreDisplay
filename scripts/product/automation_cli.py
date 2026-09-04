@@ -30,6 +30,12 @@ MAX_AUTOMATIC_REPAIR_ATTEMPTS = 3
 COPILOT_AGENT_LOGIN = "copilot-swe-agent[bot]"
 DEFAULT_BASE_BRANCH = "master"
 COPILOT_AGENT_MODEL = "GPT-5.4 mini"
+NON_HUMAN_MERGE_LOGINS = {
+    "github-actions[bot]",
+    "copilot-swe-agent[bot]",
+    "dependabot[bot]",
+    "dependabot-preview[bot]",
+}
 COPILOT_GRAPHQL_FEATURE_FLAGS = [
     "issues_copilot_assignment_api_support",
     "coding_agent_model_selection",
@@ -771,6 +777,68 @@ def append_evidence(bug: dict, source: str, source_reference: str) -> None:
     bug["evidence"] = evidence
 
 
+def is_human_merge_actor(login: str | None) -> bool:
+    actor = str(login or "").strip().lower()
+    if not actor:
+        return False
+    if actor in NON_HUMAN_MERGE_LOGINS:
+        return False
+    if actor.endswith("[bot]"):
+        return False
+    return True
+
+
+def normalize_pull_request_snapshot(pr_payload: dict | None) -> dict:
+    pr_payload = dict(pr_payload or {})
+    normalized = {
+        "number": pr_payload.get("number"),
+        "url": pr_payload.get("url") or pr_payload.get("html_url"),
+        "branch": pr_payload.get("branch") or (pr_payload.get("head") or {}).get("ref"),
+        "state": pr_payload.get("state"),
+        "updated_at": pr_payload.get("updated_at"),
+    }
+    if pr_payload.get("merged") is not None:
+        normalized["merged"] = bool(pr_payload.get("merged"))
+    if pr_payload.get("merged_at"):
+        normalized["merged_at"] = pr_payload.get("merged_at")
+    if pr_payload.get("merged_by"):
+        normalized["merged_by"] = pr_payload.get("merged_by")
+    return {key: value for key, value in normalized.items() if value not in {None, ""}}
+
+
+def append_pull_request_history(record: dict, previous_pr: dict | None) -> None:
+    snapshot = normalize_pull_request_snapshot(previous_pr)
+    if not snapshot.get("number"):
+        return
+    history = list(record.get("pull_request_history") or [])
+    if any(
+        int(entry.get("number") or 0) == int(snapshot.get("number") or 0)
+        and str(entry.get("url") or "") == str(snapshot.get("url") or "")
+        for entry in history
+        if isinstance(entry, dict)
+    ):
+        return
+    history.append(snapshot)
+    record["pull_request_history"] = history
+
+
+def append_bug_validation_evidence(bug: dict, entry: dict) -> None:
+    history = list(bug.get("validation_evidence") or [])
+    run_id = str(entry.get("run_id") or "").strip()
+    workflow_name = str(entry.get("workflow_name") or "").strip()
+    for existing in history:
+        if not isinstance(existing, dict):
+            continue
+        if str(existing.get("run_id") or "").strip() == run_id and str(existing.get("workflow_name") or "").strip() == workflow_name:
+            for key, value in entry.items():
+                if value not in {None, ""}:
+                    existing[key] = value
+            bug["validation_evidence"] = history
+            return
+    history.append({key: value for key, value in entry.items() if value not in {None, ""}})
+    bug["validation_evidence"] = history
+
+
 def extract_workflow_run_context(event: dict, metadata: dict | None = None) -> dict:
     workflow_run = (event or {}).get("workflow_run") or {}
     metadata = metadata or {}
@@ -1258,6 +1326,9 @@ class GitHubClient:
 
     def get_issue(self, issue_number: int) -> dict:
         return self._request("GET", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}")
+
+    def close_issue(self, issue_number: int) -> dict:
+        return self._request("PATCH", f"/repos/{self.owner}/{self.repo}/issues/{issue_number}", {"state": "closed"})
 
     def find_existing_bugfix_issue(self, bug_id: str, expected_title: str) -> dict | None:
         encoded_labels = urllib_parse.quote(f"{bug_id},bugfix", safe="")
@@ -1892,7 +1963,20 @@ def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
         summary = {"entity": "REQUIREMENT", "req_id": req["id"], "status": impl["implementation_status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": impl.get("source_inbox_issue_number") or req.get("source_github_issue_number")}
     elif entity == "BUG":
         bug_path, bug = linked_path, linked_record
-        bug["pull_request"] = {"number": int(pr["number"]), "url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "state": pr.get("state"), "updated_at": now_iso()}
+        previous_pr = dict(bug.get("pull_request") or {})
+        if int(previous_pr.get("number") or 0) != int(pr["number"]):
+            append_pull_request_history(bug, previous_pr)
+        merged_by_login = str(((pr.get("merged_by") or {}).get("login") or "")).strip()
+        bug["pull_request"] = {
+            "number": int(pr["number"]),
+            "url": pr.get("html_url"),
+            "branch": (pr.get("head") or {}).get("ref"),
+            "state": pr.get("state"),
+            "merged": bool(pr.get("merged")),
+            "merged_at": pr.get("merged_at"),
+            "merged_by": merged_by_login,
+            "updated_at": now_iso(),
+        }
         bug["pull_request_number"] = int(pr["number"])
         bug["pull_request_url"] = pr.get("html_url")
         bug["status"] = "VALIDATION_PENDING" if pr.get("merged") else "PR_READY"
@@ -1901,7 +1985,14 @@ def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
         bug["updated_at"] = now_iso()
         write_json(bug_path, bug)
         ensure_bug_impl(bug)
-        upsert_impl({"implementation_id": f"IMP-{bug['bug_id']}", "pull_request_number": int(pr["number"]), "pull_request_url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "status": "VALIDATION_PENDING" if pr.get("merged") else "READY_FOR_HUMAN_REVIEW"})
+        upsert_impl({
+            "implementation_id": f"IMP-{bug['bug_id']}",
+            "pull_request_number": int(pr["number"]),
+            "pull_request_url": pr.get("html_url"),
+            "branch": (pr.get("head") or {}).get("ref"),
+            "status": "VALIDATION_PENDING" if pr.get("merged") else "READY_FOR_HUMAN_REVIEW",
+            "validation_state": "VALIDATION_PENDING" if pr.get("merged") else str(bug.get("validation_state") or "PENDING"),
+        })
         summary = {"entity": "BUG", "bug_id": bug["bug_id"], "status": bug["status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": bug.get("source_issue_number")}
     else:
         print("SKIP: pull request is not linked to a canonical implementation issue")
@@ -2503,7 +2594,8 @@ def cmd_bug_sync_fix_handoff(bug_id: str, repo_owner: str, repo_name: str, githu
         return 1
 
 
-def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, run_id: str, run_url: str, failing_step: str = "", failing_tests: str = "", log_excerpt: str = "", repo_owner: str | None = None, repo_name: str | None = None, github_token: str | None = None, copilot_assignment_token: str | None = None, output_file: str | None = None) -> int:
+def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, run_id: str, run_url: str, failing_step: str = "", failing_tests: str = "", log_excerpt: str = "", repo_owner: str | None = None, repo_name: str | None = None, github_token: str | None = None, copilot_assignment_token: str | None = None, output_file: str | None = None, implementation_issue_number: int | None = None, merged: bool = False, merged_by: str = "", merged_at: str = "", head_sha: str = "", pr_url: str = "", pr_branch: str = "", pr_state: str = "closed") -> int:
+    resolved_via_impl_issue = False
     req_path, req = find_requirement_by_pr(pr_number)
     if req is not None:
         impl_id = f"IMP-{req['id']}"
@@ -2512,6 +2604,9 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
         entity = "REQUIREMENT"
     else:
         bug_path, bug = find_bug_by_pr(pr_number)
+        if bug is None and implementation_issue_number is not None:
+            bug_path, bug = find_bug_by_implementation_issue_number(int(implementation_issue_number))
+            resolved_via_impl_issue = bug is not None
         if bug is None:
             print("SKIP: no canonical entity linked to PR")
             return 0
@@ -2531,8 +2626,118 @@ def cmd_record_ci_result(pr_number: int, workflow_name: str, conclusion: str, ru
         return 0
     write_json(TECH_VALIDATIONS_DIR / f"{impl_id}-{run_id}.json", {"implementation_id": impl_id, "entity": entity, "workflow_name": workflow_name, "conclusion": conclusion, "run_id": run_id, "run_url": run_url, "failing_step": failing_step, "failing_tests": failing_tests, "log_excerpt": log_excerpt, "recorded_at": now_iso()})
     if conclusion.lower() == "success":
-        upsert_impl({"implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "last_ci_result": "PASS", "ci_failures": failures + [corr]})
-        payload = {"entity": entity, "implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "action": "UPDATED", "repair_attempted": False, "repair_assignment_verified": False, "auto_merge": False}
+        validated = False
+        issue_closed = False
+        close_issue_error = ""
+        output_status = "READY_FOR_HUMAN_REVIEW"
+        if entity == "BUG":
+            bug_path, bug = find_bug(impl_id.replace("IMP-", ""))
+            if bug is None:
+                print(f"ERROR: unknown bug for implementation {impl_id}", file=sys.stderr)
+                return 1
+            bug_snapshot = cloned_json(bug)
+            impl_snapshot = cloned_json(impl)
+            review_path = bug_review_path(str(bug.get("bug_id") or ""))
+            review_snapshot = read_json(review_path) if review_path.exists() else None
+            if int(bug.get("implementation_issue_number") or 0) == 0 and implementation_issue_number is not None:
+                bug["implementation_issue_number"] = int(implementation_issue_number)
+            if not bug.get("implementation_issue_url") and impl.get("implementation_issue_url"):
+                bug["implementation_issue_url"] = impl.get("implementation_issue_url")
+            if resolved_via_impl_issue or int(bug.get("pull_request_number") or 0) != int(pr_number):
+                append_pull_request_history(bug, bug.get("pull_request") or {})
+            merged_by_login = str(merged_by or (bug.get("pull_request") or {}).get("merged_by") or "").strip()
+            bug_pr_snapshot = {
+                "number": int(pr_number),
+                "url": pr_url or bug.get("pull_request_url") or run_url,
+                "branch": pr_branch or (bug.get("pull_request") or {}).get("branch") or impl.get("branch"),
+                "state": pr_state or "closed",
+                "merged": bool(merged),
+                "merged_at": merged_at or now_iso(),
+                "merged_by": merged_by_login,
+                "updated_at": now_iso(),
+            }
+            bug["pull_request"] = {k: v for k, v in bug_pr_snapshot.items() if v not in {None, ""}}
+            bug["pull_request_number"] = int(pr_number)
+            bug["pull_request_url"] = pr_url or bug.get("pull_request_url") or run_url
+            is_confirmed_defect = str(bug.get("classification") or "").upper() == "CONFIRMED_DEFECT"
+            has_human_merge = bool(merged) and is_human_merge_actor(merged_by_login)
+            has_relevant_master_ci = workflow_name in MASTER_CI_REGRESSION_WORKFLOWS
+            validation_contract_satisfied = is_confirmed_defect and has_human_merge and has_relevant_master_ci
+
+            impl_update = {
+                "implementation_id": impl_id,
+                "pull_request_number": int(pr_number),
+                "pull_request_url": pr_url or bug.get("pull_request_url") or run_url,
+                "branch": pr_branch or impl.get("branch"),
+                "last_ci_result": "PASS",
+                "ci_failures": failures + [corr],
+            }
+            bug_update_status = "VALIDATION_PENDING"
+            impl_update["status"] = "VALIDATION_PENDING" if bool(merged) else "READY_FOR_HUMAN_REVIEW"
+            impl_update["validation_state"] = "VALIDATION_PENDING" if bool(merged) else str(impl.get("validation_state") or "PENDING")
+
+            if validation_contract_satisfied:
+                impl_update["status"] = "VALIDATED"
+                impl_update["validation_state"] = "VALIDATED"
+                bug_update_status = "VALIDATED"
+                bug["validation_state"] = "VALIDATED"
+                validated = True
+                output_status = "VALIDATED"
+            else:
+                bug["validation_state"] = "VALIDATION_PENDING" if bool(merged) else str(bug.get("validation_state") or "PENDING")
+                output_status = str(impl_update["status"])
+
+            upsert_impl(impl_update)
+            bug["status"] = bug_update_status
+            append_bug_validation_evidence(
+                bug,
+                {
+                    "workflow_name": workflow_name,
+                    "conclusion": str(conclusion).lower(),
+                    "run_id": run_id,
+                    "run_url": run_url,
+                    "pr_number": int(pr_number),
+                    "pr_url": pr_url or bug.get("pull_request_url") or run_url,
+                    "implementation_issue_number": bug.get("implementation_issue_number"),
+                    "master_commit": head_sha,
+                    "merged": bool(merged),
+                    "merged_by": merged_by_login,
+                    "merged_at": merged_at,
+                    "recorded_at": now_iso(),
+                },
+            )
+            bug["updated_at"] = now_iso()
+            write_json(bug_path, bug)
+            write_json(review_path, merge_bug_review(review_snapshot, {"generated_at": now_iso()}, bug))
+
+            if validated:
+                try:
+                    validate_product_foundation()
+                except RuntimeError as exc:
+                    write_json(bug_path, bug_snapshot)
+                    write_json(impl_path(impl_id), impl_snapshot)
+                    if review_snapshot is None and review_path.exists():
+                        review_path.unlink()
+                    elif review_snapshot is not None:
+                        write_json(review_path, review_snapshot)
+                    print(f"ERROR: {exc}", file=sys.stderr)
+                    return 1
+                issue_to_close = int(bug.get("implementation_issue_number") or 0)
+                if issue_to_close and repo_owner and repo_name and github_token:
+                    try:
+                        close_client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
+                        close_client.close_issue(issue_to_close)
+                        issue_closed = True
+                    except RuntimeError as exc:
+                        close_issue_error = sanitize_failure_reason(str(exc))
+        else:
+            upsert_impl({"implementation_id": impl_id, "status": "READY_FOR_HUMAN_REVIEW", "last_ci_result": "PASS", "ci_failures": failures + [corr]})
+        payload = {"entity": entity, "implementation_id": impl_id, "status": output_status, "action": "UPDATED", "repair_attempted": False, "repair_assignment_verified": False, "auto_merge": False}
+        if entity == "BUG":
+            payload["validated"] = validated
+            payload["issue_closed"] = issue_closed
+            if close_issue_error:
+                payload["issue_close_error"] = close_issue_error
         if output_file:
             write_json(Path(output_file), payload)
         else:
@@ -2668,6 +2873,14 @@ def main(argv: list[str] | None = None) -> int:
     ci.add_argument("--github-token")
     ci.add_argument("--copilot-assignment-token")
     ci.add_argument("--output-file")
+    ci.add_argument("--implementation-issue-number", type=int)
+    ci.add_argument("--merged", choices=["true", "false"], default="false")
+    ci.add_argument("--merged-by", default="")
+    ci.add_argument("--merged-at", default="")
+    ci.add_argument("--head-sha", default="")
+    ci.add_argument("--pr-url", default="")
+    ci.add_argument("--pr-branch", default="")
+    ci.add_argument("--pr-state", default="closed")
 
     args = parser.parse_args(argv)
     if args.command == "bug-import":
@@ -2718,7 +2931,29 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "track-work-pr":
         return cmd_track_pr(args.event_file, args.output_file)
     if args.command == "record-ci-result":
-        return cmd_record_ci_result(args.pr_number, args.workflow_name, args.conclusion, args.run_id, args.run_url, args.failing_step, args.failing_tests, args.log_excerpt, args.repo_owner, args.repo_name, args.github_token, args.copilot_assignment_token, args.output_file)
+        return cmd_record_ci_result(
+            args.pr_number,
+            args.workflow_name,
+            args.conclusion,
+            args.run_id,
+            args.run_url,
+            args.failing_step,
+            args.failing_tests,
+            args.log_excerpt,
+            args.repo_owner,
+            args.repo_name,
+            args.github_token,
+            args.copilot_assignment_token,
+            args.output_file,
+            args.implementation_issue_number,
+            args.merged == "true",
+            args.merged_by,
+            args.merged_at,
+            args.head_sha,
+            args.pr_url,
+            args.pr_branch,
+            args.pr_state,
+        )
     return 2
 
 

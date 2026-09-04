@@ -43,6 +43,7 @@ class FakeGitHubClient:
 	artifact_payloads = {}
 	job_log_payloads = {}
 	run_log_payloads = {}
+	closed_issues = []
 
 	def __init__(self, owner: str, repo: str, token: str):
 		self.owner = owner
@@ -140,6 +141,10 @@ class FakeGitHubClient:
 			raise RuntimeError("GitHub Actions workflow run log download failed")
 		return self.__class__.run_log_payloads.get(str(run_id), b"")
 
+	def close_issue(self, issue_number: int) -> dict:
+		self.__class__.closed_issues.append(int(issue_number))
+		return {"number": int(issue_number), "state": "closed"}
+
 
 class AutomationCliTest(unittest.TestCase):
 	def setUp(self):
@@ -188,6 +193,7 @@ class AutomationCliTest(unittest.TestCase):
 		FakeGitHubClient.artifact_payloads = {}
 		FakeGitHubClient.job_log_payloads = {}
 		FakeGitHubClient.run_log_payloads = {}
+		FakeGitHubClient.closed_issues = []
 
 		self.accepted_req_id = "REQ-9999"
 		self.write_json(
@@ -2064,6 +2070,205 @@ e: file:///app/src/main/java/com/libredisplay/ui/monitoring/TrendProjection.kt:4
 		updated = self.read_json(bug_path)
 		self.assertEqual("VALIDATION_PENDING", updated["status"])
 		self.assertEqual(91, updated["pull_request_number"])
+
+	def test_master_success_reconciles_stale_confirmed_bug_to_validated_with_human_merge(self):
+		self.assertEqual(
+			0,
+			self.cli.cmd_bug_create(
+				source="CI_REGRESSION",
+				source_reference="workflow=Android CI | run_id=33804732928 | commit=prev | branch=master | conclusion=failure",
+				title="BUG-0004 stale state",
+				observed_behavior="compileDebugKotlin failed",
+				expected_behavior="master should pass",
+				reproduction="run Android CI",
+				related_requirement_ids=[],
+				related_test_ids=["TEST-CI-FAST-SUITE-REGRESSION"],
+			),
+		)
+		bug_path = self.root / "product" / "bugs" / "BUG-0001.json"
+		bug = self.read_json(bug_path)
+		bug["bug_id"] = "BUG-0004"
+		bug["classification"] = "CONFIRMED_DEFECT"
+		bug["status"] = "PR_READY"
+		bug["validation_state"] = "PENDING"
+		bug["implementation_issue"] = {"number": 10, "url": "https://github.com/example/repo/issues/10"}
+		bug["implementation_issue_number"] = 10
+		bug["implementation_issue_url"] = "https://github.com/example/repo/issues/10"
+		bug["pull_request"] = {
+			"number": 11,
+			"url": "https://github.com/example/repo/pull/11",
+			"branch": "copilot/bug-0004-fix-android-ci-regression",
+			"state": "open",
+		}
+		bug["pull_request_number"] = 11
+		bug["pull_request_url"] = "https://github.com/example/repo/pull/11"
+		bug_path.unlink()
+		self.write_json(self.root / "product" / "bugs" / "BUG-0004.json", bug)
+		self.write_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0004.json", {
+			"bug_id": "BUG-0004",
+			"classification": "CONFIRMED_DEFECT",
+			"status": "PR_READY",
+			"generated_at": "2026-09-04T00:00:00Z",
+		})
+		self.cli.ensure_bug_impl(bug)
+		impl_path = self.root / "product" / "implementation" / "IMP-BUG-0004.json"
+		impl = self.read_json(impl_path)
+		impl["pull_request_number"] = 11
+		impl["pull_request_url"] = "https://github.com/example/repo/pull/11"
+		impl["status"] = "READY_FOR_HUMAN_REVIEW"
+		impl["last_ci_result"] = "UNKNOWN"
+		impl["validation_state"] = "PENDING"
+		self.write_json(impl_path, impl)
+
+		original_validate = self.cli.validate_product_foundation
+		self.cli.validate_product_foundation = lambda: None
+		out = self.root / "ci-success.json"
+		try:
+			rc = self.cli.cmd_record_ci_result(
+				12,
+				"Android CI",
+				"success",
+				"33900250965",
+				"https://github.com/example/repo/actions/runs/33900250965",
+				repo_owner="example",
+				repo_name="repo",
+				github_token="token",
+				output_file=str(out),
+				implementation_issue_number=10,
+				merged=True,
+				merged_by="rafalbragan",
+				merged_at="2026-09-04T10:30:00Z",
+				head_sha="b74749e7a0a6be40a3b1ed7e64f43c8cda65f099",
+				pr_url="https://github.com/example/repo/pull/12",
+				pr_branch="copilot/fix-fast-test-suite",
+				pr_state="closed",
+			)
+		finally:
+			self.cli.validate_product_foundation = original_validate
+		self.assertEqual(0, rc)
+		payload = self.read_json(out)
+		self.assertTrue(payload["validated"])
+		self.assertTrue(payload["issue_closed"])
+		self.assertEqual("VALIDATED", payload["status"])
+
+		updated_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0004.json")
+		updated_impl = self.read_json(self.root / "product" / "implementation" / "IMP-BUG-0004.json")
+		updated_review = self.read_json(self.root / "product" / "generated" / "bug-reviews" / "BUG-0004.json")
+		self.assertEqual("VALIDATED", updated_bug["status"])
+		self.assertEqual("VALIDATED", updated_bug["validation_state"])
+		self.assertEqual(12, updated_bug["pull_request_number"])
+		self.assertEqual("https://github.com/example/repo/pull/12", updated_bug["pull_request_url"])
+		self.assertTrue(any(int((entry or {}).get("number") or 0) == 11 for entry in updated_bug.get("pull_request_history", [])))
+		self.assertEqual("VALIDATED", updated_impl["status"])
+		self.assertEqual("VALIDATED", updated_impl["validation_state"])
+		self.assertEqual("PASS", updated_impl["last_ci_result"])
+		self.assertEqual(12, updated_impl["pull_request_number"])
+		self.assertEqual("VALIDATED", updated_review["status"])
+		validation_evidence = updated_bug.get("validation_evidence") or []
+		self.assertTrue(any(str(item.get("run_id")) == "33900250965" for item in validation_evidence))
+		self.assertEqual([10], FakeGitHubClient.closed_issues)
+
+	def test_master_success_does_not_validate_bug_when_merge_actor_is_bot(self):
+		self.assertEqual(
+			0,
+			self.cli.cmd_bug_create(
+				source="CI_REGRESSION",
+				source_reference="workflow=Android CI | run_id=1 | commit=prev | branch=master | conclusion=failure",
+				title="Bot merge should not validate",
+				observed_behavior="compile failed",
+				expected_behavior="compile passes",
+				reproduction="run workflow",
+				related_requirement_ids=[],
+				related_test_ids=[],
+			),
+		)
+		bug_path = self.root / "product" / "bugs" / "BUG-0001.json"
+		bug = self.read_json(bug_path)
+		bug["bug_id"] = "BUG-0004"
+		bug["classification"] = "CONFIRMED_DEFECT"
+		bug["status"] = "PR_READY"
+		bug["implementation_issue"] = {"number": 10, "url": "https://github.com/example/repo/issues/10"}
+		bug["implementation_issue_number"] = 10
+		bug["implementation_issue_url"] = "https://github.com/example/repo/issues/10"
+		bug_path.unlink()
+		self.write_json(self.root / "product" / "bugs" / "BUG-0004.json", bug)
+		self.cli.ensure_bug_impl(bug)
+
+		out = self.root / "ci-success-bot.json"
+		self.assertEqual(
+			0,
+			self.cli.cmd_record_ci_result(
+				12,
+				"Android CI",
+				"success",
+				"33900250965",
+				"https://github.com/example/repo/actions/runs/33900250965",
+				output_file=str(out),
+				implementation_issue_number=10,
+				merged=True,
+				merged_by="github-actions[bot]",
+				merged_at="2026-09-04T10:30:00Z",
+				head_sha="b74749e7a0a6be40a3b1ed7e64f43c8cda65f099",
+				pr_url="https://github.com/example/repo/pull/12",
+				pr_state="closed",
+			),
+		)
+		payload = self.read_json(out)
+		self.assertFalse(payload["validated"])
+		self.assertFalse(payload["issue_closed"])
+		updated_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0004.json")
+		updated_impl = self.read_json(self.root / "product" / "implementation" / "IMP-BUG-0004.json")
+		self.assertNotEqual("VALIDATED", updated_bug["status"])
+		self.assertEqual("VALIDATION_PENDING", updated_bug["validation_state"])
+		self.assertEqual("VALIDATION_PENDING", updated_impl["status"])
+		self.assertEqual("VALIDATION_PENDING", updated_impl["validation_state"])
+
+	def test_non_success_master_ci_never_validates_bug(self):
+		self.assertEqual(
+			0,
+			self.cli.cmd_bug_create(
+				source="CI_REGRESSION",
+				source_reference="workflow=Android CI | run_id=1 | commit=prev | branch=master | conclusion=failure",
+				title="In progress should not validate",
+				observed_behavior="compile failed",
+				expected_behavior="compile passes",
+				reproduction="run workflow",
+				related_requirement_ids=[],
+				related_test_ids=[],
+			),
+		)
+		bug_path = self.root / "product" / "bugs" / "BUG-0001.json"
+		bug = self.read_json(bug_path)
+		bug["bug_id"] = "BUG-0004"
+		bug["classification"] = "CONFIRMED_DEFECT"
+		bug["status"] = "PR_READY"
+		bug["implementation_issue"] = {"number": 10, "url": "https://github.com/example/repo/issues/10"}
+		bug["implementation_issue_number"] = 10
+		bug["implementation_issue_url"] = "https://github.com/example/repo/issues/10"
+		bug_path.unlink()
+		self.write_json(self.root / "product" / "bugs" / "BUG-0004.json", bug)
+		self.cli.ensure_bug_impl(bug)
+
+		for conclusion in ["in_progress", "skipped"]:
+			out = self.root / f"ci-{conclusion}.json"
+			rc = self.cli.cmd_record_ci_result(
+				12,
+				"Android CI",
+				conclusion,
+				"33900250965",
+				"https://github.com/example/repo/actions/runs/33900250965",
+				repo_owner="example",
+				repo_name="repo",
+				output_file=str(out),
+				implementation_issue_number=10,
+				merged=True,
+				merged_by="rafalbragan",
+			)
+			self.assertEqual(1, rc)
+			updated_bug = self.read_json(self.root / "product" / "bugs" / "BUG-0004.json")
+			updated_impl = self.read_json(self.root / "product" / "implementation" / "IMP-BUG-0004.json")
+			self.assertNotEqual("VALIDATED", updated_bug["status"])
+			self.assertNotEqual("VALIDATED", updated_impl["status"])
 
 	def test_bug_pr_mentioning_requirement_history_stays_bug(self):
 		self.assertEqual(
