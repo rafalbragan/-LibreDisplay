@@ -503,7 +503,7 @@ jobs:
             elif [ "$DEVICE_OUTCOME" = "failure" ]; then
               echo ""
               echo "> **Firebase Test Lab: NOT_RUN_DEVICE_SELECTION_FAILED ❌**"
-              echo "> Dynamiczny dobór urządzeń nie powiódł się — sprawdź krok „Select and validate 3-device matrix (dynamic)”."
+              echo "> Dynamiczny dobór urządzeń nie powiódł się — sprawdź krok \"Select and validate 3-device matrix (dynamic)\"."
             fi
           } >> "$GITHUB_STEP_SUMMARY"
 
