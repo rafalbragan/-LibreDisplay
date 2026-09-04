@@ -314,11 +314,11 @@ internal fun buildTrendProjection(
     } ?: return null
 
     val totalMinutesToTarget = ((target - reading.value).toDouble() / estimate.mgDlPerMinute)
-    if (!totalMinutesToTarget.isFinite() || totalMinutesToTarget <= 0.0 || totalMinutesToTarget > 90.0) return null
+    if (!totalMinutesToTarget.isFinite() || totalMinutesToTarget <= 0.0) return null
 
-    val elapsedMinutes = elapsedDuration.toMillis().toDouble() / 60000.0
+    val elapsedMinutes = elapsedDuration.toMillis() / 60_000.0
     val remainingMinutes = totalMinutesToTarget - elapsedMinutes
-    if (remainingMinutes <= 0.0) return null
+    if (remainingMinutes <= 0.0 || remainingMinutes > 90.0) return null
 
     return TrendProjection(
         rateMgDlPerMinute = estimate.mgDlPerMinute,

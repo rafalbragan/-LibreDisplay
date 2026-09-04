@@ -399,6 +399,49 @@ class DashboardUiLogicTest {
     }
 
     @Test
+    fun buildTrendProjection_appliesEtaLimitToRemainingMinutes() {
+        val reading = GlucoseReading.of(
+            value = -40,
+            timestamp = Instant.parse("2026-07-27T10:15:00Z"),
+            trend = GlucoseTrend.RISING_FAST,
+            history = listOf(
+                GlucoseHistoryPoint(-43, Instant.parse("2026-07-27T10:14:00Z"))
+            )
+        )
+
+        val projection = buildTrendProjection(
+            reading = reading,
+            trendWindowMinutes = 20,
+            thresholds = TrendProjectionThresholds(80, 250),
+            now = Instant.parse("2026-07-27T10:22:00Z")
+        )
+
+        assertEquals(250, projection?.thresholdMgDl)
+        assertEquals(90, projection?.minutesToThreshold)
+    }
+
+    @Test
+    fun buildTrendProjection_returnsNullWhenTotalEtaExceedsLimit() {
+        val reading = GlucoseReading.of(
+            value = -40,
+            timestamp = Instant.parse("2026-07-27T10:15:00Z"),
+            trend = GlucoseTrend.RISING_FAST,
+            history = listOf(
+                GlucoseHistoryPoint(-43, Instant.parse("2026-07-27T10:14:00Z"))
+            )
+        )
+
+        val projection = buildTrendProjection(
+            reading = reading,
+            trendWindowMinutes = 20,
+            thresholds = TrendProjectionThresholds(80, 250),
+            now = Instant.parse("2026-07-27T10:15:00Z")
+        )
+
+        assertEquals(null, projection)
+    }
+
+    @Test
     fun trendWindowSnapshot_returnsNullForZeroMinuteSpan() {
         val timestamp = Instant.parse("2026-07-27T10:15:00Z")
         val reading = GlucoseReading.of(
