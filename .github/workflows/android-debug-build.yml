@@ -32,7 +32,7 @@ jobs:
         run: chmod +x gradlew
 
       - name: Run unit tests
-        run: ./gradlew test --stacktrace
+        run: ./gradlew testDebugUnitTest --stacktrace
 
       - name: Upload test reports
         if: always()
@@ -40,8 +40,8 @@ jobs:
         with:
           name: android-debug-test-reports
           path: |
-            app/build/test-results/testReleaseUnitTest/**
-            app/build/reports/tests/testReleaseUnitTest/**
+            app/build/test-results/testDebugUnitTest/**
+            app/build/reports/tests/testDebugUnitTest/**
             app/build/outputs/roborazzi/**
             app/build/intermediates/roborazzi/**
           if-no-files-found: warn
