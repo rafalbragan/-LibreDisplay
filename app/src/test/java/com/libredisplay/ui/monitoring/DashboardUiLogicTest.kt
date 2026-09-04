@@ -401,40 +401,40 @@ class DashboardUiLogicTest {
     @Test
     fun buildTrendProjection_appliesEtaLimitToRemainingMinutes() {
         val reading = GlucoseReading.of(
-            value = -40,
+            value = 380,
             timestamp = Instant.parse("2026-07-27T10:15:00Z"),
-            trend = GlucoseTrend.RISING_FAST,
+            trend = GlucoseTrend.FALLING_FAST,
             history = listOf(
-                GlucoseHistoryPoint(-43, Instant.parse("2026-07-27T10:14:00Z"))
+                GlucoseHistoryPoint(383, Instant.parse("2026-07-27T10:14:00Z"))
             )
         )
 
         val projection = buildTrendProjection(
             reading = reading,
             trendWindowMinutes = 20,
-            thresholds = TrendProjectionThresholds(80, 250),
+            thresholds = TrendProjectionThresholds(80, 180),
             now = Instant.parse("2026-07-27T10:22:00Z")
         )
 
-        assertEquals(250, projection?.thresholdMgDl)
+        assertEquals(80, projection?.thresholdMgDl)
         assertEquals(90, projection?.minutesToThreshold)
     }
 
     @Test
     fun buildTrendProjection_returnsNullWhenTotalEtaExceedsLimit() {
         val reading = GlucoseReading.of(
-            value = -40,
+            value = 380,
             timestamp = Instant.parse("2026-07-27T10:15:00Z"),
-            trend = GlucoseTrend.RISING_FAST,
+            trend = GlucoseTrend.FALLING_FAST,
             history = listOf(
-                GlucoseHistoryPoint(-43, Instant.parse("2026-07-27T10:14:00Z"))
+                GlucoseHistoryPoint(383, Instant.parse("2026-07-27T10:14:00Z"))
             )
         )
 
         val projection = buildTrendProjection(
             reading = reading,
             trendWindowMinutes = 20,
-            thresholds = TrendProjectionThresholds(80, 250),
+            thresholds = TrendProjectionThresholds(80, 180),
             now = Instant.parse("2026-07-27T10:15:00Z")
         )
 
@@ -458,4 +458,3 @@ class DashboardUiLogicTest {
         assertEquals(null, estimateTrendRate(reading, requestedWindowMinutes = 10))
     }
 }
-
