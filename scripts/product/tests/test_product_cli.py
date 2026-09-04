@@ -19,6 +19,7 @@ BUG_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-implem
 BUG_ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "librecare-bug.yml"
 ANDROID_CI_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml"
 ANDROID_BUILD_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-build.yml"
+ANDROID_DEBUG_BUILD_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-debug-build.yml"
 PRODUCT_QUALITY_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-quality.yml"
 
 
@@ -1487,9 +1488,38 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product: apply inbox decision issue", text)
 
     def test_workflows_are_valid_yaml(self):
-        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH, ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH]:
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH, ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH, ANDROID_DEBUG_BUILD_WORKFLOW_PATH]:
             loaded = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
             self.assertIsInstance(loaded, dict)
+
+    def test_android_debug_build_uploads_test_reports_without_masking_gradle_failures(self):
+        data = yaml.safe_load(ANDROID_DEBUG_BUILD_WORKFLOW_PATH.read_text(encoding="utf-8"))
+        steps = (((data or {}).get("jobs") or {}).get("build") or {}).get("steps") or []
+        unit_test_step = next((step for step in steps if (step or {}).get("name") == "Run unit tests"), None)
+        self.assertIsNotNone(unit_test_step)
+        self.assertNotIn("continue-on-error", unit_test_step)
+        self.assertEqual("./gradlew test --stacktrace", str(unit_test_step.get("run") or "").strip())
+
+        upload_step = next((step for step in steps if (step or {}).get("name") == "Upload test reports"), None)
+        self.assertIsNotNone(upload_step)
+        self.assertEqual("always()", upload_step.get("if"))
+        self.assertEqual("actions/upload-artifact@v4", upload_step.get("uses"))
+        with_block = upload_step.get("with") or {}
+        self.assertEqual("android-debug-test-reports", with_block.get("name"))
+        self.assertEqual("warn", with_block.get("if-no-files-found"))
+        self.assertEqual(7, int(with_block.get("retention-days")))
+        path_block = str(with_block.get("path") or "")
+        for expected in [
+            "app/build/test-results/testReleaseUnitTest/**",
+            "app/build/reports/tests/testReleaseUnitTest/**",
+            "app/build/outputs/roborazzi/**",
+            "app/build/intermediates/roborazzi/**",
+        ]:
+            self.assertIn(expected, path_block)
+
+        build_debug_step = next((step for step in steps if (step or {}).get("name") == "Build debug APK"), None)
+        self.assertIsNotNone(build_debug_step)
+        self.assertNotIn("continue-on-error", build_debug_step)
 
     def test_android_push_workflows_ignore_product_only_commits(self):
         android_ci_paths = self.workflow_push_paths(ANDROID_CI_WORKFLOW_PATH)
