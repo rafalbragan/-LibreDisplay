@@ -94,7 +94,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          cat bug-ai-prompt.json | copilot \
+          copilot \
             -s \
             --no-ask-user \
             --disable-builtin-mcps \
@@ -102,7 +102,7 @@ jobs:
             --allow-tool='read' \
             --deny-tool='write' \
             --deny-tool='shell' \
-            > bug-ai-review-raw.txt
+            < bug-ai-prompt.json > bug-ai-review-raw.txt
 
       - name: Apply bug AI triage with deterministic governance
         run: |
@@ -568,7 +568,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ github.token }}
         run: |
-          cat bug-ai-prompt.json | copilot \
+          copilot \
             -s \
             --no-ask-user \
             --disable-builtin-mcps \
@@ -576,7 +576,7 @@ jobs:
             --allow-tool='read' \
             --deny-tool='write' \
             --deny-tool='shell' \
-            > bug-ai-review-raw.txt
+            < bug-ai-prompt.json > bug-ai-review-raw.txt
 
       - name: Apply CI regression bug triage
         if: steps.ci_regression.outputs.should_route == 'true'
