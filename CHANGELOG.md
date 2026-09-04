@@ -2,40 +2,6 @@
 
 All notable changes to LibreCare will be documented in this file.
 
-## 2.13.1 - 2026-09-03
-
-### PL
-
-#### Changed
-- Wersja aplikacji: `2.13.0` (`versionCode 39`) -> `2.13.1` (`versionCode 40`).
-
-#### Fixed
-- Naprawiono obliczanie pozostałych minut w projekcji trendu glikemii (`DashboardUiLogic.buildTrendProjection`) poprzez odjęcie czasu jaki upłynął od momentu odczytu do chwili obecnej (`now`).
-
-#### Tests
-- Dodano unit testy w `DashboardUiLogicTest`: `buildTrendProjection_usesNextRelevantRisingThreshold`, `buildTrendProjection_usesNextRelevantFallingThreshold` oraz `buildTrendProjection_returnsNullWhenRemainingMinutesExpired`.
-
-#### Artifacts
-- `release-artifacts/LibreCare-2.13.1-debug.apk`
-- `release-artifacts/LibreCare-2.13.1-release.apk`
-- `release-artifacts/LibreCare-2.13.1-release.aab`
-
-### EN
-
-#### Changed
-- App version: `2.13.0` (`versionCode 39`) -> `2.13.1` (`versionCode 40`).
-
-#### Fixed
-- Fixed glucose trend projection remaining time calculation in `DashboardUiLogic.buildTrendProjection` by subtracting elapsed duration from reading timestamp to current time (`now`).
-
-#### Tests
-- Added unit tests in `DashboardUiLogicTest`: `buildTrendProjection_usesNextRelevantRisingThreshold`, `buildTrendProjection_usesNextRelevantFallingThreshold`, and `buildTrendProjection_returnsNullWhenRemainingMinutesExpired`.
-
-#### Artifacts
-- `release-artifacts/LibreCare-2.13.1-debug.apk`
-- `release-artifacts/LibreCare-2.13.1-release.apk`
-- `release-artifacts/LibreCare-2.13.1-release.aab`
-
 ## 2.16.1 - 2026-09-02
 
 ### PL
