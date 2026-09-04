@@ -33,6 +33,9 @@ class MockLibreLinkUpClientTest {
         assertEquals("Jan Kowalski", persons[1].displayName)
         assertTrue(annaReading != null)
         assertTrue(janReading != null)
-        assertTrue((annaReading?.value ?: 0) != (janReading?.value ?: 0) || annaReading?.trend != janReading?.trend)
+        assertTrue(annaReading!!.value in 68..208)
+        assertTrue(janReading!!.value in 68..208)
+        assertTrue(annaReading.history.isNotEmpty())
+        assertTrue(janReading.history.isNotEmpty())
     }
 }

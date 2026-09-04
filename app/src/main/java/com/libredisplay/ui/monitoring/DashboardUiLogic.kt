@@ -297,7 +297,8 @@ internal fun buildTrendProjection(
     now: Instant
 ): TrendProjection? {
     if (reading.trend != GlucoseTrend.RISING_FAST && reading.trend != GlucoseTrend.FALLING_FAST) return null
-    if (Duration.between(reading.timestamp, now).toMinutes() > 15) return null
+    val elapsedDuration = Duration.between(reading.timestamp, now)
+    if (elapsedDuration.toMinutes() > 15 || elapsedDuration.isNegative) return null
 
     val estimate = estimateTrendRate(reading, trendWindowMinutes) ?: return null
     if (estimate.derivedTrend != reading.trend) return null
@@ -312,12 +313,17 @@ internal fun buildTrendProjection(
         else -> null
     } ?: return null
 
-    val minutes = ((target - reading.value).toDouble() / estimate.mgDlPerMinute)
-    if (!minutes.isFinite() || minutes <= 0.0 || minutes > 90.0) return null
+    val totalMinutesToTarget = ((target - reading.value).toDouble() / estimate.mgDlPerMinute)
+    if (!totalMinutesToTarget.isFinite() || totalMinutesToTarget <= 0.0) return null
+
+    val elapsedMinutes = elapsedDuration.toMillis() / 60_000.0
+    val remainingMinutes = totalMinutesToTarget - elapsedMinutes
+    if (remainingMinutes <= 0.0 || remainingMinutes > 90.0) return null
+
     return TrendProjection(
         rateMgDlPerMinute = estimate.mgDlPerMinute,
         thresholdMgDl = target,
-        minutesToThreshold = minutes.roundToInt().coerceAtLeast(1)
+        minutesToThreshold = remainingMinutes.roundToInt().coerceAtLeast(1)
     )
 }
 
