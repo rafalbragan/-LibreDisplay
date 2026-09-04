@@ -129,7 +129,7 @@ jobs:
           [ -z "$GCP_WORKLOAD_IDENTITY_PROVIDER" ] && missing="${missing}GCP_WORKLOAD_IDENTITY_PROVIDER "
           [ -z "$GCP_SERVICE_ACCOUNT" ] && missing="${missing}GCP_SERVICE_ACCOUNT "
 
-          missing=$(echo "$missing" | sed 's/[[:space:]]*$//')
+          missing="${missing% }"
 
           if [ -n "$missing" ]; then
             echo "enabled=false" >> "$GITHUB_OUTPUT"
