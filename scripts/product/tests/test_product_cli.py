@@ -1498,7 +1498,8 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         unit_test_step = next((step for step in steps if (step or {}).get("name") == "Run unit tests"), None)
         self.assertIsNotNone(unit_test_step)
         self.assertNotIn("continue-on-error", unit_test_step)
-        self.assertEqual("./gradlew test --stacktrace", str(unit_test_step.get("run") or "").strip())
+        self.assertEqual("./gradlew testDebugUnitTest --stacktrace", str(unit_test_step.get("run") or "").strip())
+        self.assertNotIn("./gradlew test --stacktrace", str(unit_test_step.get("run") or "").strip())
 
         upload_step = next((step for step in steps if (step or {}).get("name") == "Upload test reports"), None)
         self.assertIsNotNone(upload_step)
@@ -1510,12 +1511,13 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertEqual(7, int(with_block.get("retention-days")))
         path_block = str(with_block.get("path") or "")
         for expected in [
-            "app/build/test-results/testReleaseUnitTest/**",
-            "app/build/reports/tests/testReleaseUnitTest/**",
+            "app/build/test-results/testDebugUnitTest/**",
+            "app/build/reports/tests/testDebugUnitTest/**",
             "app/build/outputs/roborazzi/**",
             "app/build/intermediates/roborazzi/**",
         ]:
             self.assertIn(expected, path_block)
+        self.assertNotIn("testReleaseUnitTest", path_block)
 
         build_debug_step = next((step for step in steps if (step or {}).get("name") == "Build debug APK"), None)
         self.assertIsNotNone(build_debug_step)
@@ -1630,9 +1632,9 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
 
     def test_product_quality_workflow_scopes_actionlint_ignore_to_copilot_requests_false_positive(self):
         text = PRODUCT_QUALITY_WORKFLOW_PATH.read_text(encoding="utf-8")
-        self.assertIn("uses: rhysd/actionlint@v1", text)
+        self.assertIn("ACTIONLINT_VERSION: 1.7.7", text)
         self.assertIn("copilot-requests", text)
-        self.assertIn("args: -ignore 'unknown permission scope .*copilot-requests.*'", text)
+        self.assertIn("./actionlint -ignore 'unknown permission scope .*copilot-requests.*'", text)
         self.assertNotIn("--no-checks", text)
         self.assertNotIn("permissions: {}", text)
 
@@ -1794,7 +1796,10 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         text = PRODUCT_QUALITY_WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn('".github/workflows/**"', text)
         self.assertIn('".github/ISSUE_TEMPLATE/**"', text)
-        self.assertIn("uses: rhysd/actionlint@v1", text)
+        self.assertIn("ACTIONLINT_VERSION: 1.7.7", text)
+        self.assertIn("https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz", text)
+        self.assertIn("./actionlint -ignore 'unknown permission scope .*copilot-requests.*'", text)
+        self.assertNotIn("uses: rhysd/actionlint@v1", text)
         self.assertIn("copilot-requests", text)
 
     def test_android_ci_workflow_uses_current_fast_suite_artifact_name(self):
