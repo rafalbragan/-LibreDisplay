@@ -20,6 +20,8 @@ BUG_ISSUE_FORM_PATH = WORKSPACE_ROOT / ".github" / "ISSUE_TEMPLATE" / "librecare
 ANDROID_CI_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-ci.yml"
 ANDROID_BUILD_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-build.yml"
 ANDROID_DEBUG_BUILD_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "android-debug-build.yml"
+DOWNLOAD_APP_TESTING_RESULTS_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "download-app-testing-results.yml"
+FIREBASE_TEST_LAB_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "firebase-test-lab.yml"
 PRODUCT_QUALITY_WORKFLOW_PATH = WORKSPACE_ROOT / ".github" / "workflows" / "product-quality.yml"
 
 
@@ -1488,9 +1490,21 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("product: apply inbox decision issue", text)
 
     def test_workflows_are_valid_yaml(self):
-        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH, ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH, ANDROID_DEBUG_BUILD_WORKFLOW_PATH]:
+        for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH, PRODUCT_QUALITY_WORKFLOW_PATH, ANDROID_CI_WORKFLOW_PATH, ANDROID_BUILD_WORKFLOW_PATH, ANDROID_DEBUG_BUILD_WORKFLOW_PATH, DOWNLOAD_APP_TESTING_RESULTS_WORKFLOW_PATH, FIREBASE_TEST_LAB_WORKFLOW_PATH]:
             loaded = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
             self.assertIsInstance(loaded, dict)
+
+    def test_shellcheck_fixes_are_present_in_result_download_and_firebase_workflows(self):
+        download_text = DOWNLOAD_APP_TESTING_RESULTS_WORKFLOW_PATH.read_text(encoding="utf-8")
+        firebase_text = FIREBASE_TEST_LAB_WORKFLOW_PATH.read_text(encoding="utf-8")
+
+        self.assertIn('missing="${missing% }"', download_text)
+        self.assertIn('missing="${missing% }"', firebase_text)
+        self.assertNotIn("sed 's/[[:space:]]*$//'", download_text)
+        self.assertNotIn("sed 's/[[:space:]]*$//'", firebase_text)
+
+        self.assertIn('} > "${MANIFEST}"', download_text)
+        self.assertIn('} >> "$GITHUB_OUTPUT"', download_text)
 
     def test_android_debug_build_uploads_test_reports_without_masking_gradle_failures(self):
         data = yaml.safe_load(ANDROID_DEBUG_BUILD_WORKFLOW_PATH.read_text(encoding="utf-8"))
