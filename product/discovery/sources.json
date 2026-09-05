@@ -1,0 +1,71 @@
+{
+  "version": 1,
+  "notes": "Discovery v1 source config. Keep per-source limits bounded and public-only.",
+  "sources": [
+    {
+      "name": "abbott_official",
+      "family": "official_vendor",
+      "kind": "official_pages",
+      "enabled": true,
+      "urls": [
+        "https://www.freestyle.abbott/",
+        "https://www.freestyle.abbott/us-en/support.html"
+      ]
+    },
+    {
+      "name": "dexcom_official",
+      "family": "competitor",
+      "kind": "official_pages",
+      "enabled": true,
+      "urls": [
+        "https://www.dexcom.com/",
+        "https://www.dexcom.com/en-us/faqs"
+      ]
+    },
+    {
+      "name": "nightscout_github",
+      "family": "github_community",
+      "kind": "github_issues",
+      "enabled": true,
+      "repos": [
+        "nightscout/cgm-remote-monitor"
+      ],
+      "urls": [
+        "https://github.com/nightscout/cgm-remote-monitor/issues"
+      ]
+    },
+    {
+      "name": "xdrip_github",
+      "family": "github_community",
+      "kind": "github_issues",
+      "enabled": true,
+      "repos": [
+        "NightscoutFoundation/xDrip"
+      ],
+      "urls": [
+        "https://github.com/NightscoutFoundation/xDrip/issues"
+      ]
+    },
+    {
+      "name": "sugarmate_official",
+      "family": "competitor",
+      "kind": "official_pages",
+      "enabled": true,
+      "urls": [
+        "https://sugarmate.io/"
+      ]
+    },
+    {
+      "name": "reddit_diabetes",
+      "family": "reddit",
+      "kind": "reddit_oauth",
+      "enabled": true,
+      "subreddits": [
+        "diabetes",
+        "Type1Diabetes"
+      ],
+      "urls": []
+    }
+  ]
+}
+
