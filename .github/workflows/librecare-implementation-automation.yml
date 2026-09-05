@@ -287,7 +287,7 @@ jobs:
         run: |
           python scripts/product/automation_cli.py validate-and-close-all-eligible-issues \
             --repo-owner "${{ github.repository_owner }}" \
-            --repo-name "${{ github.event.repository.name }}" \
+            --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
             --product-validation-pass true \
             --output-file issue-closure-summary.json
