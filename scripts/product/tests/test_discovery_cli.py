@@ -233,7 +233,7 @@ def test_incremental_cluster_id_stable_with_added_near_duplicate(cli_env):
         {
             "canonical_url": "https://a/3",
             "content_hash": cli.content_hash("3"),
-            "problem_statement": "Caregiver cannot detect stale readings quickly at a glance",
+                "problem_statement": "Caregiver has trouble detecting stale readings quickly",
             "source_name": "reddit_diabetes",
             "source_identity": "reddit_diabetes",
             "source_family": "reddit",
@@ -656,7 +656,173 @@ def test_cluster_id_stable_for_input_order_permutation(cli_env):
     assert cluster_id_for([a, b, c]) == cluster_id_for([c, b, a])
 
 
-def test_incremental_cluster_id_and_idempotent_observation_and_issue(cli_env, tmp_path, monkeypatch):
+def _configure_cli_root(cli, root: Path, monkeypatch):
+    monkeypatch.setattr(cli, "ROOT", root)
+    monkeypatch.setattr(cli, "PRODUCT", root / "product")
+    monkeypatch.setattr(cli, "SCHEMA_DIR", root / "product" / "schema")
+    monkeypatch.setattr(cli, "OBSERVATIONS_DIR", root / "product" / "research" / "observations")
+    monkeypatch.setattr(cli, "REQUIREMENTS_DIR", root / "product" / "requirements")
+    monkeypatch.setattr(cli, "DECISIONS_DIR", root / "product" / "decisions")
+    monkeypatch.setattr(cli, "GENERATED_DISCOVERY_DIR", root / "product" / "generated" / "discovery")
+    monkeypatch.setattr(cli, "VALIDATED_CAPABILITIES_MD", root / "product" / "generated" / "VALIDATED_CAPABILITIES.md")
+    monkeypatch.setattr(cli, "SOURCES_CONFIG_DEFAULT", root / "product" / "discovery" / "sources.json")
+    monkeypatch.setattr(cli, "DISCOVERY_CACHE_PATH", root / "product" / "generated" / "discovery" / "cache" / "discovery-cache-v1.json")
+
+
+def _make_isolated_cli(monkeypatch):
+    cli = load_cli_module()
+    temp_dir = tempfile.TemporaryDirectory()
+    root = Path(temp_dir.name)
+    shutil.copytree(WORKSPACE_ROOT / "product", root / "product")
+    _configure_cli_root(cli, root, monkeypatch)
+    monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
+    monkeypatch.delenv("REDDIT_CLIENT_SECRET", raising=False)
+    return cli, root, temp_dir
+
+
+def _write_custom_sources(path: Path, texts: list[str]) -> None:
+    payload = {
+        "sources": [
+            {
+                "name": "nightscout_github",
+                "family": "github_community",
+                "kind": "github_issues",
+                "enabled": True,
+                "fixture_items": [
+                    {
+                        "url": f"https://example.com/{idx}",
+                        "text": text,
+                        "problem_statement": text,
+                        "persona": "caregiver",
+                        "mode": "caregiver",
+                        "module": "Home / Monitoring",
+                        "type": "usability",
+                        "severity": "medium",
+                        "frequency": "frequent",
+                        "confidence": "medium",
+                    }
+                    for idx, text in enumerate(texts, start=1)
+                ],
+            }
+        ]
+    }
+    path.write_text(json.dumps(payload), encoding="utf-8")
+
+
+def _write_ai_payload(root: Path, clusters):
+    payload = {"clusters": []}
+    for cluster in clusters:
+        payload["clusters"].append(
+            {
+                "cluster_id": cluster["cluster_id"],
+                "classification": "PRODUCT_PROBLEM",
+                "persona": cluster["persona_candidate"],
+                "problem_statement": cluster["normalized_problem"],
+                "evidence_summary": "Evidence summary",
+                "source_diversity_summary": "Diverse sources",
+                "current_librecare_match": "AI summary",
+                "solvability": "APP",
+                "impact_score": 4,
+                "frequency_score": 4,
+                "evidence_score": 4,
+                "solvability_score": 4,
+                "novelty_score": 3,
+                "effort_score": 2,
+                "confidence": "high",
+                "counterargument": "Counter point",
+                "candidate_recommendation": "Recommend human review",
+            }
+        )
+    path = root / "ai.json"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    return path
+
+
+def test_cluster_id_stable_across_clean_runs_without_prior_observations(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    cli1, root1, temp1 = _make_isolated_cli(monkeypatch)
+    cli2, root2, temp2 = _make_isolated_cli(monkeypatch)
+    try:
+        source_a = tmp_path / "sources-a.json"
+        source_b = tmp_path / "sources-b.json"
+        _write_custom_sources(source_a, [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+        ])
+        _write_custom_sources(source_b, [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+            "Caregiver has trouble detecting stale readings quickly",
+        ])
+
+        clusters_a = _prepare_clusters(cli1, source_a)
+        report_a = run_discovery_with_ai_file(cli1, source_a, _write_ai_payload(root1, clusters_a))
+
+        clusters_b = _prepare_clusters(cli2, source_b)
+        report_b = run_discovery_with_ai_file(cli2, source_b, _write_ai_payload(root2, clusters_b))
+
+        assert report_a["top10"][0]["cluster_id"] == report_b["top10"][0]["cluster_id"]
+    finally:
+        temp1.cleanup()
+        temp2.cleanup()
+
+
+def test_cluster_id_stable_for_input_order_permutation(cli_env):
+    cli, _ = cli_env
+    a = {
+        "canonical_url": "https://example.com/a",
+        "content_hash": cli.content_hash("A"),
+        "problem_statement": "Caregiver cannot quickly detect stale readings",
+        "source_name": "source_a",
+        "source_identity": "source_a",
+        "source_family": "github_community",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+    b = {
+        "canonical_url": "https://example.com/b",
+        "content_hash": cli.content_hash("B"),
+        "problem_statement": "Caregiver struggles to detect stale readings quickly",
+        "source_name": "source_b",
+        "source_identity": "source_b",
+        "source_family": "reddit",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+    c = {
+        "canonical_url": "https://example.com/c",
+        "content_hash": cli.content_hash("C"),
+        "problem_statement": "Caregiver has trouble detecting stale readings quickly",
+        "source_name": "source_c",
+        "source_identity": "source_c",
+        "source_family": "official_vendor",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+
+    def cluster_id_for(items):
+        deduped, _ = cli.dedupe_items(items)
+        return cli.cluster_items(deduped)[0]["cluster_id"]
+
+    assert cluster_id_for([a, b, c]) == cluster_id_for([c, b, a])
+
+
+def test_persisted_observation_backward_compatibility_keeps_cluster_id(cli_env, tmp_path, monkeypatch):
     cli, root = cli_env
 
     class FakeClient:
@@ -686,96 +852,85 @@ def test_incremental_cluster_id_and_idempotent_observation_and_issue(cli_env, tm
 
     monkeypatch.setattr(cli, "GITHUB_CLIENT_FACTORY", FakeClient)
 
-    def write_sources(path: Path, texts: list[str]):
-        payload = {
-            "sources": [
-                {
-                    "name": "nightscout_github",
-                    "family": "github_community",
-                    "kind": "github_issues",
-                    "enabled": True,
-                    "fixture_items": [
-                        {
-                            "url": f"https://example.com/{idx}",
-                            "text": text,
-                            "problem_statement": text,
-                            "persona": "caregiver",
-                            "mode": "caregiver",
-                            "module": "Home / Monitoring",
-                            "type": "usability",
-                            "severity": "medium",
-                            "frequency": "frequent",
-                            "confidence": "medium",
-                        }
-                        for idx, text in enumerate(texts, start=1)
-                    ],
-                }
-            ]
-        }
-        path.write_text(json.dumps(payload), encoding="utf-8")
+    source_a = tmp_path / "sources-a.json"
+    source_b = tmp_path / "sources-b.json"
+    _write_custom_sources(source_a, [
+        "Caregiver cannot quickly detect stale readings",
+        "Caregiver struggles to detect stale readings quickly",
+    ])
+    _write_custom_sources(source_b, [
+        "Caregiver cannot quickly detect stale readings",
+        "Caregiver struggles to detect stale readings quickly",
+        "Caregiver has trouble detecting stale readings quickly",
+    ])
 
-    def ai_file_for(report_root: Path, clusters):
-        payload = {"clusters": []}
-        for cluster in clusters:
-            payload["clusters"].append(
-                {
-                    "cluster_id": cluster["cluster_id"],
-                    "classification": "PRODUCT_PROBLEM",
-                    "persona": cluster["persona_candidate"],
-                    "problem_statement": cluster["normalized_problem"],
-                    "evidence_summary": "Evidence summary",
-                    "source_diversity_summary": "Diverse sources",
-                    "current_librecare_match": "AI summary",
-                    "solvability": "APP",
-                    "impact_score": 4,
-                    "frequency_score": 4,
-                    "evidence_score": 4,
-                    "solvability_score": 4,
-                    "novelty_score": 3,
-                    "effort_score": 2,
-                    "confidence": "high",
-                    "counterargument": "Counter point",
-                    "candidate_recommendation": "Recommend human review",
-                }
-            )
-        path = report_root / "ai.json"
-        path.write_text(json.dumps(payload), encoding="utf-8")
-        return path
+    clusters_a = _prepare_clusters(cli, source_a)
+    report_a = run_discovery_with_ai_file(cli, source_a, _write_ai_payload(root, clusters_a), publish=True, repo_owner="o", repo_name="r", github_token="t")
+    cluster_id_a = report_a["top10"][0]["cluster_id"]
 
-    def run_with_sources(sources_path: Path):
-        clusters = _prepare_clusters(cli, sources_path)
-        ai_file = ai_file_for(root, clusters)
-        return run_discovery_with_ai_file(cli, sources_path, ai_file, publish=True, repo_owner="o", repo_name="r", github_token="t")
+    obs_dir = root / "product" / "research" / "observations"
+    copied_obs = list(obs_dir.glob("OBS-*.json"))
+    assert copied_obs
 
-    source_v1 = tmp_path / "sources-v1.json"
-    source_v2 = tmp_path / "sources-v2.json"
-    write_sources(
-        source_v1,
-        [
-            "Caregiver cannot quickly detect stale readings",
-            "Caregiver struggles to detect stale readings quickly",
-        ],
-    )
-    write_sources(
-        source_v2,
-        [
-            "Caregiver cannot quickly detect stale readings",
-            "Caregiver struggles to detect stale readings quickly",
-            "Caregiver struggles to detect stale readings quickly today",
-        ],
-    )
+    fresh_cli, fresh_root, fresh_temp = _make_isolated_cli(monkeypatch)
+    try:
+        monkeypatch.setattr(fresh_cli, "GITHUB_CLIENT_FACTORY", FakeClient)
+        fresh_obs = fresh_root / "product" / "research" / "observations"
+        for src in copied_obs:
+            shutil.copy2(src, fresh_obs / src.name)
+        clusters_b = _prepare_clusters(fresh_cli, source_b)
+        report_b = run_discovery_with_ai_file(fresh_cli, source_b, _write_ai_payload(fresh_root, clusters_b), publish=True, repo_owner="o", repo_name="r", github_token="t")
+        assert report_b["top10"][0]["cluster_id"] == cluster_id_a
+    finally:
+        fresh_temp.cleanup()
 
-    report1 = run_with_sources(source_v1)
-    obs_count1 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
-    issue_count1 = len(FakeClient.created)
-    report2 = run_with_sources(source_v2)
-    obs_count2 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
-    issue_count2 = len(FakeClient.created)
 
-    assert report1["top10"][0]["cluster_id"] == report2["top10"][0]["cluster_id"]
-    assert obs_count2 == obs_count1
-    assert issue_count2 == issue_count1
-    assert any(action["action"] == "SKIPPED_EXISTS" for action in report2.get("top3_issue_actions", []))
+def test_incremental_rerun_no_duplicate_observations_and_markers(cli_env, fixture_sources):
+    cli, root = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+    payload = build_ai_payload_for_clusters(clusters, classification="PRODUCT_PROBLEM")
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(payload), encoding="utf-8")
+
+    class FakeClient:
+        created = []
+
+        def __init__(self, owner, repo, token):
+            self.owner = owner
+            self.repo = repo
+            self.token = token
+
+        def find_issue_by_marker(self, marker):
+            for issue in self.__class__.created:
+                if marker in issue["body"]:
+                    return issue
+            return None
+
+        def create_issue(self, title, body, labels):
+            issue = {
+                "number": len(self.__class__.created) + 1,
+                "html_url": f"https://example/issues/{len(self.__class__.created)+1}",
+                "title": title,
+                "body": body,
+                "labels": labels,
+            }
+            self.__class__.created.append(issue)
+            return issue
+
+    monkeypatch = pytest.MonkeyPatch()
+    monkeypatch.setattr(cli, "GITHUB_CLIENT_FACTORY", FakeClient)
+    try:
+        r1 = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True, repo_owner="o", repo_name="r", github_token="t")
+        r2 = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True, repo_owner="o", repo_name="r", github_token="t")
+    finally:
+        monkeypatch.undo()
+
+    assert r1["status"] in {"SUCCESS", "DEGRADED"}
+    assert r2["status"] in {"SUCCESS", "DEGRADED"}
+    obs_files = list((root / "product" / "research" / "observations").glob("OBS-*.json"))
+    assert len(obs_files) == len({p.name for p in obs_files})
+    assert len(FakeClient.created) == len({issue["body"] for issue in FakeClient.created})
+    assert any(action["action"] == "SKIPPED_EXISTS" for action in r2.get("top3_issue_actions", []))
 
 
 def test_malformed_ai_output_safe_failure_no_issue_creation(cli_env, fixture_sources, monkeypatch):

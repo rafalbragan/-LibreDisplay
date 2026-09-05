@@ -124,6 +124,38 @@ STOPWORDS = {
     "then",
 }
 
+CANONICAL_NOISE_TOKENS = {
+    "has",
+    "have",
+    "had",
+    "doing",
+    "done",
+    "today",
+    "now",
+    "currently",
+    "recently",
+    "just",
+}
+
+CANONICAL_TOKEN_ALIASES = {
+    "cant": "cannot",
+    "struggle": "cannot",
+    "struggles": "cannot",
+    "struggled": "cannot",
+    "trouble": "cannot",
+    "troubles": "cannot",
+    "troubled": "cannot",
+    "unable": "cannot",
+    "difficult": "cannot",
+    "difficulty": "cannot",
+    "detects": "detect",
+    "detected": "detect",
+    "detecting": "detect",
+    "detection": "detect",
+    "readings": "reading",
+    "caregivers": "caregiver",
+}
+
 
 class SourceResult:
     def __init__(self, name: str, family: str, status: str, items: list[dict], detail: str = ""):
@@ -221,6 +253,8 @@ def _normalize_cached_item(item: dict, source_name: str, source_family: str, sou
         "content_hash": normalized["content_hash"],
         "excerpt": _truncate_text(normalized["problem_statement"], MAX_CACHED_EXCERPT_LENGTH),
         "problem_statement": _truncate_text(normalized["problem_statement"], MAX_CACHED_PROBLEM_LENGTH),
+        "canonical_problem_key": normalized["canonical_problem_key"],
+        "canonical_problem_fingerprint": normalized["canonical_problem_fingerprint"],
         "persona": normalized["persona"],
         "mode": normalized["mode"],
         "module": normalized["module"],
@@ -370,6 +404,41 @@ def text_fingerprint(text: str) -> str:
     return hashlib.sha256(" ".join(tokens).encode("utf-8")).hexdigest()[:16]
 
 
+def _stem_canonical_token(token: str) -> str:
+    if len(token) > 6 and token.endswith("ies"):
+        return token[:-3] + "y"
+    if len(token) > 5 and token.endswith("ing"):
+        return token[:-3]
+    if len(token) > 4 and token.endswith("ed"):
+        return token[:-2]
+    if len(token) > 4 and token.endswith("s"):
+        return token[:-1]
+    return token
+
+
+def _canonical_problem_tokens(text: str) -> list[str]:
+    canonical = []
+    for token in tokenize(text):
+        mapped = CANONICAL_TOKEN_ALIASES.get(token, token)
+        mapped = _stem_canonical_token(mapped)
+        if not mapped or mapped in STOPWORDS or mapped in CANONICAL_NOISE_TOKENS:
+            continue
+        if len(mapped) > 2:
+            canonical.append(mapped)
+    return sorted(set(canonical))
+
+
+def canonical_problem_key(text: str) -> str:
+    tokens = _canonical_problem_tokens(text)
+    if not tokens:
+        return text_fingerprint(text)
+    return " ".join(tokens)
+
+
+def canonical_problem_fingerprint(text: str) -> str:
+    return hashlib.sha256(canonical_problem_key(text).encode("utf-8")).hexdigest()[:16]
+
+
 def content_hash(text: str) -> str:
     return hashlib.sha256(text.encode("utf-8")).hexdigest()
 
@@ -498,6 +567,7 @@ def _normalize_item_fields(item: dict, source_name: str, source_family: str, sou
     if not url or not text:
         return None
     problem = _problem_from_text(str(item.get("problem_statement") or text))
+    canonical_key = canonical_problem_key(problem)
     return {
         "canonical_url": url,
         "source_name": source_name,
@@ -508,6 +578,8 @@ def _normalize_item_fields(item: dict, source_name: str, source_family: str, sou
         "content_hash": content_hash(text),
         "excerpt": _truncate_text(_safe_excerpt(text), MAX_CACHED_TEXT_LENGTH),
         "problem_statement": _truncate_text(problem, MAX_CACHED_PROBLEM_LENGTH),
+        "canonical_problem_key": canonical_key,
+        "canonical_problem_fingerprint": canonical_problem_fingerprint(problem),
         "persona": item.get("persona", "caregiver"),
         "mode": item.get("mode", item.get("persona", "caregiver")),
         "module": item.get("module", "Home / Monitoring"),
@@ -791,8 +863,11 @@ def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
             continue
         exact_seen.add(exact_key)
 
-        fp = text_fingerprint(str(item.get("problem_statement") or ""))
+        problem_text = str(item.get("problem_statement") or "")
+        fp = text_fingerprint(problem_text)
         item["problem_fingerprint"] = fp
+        item["canonical_problem_key"] = canonical_problem_key(problem_text)
+        item["canonical_problem_fingerprint"] = canonical_problem_fingerprint(problem_text)
         dup_key = (source_identity, fp)
         if dup_key in normalized_seen_in_source:
             stats["normalized_duplicates"] += 1
@@ -806,7 +881,7 @@ def _cluster_representative_item(items: list[dict]) -> dict:
     return sorted(
         items,
         key=lambda item: (
-            str(item.get("problem_fingerprint") or ""),
+            str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or ""),
             str(item.get("canonical_url") or ""),
             str(item.get("problem_statement") or ""),
         ),
@@ -814,15 +889,23 @@ def _cluster_representative_item(items: list[dict]) -> dict:
 
 
 def _stable_cluster_id_from_items(items: list[dict]) -> str:
-    representative = _cluster_representative_item(items)
-    material = "|".join(
-        [
-            str(representative.get("problem_fingerprint") or ""),
-            str(representative.get("canonical_url") or ""),
-            str(representative.get("problem_statement") or ""),
-            str(representative.get("source_family") or ""),
-        ]
+    canonical_keys = sorted(
+        set(
+            str(item.get("canonical_problem_key") or canonical_problem_key(str(item.get("problem_statement") or "")))
+            for item in items
+            if str(item.get("problem_statement") or "").strip()
+        )
     )
+    material = canonical_keys[0] if canonical_keys else ""
+    if not material:
+        representative = _cluster_representative_item(items)
+        material = "|".join(
+            [
+                str(representative.get("canonical_problem_key") or canonical_problem_key(str(representative.get("problem_statement") or ""))),
+                str(representative.get("canonical_url") or ""),
+                str(representative.get("source_family") or ""),
+            ]
+        )
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
     return f"DISC-{digest}"
 
@@ -895,7 +978,13 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
     for raw in clusters:
         c_items = raw["items"]
         representative = _cluster_representative_item(c_items)
-        problem_fps = [str(representative.get("problem_fingerprint") or "")]
+        problem_fps = sorted(
+            set(
+                str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
+                for item in c_items
+                if str(item.get("problem_statement") or "").strip()
+            )
+        )
         cluster_id = _stable_cluster_id_from_items(c_items)
         if existing_clusters:
             reused_cluster_id = _reuse_existing_cluster_id(
@@ -933,6 +1022,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
             {
                 "cluster_id": cluster_id,
                 "normalized_problem": normalized_problem,
+                "canonical_problem_key": canonical_problem_key(normalized_problem),
                 "persona_candidate": persona,
                 "module_candidate": module,
                 "evidence_items": evidence,

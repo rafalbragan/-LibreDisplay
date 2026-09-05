@@ -24,9 +24,7 @@ jobs:
     permissions:
       contents: read
       issues: write
-      # actionlint disable rule:permissions
       copilot-requests: write
-      # actionlint enable rule:permissions
     steps:
       - name: Checkout master
         uses: actions/checkout@v4

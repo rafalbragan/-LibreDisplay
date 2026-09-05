@@ -1,0 +1,5 @@
+paths:
+  .github/workflows/librecare-discovery.yml:
+    ignore:
+      - 'unknown permission scope "copilot-requests"'
+
