@@ -1808,6 +1808,45 @@ def test_normalize_ai_output_normalizes_scores(cli_env):
     assert normalized["clusters"][0]["effort_score"] == 2
 
 
+def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixture_sources):
+    """Final validator must reject bool score values even in a complete payload."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+    payload = build_ai_payload_for_clusters(clusters)
+    payload["clusters"][0]["impact_score"] = True
+
+    valid, errors = cli.validate_ai_output(payload, clusters)
+    assert valid is False
+    assert any("impact_score must be int 0..5" in err for err in errors)
+
+
+def _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_payload: dict, second_payload: dict):
+    ai_responses = [json.dumps(first_payload), json.dumps(second_payload)]
+    call_count = [0]
+
+    def mock_run_copilot(prompt: str, model: str) -> str:
+        nonlocal call_count
+        call_count[0] += 1
+        return ai_responses[min(call_count[0] - 1, 1)]
+
+    monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
+    report = cli.run_discovery(
+        sources_file=fixture_sources,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="copilot",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=2.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+    )
+    return report
+
+
 def test_ai_retry_on_first_validation_failure(cli_env, fixture_sources, monkeypatch):
     """If first AI payload is invalid, should retry once with repair prompt."""
     cli, root = cli_env
@@ -1907,8 +1946,10 @@ def test_ai_fails_after_two_invalid_attempts(cli_env, fixture_sources, monkeypat
     assert report["status"] == "FAILED"
     # Should have exactly 2 AI calls
     assert report["counts"]["AI_CALLS"] == 2
-    # Observations are created from clusters before AI validation
-    # Top10 should be empty due to failed AI validation
+    # Fail-closed contract: no observations/issues after invalid AI retries
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+    # Top10 should be empty or not eligible due to failed AI validation
     assert len(report["top10"]) == 0 or all(not item.get("eligibility") for item in report["top10"])
 
 
@@ -1956,6 +1997,57 @@ def test_ai_repair_preserves_cluster_ids(cli_env, fixture_sources, monkeypatch):
     # Original cluster IDs preserved
     for row in report["top10"]:
         assert row["cluster_id"].startswith("DISC-")
+
+
+def test_ai_repair_with_unknown_cluster_id_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response with unknown cluster_id must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"][0]["cluster_id"] = "DISC-UNKNOWN-ID"
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_ai_repair_with_missing_cluster_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response missing one expected cluster must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"] = second_bad["clusters"][:-1]
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_ai_repair_with_duplicate_additional_cluster_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response with duplicated/additional cluster row must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"].append(dict(second_bad["clusters"][0]))
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
 
 
 def test_workflow_artifact_upload_with_if_always():

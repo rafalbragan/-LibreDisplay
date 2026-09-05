@@ -1632,6 +1632,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
 
     expected_ids = {c["cluster_id"] for c in clusters}
     got_ids = set()
+    seen_ids: dict[str, int] = {}
     required = {
         "cluster_id",
         "classification",
@@ -1652,6 +1653,9 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         "candidate_recommendation",
     }
 
+    if len(entries) != len(clusters):
+        errors.append(f"AI payload cluster count mismatch: expected {len(clusters)}, got {len(entries)}")
+
     for idx, row in enumerate(entries):
         if not isinstance(row, dict):
             errors.append(f"clusters[{idx}] is not an object")
@@ -1661,6 +1665,9 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             errors.append(f"clusters[{idx}] missing fields: {missing}")
             continue
         cid = str(row["cluster_id"])
+        seen_ids[cid] = seen_ids.get(cid, 0) + 1
+        if seen_ids[cid] > 1:
+            errors.append(f"clusters[{idx}] duplicate cluster_id: {cid}")
         got_ids.add(cid)
         if cid not in expected_ids:
             errors.append(f"clusters[{idx}] unknown cluster_id: {cid}")
@@ -1679,7 +1686,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             "effort_score",
         ]:
             val = row.get(score_key)
-            if not isinstance(val, int) or val < 0 or val > 5:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 5:
                 errors.append(f"clusters[{idx}] {score_key} must be int 0..5")
 
     missing_cluster_ids = expected_ids - got_ids
@@ -1980,8 +1987,6 @@ def run_discovery(
         c["foundation_match"] = match_cluster_to_foundation(c, foundation)
 
     created_observations = []
-    if status != "FAILED":
-        created_observations = create_observations_from_clusters(clusters, run_id)
 
     if ai_mode == "copilot" and ai_model != "gpt-5.4-mini":
         status = "FAILED"
@@ -2082,6 +2087,9 @@ def run_discovery(
 
     governed_rows.sort(key=lambda r: (-r["score"], r["cluster"]["cluster_id"]))
     top10 = governed_rows[:10]
+
+    if status != "FAILED":
+        created_observations = create_observations_from_clusters(clusters, run_id)
 
     created_issues = []
     if status != "FAILED" and publish_top3_flag and top10:
