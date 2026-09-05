@@ -379,9 +379,21 @@ def load_cluster_registry(path: Path = DISCOVERY_CLUSTER_REGISTRY_PATH) -> dict:
     if not path.exists():
         return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
     try:
-        return _cluster_registry_payload(read_json(path))
-    except Exception:
-        return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
+        payload = read_json(path)
+        cleaned = _cluster_registry_payload(payload)
+        version = cleaned.get("version")
+        if version != CLUSTER_REGISTRY_VERSION:
+            raise ValueError(f"Unsupported registry version: {version}. Expected {CLUSTER_REGISTRY_VERSION}.")
+        return cleaned
+    except ValueError as ve:
+        # Only re-raise ValueError that we explicitly raised above (version check)
+        # Do NOT re-raise JSONDecodeError which is a subclass of ValueError
+        if "Unsupported registry version" in str(ve):
+            raise
+        # All other errors (including JSONDecodeError) should be wrapped
+        raise RuntimeError(f"Failed to load cluster registry from {path}: {ve}") from ve
+    except Exception as e:
+        raise RuntimeError(f"Failed to load cluster registry from {path}: {e}") from e
 
 
 def _deterministic_cluster_id_for_key(canonical_problem_key: str, persona: str, module: str) -> str:
@@ -1755,13 +1767,38 @@ def run_discovery(
     # Build logical clusters without identity reuse first; stateful registry assigns final stable IDs.
     clusters = cluster_items(deduped_items)
     observation_clusters = _existing_cluster_matches()
-    cluster_registry = load_cluster_registry(DISCOVERY_CLUSTER_REGISTRY_PATH)
-    clusters, registry_summary, proposed_registry = resolve_cluster_ids_with_registry(
-        clusters,
-        cluster_registry,
-        now_iso=utc_now(),
-        observation_clusters=observation_clusters,
-    )
+
+    cluster_registry = None
+    registry_summary = {
+        "existing_entries": 0,
+        "matched_existing": 0,
+        "new_entries": 0,
+        "ambiguous_matches": [],
+        "changed": False,
+    }
+    proposed_registry = {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
+
+    try:
+        cluster_registry = load_cluster_registry(DISCOVERY_CLUSTER_REGISTRY_PATH)
+    except RuntimeError as exc:
+        status = "FAILED"
+        errors.append(f"Registry load failed (fail-closed): {exc}")
+        cluster_registry = None
+
+    if cluster_registry is not None:
+        clusters, registry_summary, proposed_registry = resolve_cluster_ids_with_registry(
+            clusters,
+            cluster_registry,
+            now_iso=utc_now(),
+            observation_clusters=observation_clusters,
+        )
+    else:
+        # Registry is unavailable; prevent inbox publication
+        for cluster in clusters:
+            cluster["identity_ambiguous"] = True
+            cluster["identity_ambiguous_candidates"] = [
+                {"cluster_id": cluster["cluster_id"], "score": 0.0},
+            ]
 
     foundation = load_foundation_index()
     for c in clusters:
