@@ -83,7 +83,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          cat bug-ai-prompt.json | copilot \
+          copilot \
             -s \
             --no-ask-user \
             --disable-builtin-mcps \
@@ -91,6 +91,7 @@ jobs:
             --allow-tool='read' \
             --deny-tool='write' \
             --deny-tool='shell' \
+            < bug-ai-prompt.json \
             > bug-ai-review-raw.txt
 
       - name: Apply bug AI triage with deterministic governance
