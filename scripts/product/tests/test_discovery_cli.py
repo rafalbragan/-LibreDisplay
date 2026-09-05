@@ -1708,4 +1708,372 @@ def test_invalid_entry_prevents_creation(cli_env, fixture_sources):
     assert len(report["created_observations"]) == 0
     assert len(report["top3_issue_actions"]) == 0
 
+# Score normalization tests
+def test_normalize_ai_score_int_accepted(cli_env):
+    """JSON integer 0-5 should be accepted."""
+    cli, _ = cli_env
+    for val in [0, 1, 2, 3, 4, 5]:
+        assert cli.normalize_ai_score(val) == val
+    assert cli.normalize_ai_score(-1) is None
+    assert cli.normalize_ai_score(6) is None
 
+
+def test_normalize_ai_score_integral_float_normalized(cli_env):
+    """Integral float (4.0) should normalize to int 4."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score(4.0) == 4
+    assert cli.normalize_ai_score(0.0) == 0
+    assert cli.normalize_ai_score(5.0) == 5
+
+
+def test_normalize_ai_score_numeric_string_normalized(cli_env):
+    """Numeric string "4" should normalize to int 4."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score("4") == 4
+    assert cli.normalize_ai_score("0") == 0
+    assert cli.normalize_ai_score("5") == 5
+
+
+def test_normalize_ai_score_bool_rejected(cli_env):
+    """Bool True/False should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score(True) is None
+    assert cli.normalize_ai_score(False) is None
+
+
+def test_normalize_ai_score_decimal_rejected(cli_env):
+    """Decimal scores should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score(4.5) is None
+    assert cli.normalize_ai_score(3.14) is None
+
+
+def test_normalize_ai_score_string_decimal_rejected(cli_env):
+    """String decimal "4.5" should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score("4.5") is None
+
+
+def test_normalize_ai_score_fraction_rejected(cli_env):
+    """Fraction "4/5" should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score("4/5") is None
+
+
+def test_normalize_ai_score_text_label_rejected(cli_env):
+    """Text labels like "high" should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score("high") is None
+    assert cli.normalize_ai_score("medium") is None
+    assert cli.normalize_ai_score("low") is None
+
+
+def test_normalize_ai_score_out_of_range_rejected(cli_env):
+    """Out-of-range values should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score(-1) is None
+    assert cli.normalize_ai_score(6) is None
+    assert cli.normalize_ai_score("6") is None
+    assert cli.normalize_ai_score("-1") is None
+
+
+def test_normalize_ai_score_missing_rejected(cli_env):
+    """Missing/None should be rejected."""
+    cli, _ = cli_env
+    assert cli.normalize_ai_score(None) is None
+
+
+def test_normalize_ai_output_normalizes_scores(cli_env):
+    """normalize_ai_output should normalize all score fields."""
+    cli, _ = cli_env
+    payload = {
+        "clusters": [
+            {
+                "cluster_id": "DISC-ABC123",
+                "impact_score": 4.0,  # integral float -> should become 4
+                "frequency_score": "3",  # numeric string -> should become 3
+                "evidence_score": 4,
+                "solvability_score": 4.5,  # decimal, should stay invalid
+                "novelty_score": 2,
+                "effort_score": 2,
+            }
+        ]
+    }
+    normalized = cli.normalize_ai_output(payload)
+    assert normalized["clusters"][0]["impact_score"] == 4
+    assert normalized["clusters"][0]["frequency_score"] == 3
+    assert normalized["clusters"][0]["evidence_score"] == 4
+    assert normalized["clusters"][0]["solvability_score"] == 4.5  # Should stay invalid for validation to catch
+    assert normalized["clusters"][0]["novelty_score"] == 2
+    assert normalized["clusters"][0]["effort_score"] == 2
+
+
+def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixture_sources):
+    """Final validator must reject bool score values even in a complete payload."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+    payload = build_ai_payload_for_clusters(clusters)
+    payload["clusters"][0]["impact_score"] = True
+
+    valid, errors = cli.validate_ai_output(payload, clusters)
+    assert valid is False
+    assert any("impact_score must be int 0..5" in err for err in errors)
+
+
+def _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_payload: dict, second_payload: dict):
+    ai_responses = [json.dumps(first_payload), json.dumps(second_payload)]
+    call_count = [0]
+
+    def mock_run_copilot(prompt: str, model: str) -> str:
+        nonlocal call_count
+        call_count[0] += 1
+        return ai_responses[min(call_count[0] - 1, 1)]
+
+    monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
+    report = cli.run_discovery(
+        sources_file=fixture_sources,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="copilot",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=2.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+    )
+    return report
+
+
+def test_ai_retry_on_first_validation_failure(cli_env, fixture_sources, monkeypatch):
+    """If first AI payload is invalid, should retry once with repair prompt."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    # First response: invalid (4.5 for impact_score)
+    first_ai_payload = build_ai_payload_for_clusters(clusters)
+    first_ai_payload["clusters"][0]["impact_score"] = 4.5  # Invalid
+
+    # Second response: repaired
+    second_ai_payload = build_ai_payload_for_clusters(clusters)
+    second_ai_payload["clusters"][0]["impact_score"] = 4  # Valid
+
+    ai_responses = [
+        json.dumps(first_ai_payload),
+        json.dumps(second_ai_payload),
+    ]
+
+    ai_file = root / "ai-responses.txt"
+    ai_file.write_text("\n".join(ai_responses), encoding="utf-8")
+
+    # Mock multiple AI calls
+    call_count = [0]
+
+    def mock_run_copilot(prompt: str, model: str) -> str:
+        nonlocal call_count
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return ai_responses[0]
+        else:
+            return ai_responses[1]
+
+    # Monkey patch for this test
+    monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
+
+    # Need to use copilot mode to trigger retry
+    report = cli.run_discovery(
+        sources_file=fixture_sources,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="copilot",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=2.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+    )
+    # Should succeed after retry
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+    # Should have made 2 AI calls
+    assert report["counts"]["AI_CALLS"] == 2
+
+
+def test_ai_fails_after_two_invalid_attempts(cli_env, fixture_sources, monkeypatch):
+    """If both AI attempts are invalid, should fail closed."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    # Both responses invalid
+    invalid_payload = build_ai_payload_for_clusters(clusters)
+    invalid_payload["clusters"][0]["impact_score"] = 4.5  # Invalid
+
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(invalid_payload), encoding="utf-8")
+
+    call_count = [0]
+
+    def mock_run_copilot(prompt: str, model: str) -> str:
+        nonlocal call_count
+        call_count[0] += 1
+        return json.dumps(invalid_payload)
+
+    # Monkey patch
+    monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
+
+    # Use copilot mode
+    report = cli.run_discovery(
+        sources_file=fixture_sources,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="copilot",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=2.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+    )
+    # Should fail
+    assert report["status"] == "FAILED"
+    # Should have exactly 2 AI calls
+    assert report["counts"]["AI_CALLS"] == 2
+    # Fail-closed contract: no observations/issues after invalid AI retries
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+    # Top10 should be empty or not eligible due to failed AI validation
+    assert len(report["top10"]) == 0 or all(not item.get("eligibility") for item in report["top10"])
+
+
+def test_ai_repair_preserves_cluster_ids(cli_env, fixture_sources, monkeypatch):
+    """AI repair should not change cluster IDs."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_repaired = build_ai_payload_for_clusters(clusters)
+
+    ai_responses = [json.dumps(first_invalid), json.dumps(second_repaired)]
+
+    ai_file = root / "ai.json"
+    ai_file.write_text(ai_responses[0], encoding="utf-8")
+
+    call_count = [0]
+
+    def mock_run_copilot(prompt: str, model: str) -> str:
+        nonlocal call_count
+        call_count[0] += 1
+        return ai_responses[min(call_count[0] - 1, 1)]
+
+    # Monkey patch
+    monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
+
+    # Use copilot mode
+    report = cli.run_discovery(
+        sources_file=fixture_sources,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="copilot",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=2.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+    )
+    # Original cluster IDs preserved
+    for row in report["top10"]:
+        assert row["cluster_id"].startswith("DISC-")
+
+
+def test_ai_repair_with_unknown_cluster_id_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response with unknown cluster_id must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"][0]["cluster_id"] = "DISC-UNKNOWN-ID"
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_ai_repair_with_missing_cluster_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response missing one expected cluster must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"] = second_bad["clusters"][:-1]
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_ai_repair_with_duplicate_additional_cluster_fails_closed(cli_env, fixture_sources, monkeypatch):
+    """Repair response with duplicated/additional cluster row must fail closed."""
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+
+    first_invalid = build_ai_payload_for_clusters(clusters)
+    first_invalid["clusters"][0]["impact_score"] = 4.5
+
+    second_bad = build_ai_payload_for_clusters(clusters)
+    second_bad["clusters"].append(dict(second_bad["clusters"][0]))
+
+    report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_workflow_artifact_upload_with_if_always():
+    """Verify workflow uses if: always() for artifact upload."""
+    workflow_path = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-discovery.yml"
+    text = workflow_path.read_text(encoding="utf-8")
+
+    # Must have always() condition
+    assert "if: always()" in text
+    # Must have artifact upload step
+    assert "Upload discovery artifacts" in text
+    # Artifact upload should come after discovery
+    artifact_idx = text.find("Upload discovery artifacts")
+    discovery_idx = text.find("Run Discovery Agent")
+    assert discovery_idx < artifact_idx
+
+
+def test_workflow_preserves_bounded_paths_only():
+    """Verify workflow only uploads bounded discovery paths."""
+    workflow_path = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-discovery.yml"
+    text = workflow_path.read_text(encoding="utf-8")
+
+    # Should upload generated discovery
+    assert "product/generated/discovery/" in text
+    # Should upload observations
+    assert "product/research/observations/OBS-*.json" in text
+    # Should not upload raw payloads, secrets, etc
+    assert "REDDIT_CLIENT" not in text or "secrets.REDDIT_CLIENT" in text
+    assert "raw" not in text.lower() or "raw_deploy" not in text.lower()

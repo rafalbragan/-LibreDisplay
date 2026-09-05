@@ -57,6 +57,7 @@ jobs:
           copilot --help >/dev/null
 
       - name: Run Discovery Agent
+        id: discovery
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REDDIT_CLIENT_ID: ${{ secrets.REDDIT_CLIENT_ID }}
@@ -73,11 +74,13 @@ jobs:
             ${{ inputs.publish_top3 && '--publish-top3' || '' }}
 
       - name: Validate Product Foundation
+        if: always()
         run: |
           python scripts/product/product_cli.py validate
           python scripts/product/product_cli.py summary
 
       - name: Upload discovery artifacts
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: librecare-discovery-${{ github.run_id }}
@@ -85,5 +88,3 @@ jobs:
           path: |
             product/generated/discovery/
             product/research/observations/OBS-*.json
-
-

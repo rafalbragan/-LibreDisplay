@@ -1424,12 +1424,75 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
             "classification_enum": sorted(CLASSIFICATIONS),
             "solvability_enum": sorted(SOLVABILITY_VALUES),
             "confidence_enum": sorted(CONFIDENCE_VALUES),
+            "score_fields": {
+                "impact_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+                "frequency_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+                "evidence_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+                "solvability_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+                "novelty_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+                "effort_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
+            },
+            "score_example": {
+                "example_entry": {
+                    "cluster_id": "DISC-ABC123",
+                    "impact_score": 4,
+                    "frequency_score": 3,
+                    "evidence_score": 4,
+                    "solvability_score": 4,
+                    "novelty_score": 2,
+                    "effort_score": 2,
+                }
+            },
         },
         "constraints": [
             "Return JSON only.",
             "Problem statement must describe problem, not solution.",
             "Exactly one classification per cluster.",
             "Do not accept requirements or start implementation.",
+            "CRITICAL: Score fields (impact_score, frequency_score, evidence_score, solvability_score, novelty_score, effort_score) MUST be JSON integers in the range 0-5. Do NOT use decimals (e.g., 4.5), text (e.g., 'high'), fractions (e.g., '4/5'), or ranges (e.g., '3-4'). Each score must be exactly one of: 0, 1, 2, 3, 4, 5.",
+        ],
+        "clusters": compact,
+    }
+    return json.dumps(payload, ensure_ascii=False, indent=2)
+
+
+def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors: list[str], original_payload: dict, model: str) -> str:
+    """Build a repair prompt for schema validation failures. Only for correcting schema, not analytical content."""
+    compact = []
+    for c in clusters:
+        compact.append(
+            {
+                "cluster_id": c["cluster_id"],
+                "normalized_problem": c["normalized_problem"],
+                "persona_candidate": c["persona_candidate"],
+                "module_candidate": c["module_candidate"],
+            }
+        )
+
+    payload = {
+        "task": "Repair LibreCare AI cluster analysis. SCHEMA REPAIR ONLY.",
+        "run_id": run_id,
+        "model": model,
+        "instruction": "Your previous analysis had schema errors below. Return the COMPLETE corrected clusters array using the exact same cluster_ids and analytical content, but with valid schema values. Do NOT add/remove clusters or change analytical intent.",
+        "validation_errors": validation_errors[:10],  # Show first 10 errors
+        "original_payload": original_payload,
+        "score_requirements": {
+            "impact_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+            "frequency_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+            "evidence_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+            "solvability_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+            "novelty_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+            "effort_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+        },
+        "constraints": [
+            "Return JSON object with 'clusters' array only.",
+            "Preserve all cluster_ids from original analysis.",
+            "Preserve analytical intent (problem_statement, classification, etc).",
+            "Fix ONLY the schema violations listed in validation_errors.",
+            "Do NOT change cluster membership or add/remove clusters.",
+            "Do NOT make new product decisions.",
+            "Do NOT start implementation.",
+            "Score fields MUST be JSON integers 0-5.",
         ],
         "clusters": compact,
     }
@@ -1476,6 +1539,89 @@ def extract_json_object(raw: str) -> dict:
         return json.loads(match.group(0))
 
 
+def normalize_ai_score(val) -> int | None:
+    """
+    Normalize score values deterministically.
+
+    Accepts and normalizes to int 0-5:
+    - JSON int: 4 -> 4
+    - integral JSON float: 4.0 -> 4
+    - numeric string: "4" -> 4
+
+    Rejects and returns None:
+    - bool (True/False)
+    - decimals (4.5, "4.5")
+    - fractions ("4/5")
+    - text labels ("high")
+    - ranges ("3-4")
+    - null/None
+    - missing
+    - out of range
+
+    Returns int 0-5 if valid, None if invalid.
+    """
+    if val is None:
+        return None
+
+    # Reject bool explicitly (before int check since bool is int subclass)
+    if isinstance(val, bool):
+        return None
+
+    # Accept JSON int
+    if isinstance(val, int):
+        if 0 <= val <= 5:
+            return val
+        return None
+
+    # Accept integral float (4.0)
+    if isinstance(val, float):
+        if val == int(val) and 0 <= int(val) <= 5:
+            return int(val)
+        return None
+
+    # Accept numeric string containing single digit 0-5
+    if isinstance(val, str):
+        val_stripped = val.strip()
+        # Must be exactly 1 character and a digit 0-5
+        if len(val_stripped) == 1 and val_stripped in "012345":
+            return int(val_stripped)
+        return None
+
+    # Reject everything else
+    return None
+
+
+def normalize_ai_output(payload: dict) -> dict:
+    """Normalize AI output score fields deterministically. Returns modified payload."""
+    if not isinstance(payload, dict):
+        return payload
+    entries = payload.get("clusters")
+    if not isinstance(entries, list):
+        return payload
+
+    score_keys = [
+        "impact_score",
+        "frequency_score",
+        "evidence_score",
+        "solvability_score",
+        "novelty_score",
+        "effort_score",
+    ]
+
+    for entry in entries:
+        if not isinstance(entry, dict):
+            continue
+        for key in score_keys:
+            if key in entry:
+                normalized = normalize_ai_score(entry[key])
+                if normalized is not None:
+                    entry[key] = normalized
+                # If normalization failed, leave the invalid value
+                # so validate_ai_output can report it
+
+    return payload
+
+
 def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[str]]:
     errors = []
     if not isinstance(payload, dict):
@@ -1486,6 +1632,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
 
     expected_ids = {c["cluster_id"] for c in clusters}
     got_ids = set()
+    seen_ids: dict[str, int] = {}
     required = {
         "cluster_id",
         "classification",
@@ -1506,6 +1653,9 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         "candidate_recommendation",
     }
 
+    if len(entries) != len(clusters):
+        errors.append(f"AI payload cluster count mismatch: expected {len(clusters)}, got {len(entries)}")
+
     for idx, row in enumerate(entries):
         if not isinstance(row, dict):
             errors.append(f"clusters[{idx}] is not an object")
@@ -1515,6 +1665,9 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             errors.append(f"clusters[{idx}] missing fields: {missing}")
             continue
         cid = str(row["cluster_id"])
+        seen_ids[cid] = seen_ids.get(cid, 0) + 1
+        if seen_ids[cid] > 1:
+            errors.append(f"clusters[{idx}] duplicate cluster_id: {cid}")
         got_ids.add(cid)
         if cid not in expected_ids:
             errors.append(f"clusters[{idx}] unknown cluster_id: {cid}")
@@ -1533,7 +1686,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             "effort_score",
         ]:
             val = row.get(score_key)
-            if not isinstance(val, int) or val < 0 or val > 5:
+            if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 5:
                 errors.append(f"clusters[{idx}] {score_key} must be int 0..5")
 
     missing_cluster_ids = expected_ids - got_ids
@@ -1834,8 +1987,6 @@ def run_discovery(
         c["foundation_match"] = match_cluster_to_foundation(c, foundation)
 
     created_observations = []
-    if status != "FAILED":
-        created_observations = create_observations_from_clusters(clusters, run_id)
 
     if ai_mode == "copilot" and ai_model != "gpt-5.4-mini":
         status = "FAILED"
@@ -1892,9 +2043,31 @@ def run_discovery(
             errors.append(f"AI output parse failed: {exc}")
             ai_payload = {}
 
+    # Normalize AI scores (deterministic fix for common output issues)
+    if ai_payload and clusters:
+        ai_payload = normalize_ai_output(ai_payload)
+
     governed_rows = []
     if clusters and ai_payload:
         valid, ai_errors = validate_ai_output(ai_payload, clusters)
+        if not valid and ai_mode == "copilot" and ai_calls < 2:
+            # First validation failed; attempt one schema repair
+            try:
+                repair_prompt = build_ai_repair_prompt(run_id, clusters, ai_errors, ai_payload, model=ai_model)
+                repair_raw = run_copilot_json(repair_prompt, model=ai_model)
+                ai_calls += 1
+                # Parse repaired output
+                try:
+                    ai_payload = extract_json_object(repair_raw)
+                    ai_payload = normalize_ai_output(ai_payload)
+                    valid, ai_errors = validate_ai_output(ai_payload, clusters)
+                except Exception as exc:  # noqa: BLE001
+                    errors.append(f"AI repair output parse failed: {exc}")
+                    valid = False
+            except Exception as exc:  # noqa: BLE001
+                errors.append(f"AI repair call failed: {exc}")
+                valid = False
+
         if not valid:
             status = "FAILED"
             errors.extend(ai_errors)
@@ -1914,6 +2087,9 @@ def run_discovery(
 
     governed_rows.sort(key=lambda r: (-r["score"], r["cluster"]["cluster_id"]))
     top10 = governed_rows[:10]
+
+    if status != "FAILED":
+        created_observations = create_observations_from_clusters(clusters, run_id)
 
     created_issues = []
     if status != "FAILED" and publish_top3_flag and top10:
