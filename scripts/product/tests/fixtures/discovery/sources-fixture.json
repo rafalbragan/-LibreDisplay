@@ -3,6 +3,7 @@
     {
       "name": "abbott_official",
       "family": "official_vendor",
+      "kind": "official_pages",
       "enabled": true,
       "fixture_items": [
         {
@@ -22,6 +23,7 @@
     {
       "name": "dexcom_official",
       "family": "competitor",
+      "kind": "official_pages",
       "enabled": true,
       "fixture_items": [
         {
@@ -41,7 +43,9 @@
     {
       "name": "nightscout_github",
       "family": "github_community",
+      "kind": "github_issues",
       "enabled": true,
+      "repos": ["nightscout/cgm-remote-monitor"],
       "fixture_items": [
         {
           "url": "https://github.com/nightscout/cgm-remote-monitor/issues/1",
@@ -60,7 +64,9 @@
     {
       "name": "xdrip_github",
       "family": "github_community",
+      "kind": "github_issues",
       "enabled": true,
+      "repos": ["NightscoutFoundation/xDrip"],
       "fixture_items": [
         {
           "url": "https://github.com/NightscoutFoundation/xDrip/issues/2",
@@ -79,6 +85,7 @@
     {
       "name": "sugarmate_official",
       "family": "competitor",
+      "kind": "official_pages",
       "enabled": true,
       "fixture_items": [
         {
@@ -98,7 +105,9 @@
     {
       "name": "reddit_diabetes",
       "family": "reddit",
+      "kind": "reddit_oauth",
       "enabled": true,
+      "subreddits": ["diabetes"],
       "fixture_items": [
         {
           "url": "https://reddit.com/r/diabetes/comments/example",

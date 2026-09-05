@@ -5,6 +5,7 @@
     {
       "name": "abbott_official",
       "family": "official_vendor",
+      "kind": "official_pages",
       "enabled": true,
       "urls": [
         "https://www.freestyle.abbott/",
@@ -14,6 +15,7 @@
     {
       "name": "dexcom_official",
       "family": "competitor",
+      "kind": "official_pages",
       "enabled": true,
       "urls": [
         "https://www.dexcom.com/",
@@ -23,7 +25,11 @@
     {
       "name": "nightscout_github",
       "family": "github_community",
+      "kind": "github_issues",
       "enabled": true,
+      "repos": [
+        "nightscout/cgm-remote-monitor"
+      ],
       "urls": [
         "https://github.com/nightscout/cgm-remote-monitor/issues"
       ]
@@ -31,7 +37,11 @@
     {
       "name": "xdrip_github",
       "family": "github_community",
+      "kind": "github_issues",
       "enabled": true,
+      "repos": [
+        "NightscoutFoundation/xDrip"
+      ],
       "urls": [
         "https://github.com/NightscoutFoundation/xDrip/issues"
       ]
@@ -39,6 +49,7 @@
     {
       "name": "sugarmate_official",
       "family": "competitor",
+      "kind": "official_pages",
       "enabled": true,
       "urls": [
         "https://sugarmate.io/"
@@ -47,7 +58,12 @@
     {
       "name": "reddit_diabetes",
       "family": "reddit",
+      "kind": "reddit_oauth",
       "enabled": true,
+      "subreddits": [
+        "diabetes",
+        "Type1Diabetes"
+      ],
       "urls": []
     }
   ]

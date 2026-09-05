@@ -1,23 +1,17 @@
 #!/usr/bin/env python3
-"""LibreCare Discovery Agent v1 (deterministic collector + bounded AI analysis).
-
-The Discovery Agent collects compact evidence from configured public sources,
-normalizes and deduplicates data, builds stable clusters, applies a single
-bounded AI analysis pass, and produces ranked Product Inbox candidates.
-
-The agent is advisory-only. It never accepts requirements, never starts
-implementation, and never performs merge operations.
-"""
+"""LibreCare Discovery Agent v1 (deterministic collector + bounded AI analysis)."""
 
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
 import re
 import subprocess
 import sys
+import time
 from datetime import datetime, timezone
 from html import unescape
 from pathlib import Path
@@ -28,6 +22,7 @@ from urllib import request as urllib_request
 
 try:
     import yaml  # type: ignore
+
     HAVE_YAML = True
 except Exception:
     HAVE_YAML = False
@@ -47,6 +42,7 @@ DECISIONS_DIR = PRODUCT / "decisions"
 GENERATED_DISCOVERY_DIR = PRODUCT / "generated" / "discovery"
 VALIDATED_CAPABILITIES_MD = PRODUCT / "generated" / "VALIDATED_CAPABILITIES.md"
 SOURCES_CONFIG_DEFAULT = PRODUCT / "discovery" / "sources.json"
+DISCOVERY_CACHE_PATH = GENERATED_DISCOVERY_DIR / "cache" / "discovery-cache-v1.json"
 
 CLASSIFICATIONS = {
     "VALIDATED_CAPABILITY",
@@ -59,7 +55,6 @@ CLASSIFICATIONS = {
 
 SOLVABILITY_VALUES = {"APP", "ABBOTT_LIMITATION", "EXTERNAL_ONLY", "MIXED"}
 CONFIDENCE_VALUES = {"low", "medium", "high"}
-
 ELIGIBLE_CLASSIFICATIONS = {"PRODUCT_PROBLEM", "PRODUCT_OPPORTUNITY", "SAFETY_GAP"}
 
 SOURCE_FAMILIES = {"official_vendor", "github_community", "reddit", "other_community", "competitor"}
@@ -72,10 +67,146 @@ SOURCE_TYPE_BY_FAMILY = {
 }
 
 STOPWORDS = {
-    "a", "an", "the", "and", "or", "to", "for", "of", "in", "on", "is", "are", "be", "it", "that",
-    "this", "with", "as", "at", "by", "from", "i", "we", "you", "they", "he", "she", "can", "cannot",
-    "nie", "oraz", "dla", "jest", "sie", "się", "jak", "przy", "or", "if", "then",
+    "a",
+    "an",
+    "the",
+    "and",
+    "or",
+    "to",
+    "for",
+    "of",
+    "in",
+    "on",
+    "is",
+    "are",
+    "be",
+    "it",
+    "that",
+    "this",
+    "with",
+    "as",
+    "at",
+    "by",
+    "from",
+    "i",
+    "we",
+    "you",
+    "they",
+    "he",
+    "she",
+    "can",
+    "cannot",
+    "nie",
+    "oraz",
+    "dla",
+    "jest",
+    "sie",
+    "się",
+    "jak",
+    "przy",
+    "if",
+    "then",
 }
+
+
+class SourceResult:
+    def __init__(self, name: str, family: str, status: str, items: list[dict], detail: str = ""):
+        self.name = name
+        self.family = family
+        self.status = status
+        self.items = items
+        self.detail = detail
+
+
+class DiscoveryCache:
+    def __init__(self, path: Path):
+        self.path = path
+        self._data = {"version": 1, "entries": {}}
+        self._load()
+
+    def _load(self) -> None:
+        if not self.path.exists():
+            return
+        try:
+            payload = json.loads(self.path.read_text(encoding="utf-8"))
+            if isinstance(payload, dict) and isinstance(payload.get("entries"), dict):
+                self._data = payload
+        except Exception:
+            # Invalid cache must never break run determinism.
+            self._data = {"version": 1, "entries": {}}
+
+    def get(self, key: str, max_age_seconds: int) -> dict | None:
+        entries = self._data.get("entries", {})
+        row = entries.get(key)
+        if not isinstance(row, dict):
+            return None
+        ts = row.get("cached_at")
+        if not isinstance(ts, (int, float)):
+            return None
+        if time.time() - ts > max(1, max_age_seconds):
+            return None
+        value = row.get("value")
+        return value if isinstance(value, dict) else None
+
+    def put(self, key: str, value: dict) -> None:
+        self._data.setdefault("entries", {})
+        self._data["entries"][key] = {"cached_at": int(time.time()), "value": value}
+
+    def save(self) -> None:
+        self.path.parent.mkdir(parents=True, exist_ok=True)
+        serialized = json.dumps(self._data, ensure_ascii=False, indent=2)
+        # Defensive redaction guard: never persist likely credentials.
+        lowered = serialized.lower()
+        for marker in ["reddit_client_secret", "authorization", "bearer ", "github_token", "client_secret"]:
+            if marker in lowered:
+                raise RuntimeError("Cache serialization blocked: credential-like marker detected")
+        self.path.write_text(serialized + "\n", encoding="utf-8")
+
+
+class GitHubIssueClient:
+    def __init__(self, owner: str, repo: str, token: str):
+        self.owner = owner
+        self.repo = repo
+        self.token = token
+        self.base = f"https://api.github.com/repos/{owner}/{repo}"
+
+    def _request(self, method: str, path: str, payload: dict | None = None):
+        url = f"{self.base}{path}"
+        data = None
+        headers = {
+            "Accept": "application/vnd.github+json",
+            "Authorization": f"Bearer {self.token}",
+            "X-GitHub-Api-Version": "2022-11-28",
+            "User-Agent": "LibreCare-Discovery-Agent/1.0",
+        }
+        if payload is not None:
+            data = json.dumps(payload).encode("utf-8")
+            headers["Content-Type"] = "application/json"
+        req = urllib_request.Request(url, data=data, headers=headers, method=method)
+        with urllib_request.urlopen(req, timeout=20) as resp:
+            body = resp.read().decode("utf-8")
+            return json.loads(body) if body else {}
+
+    def find_issue_by_marker(self, marker: str) -> dict | None:
+        page = 1
+        while page <= 10:
+            issues = self._request("GET", f"/issues?state=all&labels=product-inbox&per_page=100&page={page}")
+            if not isinstance(issues, list) or not issues:
+                return None
+            for issue in issues:
+                if "pull_request" in issue:
+                    continue
+                body = issue.get("body") or ""
+                if marker in body:
+                    return issue
+            page += 1
+        return None
+
+    def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
+        return self._request("POST", "/issues", {"title": title, "body": body, "labels": labels})
+
+
+GITHUB_CLIENT_FACTORY = GitHubIssueClient
 
 
 def utc_now() -> str:
@@ -127,7 +258,6 @@ def canonicalize_url(url: str) -> str:
     path = re.sub(r"/+", "/", parsed.path or "/")
     if path != "/" and path.endswith("/"):
         path = path[:-1]
-
     q = urllib_parse.parse_qsl(parsed.query, keep_blank_values=False)
     kept = []
     for k, v in q:
@@ -151,14 +281,12 @@ def normalize_text(text: str) -> str:
 
 
 def tokenize(text: str) -> list[str]:
-    tokens = [t for t in normalize_text(text).split(" ") if t and t not in STOPWORDS and len(t) > 2]
-    return tokens
+    return [t for t in normalize_text(text).split(" ") if t and t not in STOPWORDS and len(t) > 2]
 
 
 def text_fingerprint(text: str) -> str:
     tokens = sorted(set(tokenize(text)))
-    base = " ".join(tokens)
-    return hashlib.sha256(base.encode("utf-8")).hexdigest()[:16]
+    return hashlib.sha256(" ".join(tokens).encode("utf-8")).hexdigest()[:16]
 
 
 def content_hash(text: str) -> str:
@@ -175,12 +303,6 @@ def jaccard_similarity(a_tokens: set[str], b_tokens: set[str]) -> float:
     return inter / union if union else 0.0
 
 
-def stable_cluster_id(problem_fingerprints: list[str]) -> str:
-    material = "|".join(sorted(problem_fingerprints))
-    digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
-    return f"DISC-{digest}"
-
-
 def _safe_excerpt(text: str, limit: int = 220) -> str:
     cleaned = re.sub(r"\s+", " ", text).strip()
     if len(cleaned) <= limit:
@@ -192,95 +314,28 @@ def _first_sentence(text: str) -> str:
     compact = re.sub(r"\s+", " ", text).strip()
     if not compact:
         return ""
-    match = re.split(r"(?<=[.!?])\s+", compact, maxsplit=1)
-    return match[0]
+    return re.split(r"(?<=[.!?])\s+", compact, maxsplit=1)[0]
 
 
 def _problem_from_text(text: str) -> str:
     sentence = _first_sentence(text)
     if len(sentence) < 24:
         sentence = text
-    sentence = _safe_excerpt(sentence, 180)
-    return sentence
-
-
-class SourceResult:
-    def __init__(self, name: str, family: str, status: str, items: list[dict], detail: str = ""):
-        self.name = name
-        self.family = family
-        self.status = status
-        self.items = items
-        self.detail = detail
-
-
-class GitHubIssueClient:
-    def __init__(self, owner: str, repo: str, token: str):
-        self.owner = owner
-        self.repo = repo
-        self.token = token
-        self.base = f"https://api.github.com/repos/{owner}/{repo}"
-
-    def _request(self, method: str, path: str, payload: dict | None = None):
-        url = f"{self.base}{path}"
-        data = None
-        headers = {
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {self.token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-            "User-Agent": "LibreCare-Discovery-Agent/1.0",
-        }
-        if payload is not None:
-            data = json.dumps(payload).encode("utf-8")
-            headers["Content-Type"] = "application/json"
-        req = urllib_request.Request(url, data=data, headers=headers, method=method)
-        with urllib_request.urlopen(req, timeout=20) as resp:
-            body = resp.read().decode("utf-8")
-            return json.loads(body) if body else {}
-
-    def find_issue_by_marker(self, marker: str) -> dict | None:
-        page = 1
-        while page <= 10:
-            issues = self._request("GET", f"/issues?state=all&labels=product-inbox&per_page=100&page={page}")
-            if not isinstance(issues, list) or not issues:
-                return None
-            for issue in issues:
-                if "pull_request" in issue:
-                    continue
-                body = issue.get("body") or ""
-                if marker in body:
-                    return issue
-            page += 1
-        return None
-
-    def create_issue(self, title: str, body: str, labels: list[str]) -> dict:
-        return self._request("POST", "/issues", {"title": title, "body": body, "labels": labels})
-
-
-GITHUB_CLIENT_FACTORY = GitHubIssueClient
-
-
-def _fetch_url(url: str, timeout: float, retries: int) -> str:
-    headers = {"User-Agent": "LibreCare-Discovery-Agent/1.0 (+public-source-analysis)"}
-    last_err = None
-    for _ in range(max(1, retries)):
-        req = urllib_request.Request(url, headers=headers)
-        try:
-            with urllib_request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-                return raw.decode("utf-8", errors="replace")
-        except Exception as exc:  # noqa: BLE001
-            last_err = exc
-    raise RuntimeError(f"Fetch failed: {url}: {last_err}")
+    return _safe_excerpt(sentence, 180)
 
 
 def _extract_html_text(html: str) -> str:
-    # Compact text extraction: remove scripts/styles and tags.
     text = re.sub(r"<script\b[^>]*>.*?</script>", " ", html, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<style\b[^>]*>.*?</style>", " ", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"<[^>]+>", " ", text)
-    text = unescape(text)
-    text = re.sub(r"\s+", " ", text).strip()
-    return text
+    return re.sub(r"\s+", " ", unescape(text)).strip()
+
+
+def _extract_html_title(html: str) -> str:
+    m = re.search(r"<title[^>]*>(.*?)</title>", html, flags=re.IGNORECASE | re.DOTALL)
+    if not m:
+        return ""
+    return _safe_excerpt(unescape(re.sub(r"\s+", " ", m.group(1))).strip(), 140)
 
 
 def _source_status_for_failure(name: str) -> str:
@@ -292,114 +347,424 @@ def _source_status_for_failure(name: str) -> str:
     return f"{upper}_DEGRADED"
 
 
-def collect_from_source(source: dict, max_items: int, timeout: float, retries: int) -> SourceResult:
+def _bounded_retry_after(resp_headers) -> float:
+    value = ""
+    if resp_headers:
+        value = resp_headers.get("Retry-After", "")
+    try:
+        seconds = float(value)
+    except Exception:
+        seconds = 0.0
+    return max(0.0, min(seconds, 3.0))
+
+
+def _request_bytes(
+    url: str,
+    method: str,
+    timeout: float,
+    retries: int,
+    headers: dict | None = None,
+    data: bytes | None = None,
+) -> bytes:
+    last_exc = None
+    for attempt in range(max(1, retries)):
+        req = urllib_request.Request(url, headers=headers or {}, method=method, data=data)
+        try:
+            with urllib_request.urlopen(req, timeout=timeout) as resp:
+                return resp.read()
+        except urllib_error.HTTPError as exc:
+            last_exc = exc
+            if exc.code == 429 and attempt + 1 < max(1, retries):
+                time.sleep(_bounded_retry_after(exc.headers))
+                continue
+            raise
+        except Exception as exc:  # noqa: BLE001
+            last_exc = exc
+    raise RuntimeError(f"Fetch failed: {url}: {last_exc}")
+
+
+def _fetch_url(url: str, timeout: float, retries: int) -> str:
+    headers = {"User-Agent": "LibreCare-Discovery-Agent/1.0 (+public-source-analysis)"}
+    raw = _request_bytes(url, "GET", timeout=timeout, retries=retries, headers=headers)
+    return raw.decode("utf-8", errors="replace")
+
+
+def _fetch_json(url: str, timeout: float, retries: int, headers: dict | None = None) -> dict | list:
+    merged_headers = {"User-Agent": "LibreCare-Discovery-Agent/1.0 (+public-source-analysis)"}
+    if headers:
+        merged_headers.update(headers)
+    raw = _request_bytes(url, "GET", timeout=timeout, retries=retries, headers=merged_headers)
+    return json.loads(raw.decode("utf-8", errors="replace"))
+
+
+def _post_form_json(url: str, form: dict[str, str], timeout: float, retries: int, headers: dict | None = None) -> dict:
+    merged_headers = {"User-Agent": "LibreCare-Discovery-Agent/1.0 (+public-source-analysis)"}
+    if headers:
+        merged_headers.update(headers)
+    body = urllib_parse.urlencode(form).encode("utf-8")
+    raw = _request_bytes(url, "POST", timeout=timeout, retries=retries, headers=merged_headers, data=body)
+    payload = json.loads(raw.decode("utf-8", errors="replace"))
+    return payload if isinstance(payload, dict) else {}
+
+
+def _cache_key(source_name: str, suffix: str) -> str:
+    return f"{source_name}::{suffix}"
+
+
+def _cache_get_json(cache: DiscoveryCache, key: str, max_age_seconds: int) -> dict | list | None:
+    payload = cache.get(key, max_age_seconds)
+    if not payload:
+        return None
+    value = payload.get("value")
+    if isinstance(value, (dict, list)):
+        return value
+    return None
+
+
+def _cache_put_json(cache: DiscoveryCache, key: str, value: dict | list) -> None:
+    cache.put(key, {"value": value})
+
+
+def _cache_get_text(cache: DiscoveryCache, key: str, max_age_seconds: int) -> str | None:
+    payload = cache.get(key, max_age_seconds)
+    if not payload:
+        return None
+    value = payload.get("value")
+    return value if isinstance(value, str) else None
+
+
+def _cache_put_text(cache: DiscoveryCache, key: str, value: str) -> None:
+    cache.put(key, {"value": value})
+
+
+def _normalize_item_fields(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
+    url = canonicalize_url(str(item.get("url") or item.get("canonical_url") or "").strip())
+    text = str(item.get("text") or "").strip()
+    if not url or not text:
+        return None
+    problem = _problem_from_text(str(item.get("problem_statement") or text))
+    return {
+        "canonical_url": url,
+        "source_name": source_name,
+        "source_family": source_family,
+        "source_identity": source_name,
+        "source_type": source_type,
+        "retrieved_at": utc_now(),
+        "content_hash": content_hash(text),
+        "excerpt": _safe_excerpt(text),
+        "problem_statement": problem,
+        "persona": item.get("persona", "caregiver"),
+        "mode": item.get("mode", item.get("persona", "caregiver")),
+        "module": item.get("module", "Home / Monitoring"),
+        "type": item.get("type", "usability"),
+        "severity": item.get("severity", "medium"),
+        "frequency": item.get("frequency", "occasional"),
+        "confidence": item.get("confidence", "medium"),
+    }
+
+
+def _collect_fixture_items(source: dict, max_items: int) -> list[dict]:
+    source_name = str(source.get("name", "unknown"))
+    source_family = str(source.get("family", "other_community"))
+    source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
+    out: list[dict] = []
+    for raw in (source.get("fixture_items") or [])[:max_items]:
+        item = _normalize_item_fields(raw, source_name, source_family, source_type)
+        if item:
+            out.append(item)
+    return out
+
+
+def _collect_official_pages(source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache, cache_max_age_seconds: int) -> list[dict]:
+    out: list[dict] = []
+    source_name = str(source.get("name", "unknown"))
+    source_family = str(source.get("family", "official_vendor"))
+    source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
+    for idx, raw_url in enumerate(source.get("urls") or []):
+        if idx >= max_items:
+            break
+        canon = canonicalize_url(str(raw_url))
+        key = _cache_key(source_name, f"html:{canon}")
+        html = _cache_get_text(cache, key, cache_max_age_seconds)
+        if html is None:
+            html = _fetch_url(canon, timeout=timeout, retries=retries)
+            _cache_put_text(cache, key, html)
+        title = _extract_html_title(html)
+        plain = _extract_html_text(html)
+        if not plain:
+            continue
+        headline = title or _problem_from_text(plain)
+        text = f"{headline}. {_safe_excerpt(plain, 500)}"
+        item = _normalize_item_fields(
+            {
+                "url": canon,
+                "text": text,
+                "problem_statement": headline,
+                "persona": "caregiver",
+                "mode": "caregiver",
+                "module": "Home / Monitoring",
+                "type": "usability",
+                "severity": "low",
+                "frequency": "unknown",
+                "confidence": "low",
+            },
+            source_name,
+            source_family,
+            source_type,
+        )
+        if item:
+            out.append(item)
+    return out
+
+
+def _collect_github_issues(source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache, cache_max_age_seconds: int) -> list[dict]:
+    out: list[dict] = []
+    source_name = str(source.get("name", "unknown"))
+    source_family = str(source.get("family", "github_community"))
+    source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
+    repos = source.get("repos") or []
+    if not repos:
+        url_guess = ""
+        urls = source.get("urls") or []
+        if urls:
+            url_guess = str(urls[0])
+        match = re.search(r"github\.com/([^/]+)/([^/]+)", url_guess)
+        if match:
+            repos = [f"{match.group(1)}/{match.group(2)}"]
+
+    for repo_full in repos:
+        if len(out) >= max_items:
+            break
+        owner_repo = str(repo_full).strip().strip("/")
+        if "/" not in owner_repo:
+            continue
+        owner, repo = owner_repo.split("/", 1)
+        api_url = f"https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page={min(100, max_items)}"
+        key = _cache_key(source_name, f"gh:{owner_repo}")
+        data = _cache_get_json(cache, key, cache_max_age_seconds)
+        if data is None:
+            headers = {"Accept": "application/vnd.github+json"}
+            data = _fetch_json(api_url, timeout=timeout, retries=retries, headers=headers)
+            _cache_put_json(cache, key, data)
+        if not isinstance(data, list):
+            continue
+        for issue in data:
+            if len(out) >= max_items:
+                break
+            if not isinstance(issue, dict):
+                continue
+            if issue.get("pull_request"):
+                continue
+            issue_url = canonicalize_url(str(issue.get("html_url") or ""))
+            title = str(issue.get("title") or "").strip()
+            body = str(issue.get("body") or "").strip()
+            if not issue_url or not title:
+                continue
+            text = f"{title}. {_safe_excerpt(body, 260)}" if body else title
+            item = _normalize_item_fields(
+                {
+                    "url": issue_url,
+                    "text": text,
+                    "problem_statement": title,
+                    "persona": "caregiver",
+                    "mode": "caregiver",
+                    "module": "Home / Monitoring",
+                    "type": "usability",
+                    "severity": "medium",
+                    "frequency": "unknown",
+                    "confidence": "medium",
+                },
+                source_name,
+                source_family,
+                source_type,
+            )
+            if item:
+                out.append(item)
+    return out
+
+
+def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache, cache_max_age_seconds: int) -> SourceResult:
+    name = str(source.get("name", "reddit"))
+    family = str(source.get("family", "reddit"))
+    if not os.environ.get("REDDIT_CLIENT_ID") or not os.environ.get("REDDIT_CLIENT_SECRET"):
+        return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[])
+
+    cid = os.environ.get("REDDIT_CLIENT_ID", "")
+    secret = os.environ.get("REDDIT_CLIENT_SECRET", "")
+    basic = base64.b64encode(f"{cid}:{secret}".encode("utf-8")).decode("ascii")
+    token_headers = {
+        "Authorization": f"Basic {basic}",
+        "Content-Type": "application/x-www-form-urlencoded",
+    }
+    token_key = _cache_key(name, "reddit-token")
+    token_payload = _cache_get_json(cache, token_key, max_age_seconds=45)
+    if token_payload is None:
+        token_payload = _post_form_json(
+            "https://www.reddit.com/api/v1/access_token",
+            {"grant_type": "client_credentials"},
+            timeout=timeout,
+            retries=retries,
+            headers=token_headers,
+        )
+        _cache_put_json(cache, token_key, token_payload)
+
+    access_token = ""
+    if isinstance(token_payload, dict):
+        access_token = str(token_payload.get("access_token") or "")
+    if not access_token:
+        return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[], detail="oauth_token_missing")
+
+    subreddits = source.get("subreddits") or ["diabetes", "Type1Diabetes"]
+    out: list[dict] = []
+    for sub in subreddits:
+        if len(out) >= max_items:
+            break
+        limit = min(50, max_items - len(out))
+        endpoint = f"https://oauth.reddit.com/r/{sub}/new?limit={limit}&raw_json=1"
+        key = _cache_key(name, f"reddit:{sub}")
+        data = _cache_get_json(cache, key, max_age_seconds=cache_max_age_seconds)
+        if data is None:
+            headers = {"Authorization": f"Bearer {access_token}"}
+            data = _fetch_json(endpoint, timeout=timeout, retries=retries, headers=headers)
+            _cache_put_json(cache, key, data)
+        posts = []
+        if isinstance(data, dict):
+            posts = ((data.get("data") or {}).get("children") or [])
+        for post in posts:
+            if len(out) >= max_items:
+                break
+            if not isinstance(post, dict):
+                continue
+            pdata = post.get("data") or {}
+            title = str(pdata.get("title") or "").strip()
+            selftext = str(pdata.get("selftext") or "").strip()
+            permalink = str(pdata.get("permalink") or "").strip()
+            if not title or not permalink:
+                continue
+            url = canonicalize_url(f"https://www.reddit.com{permalink}")
+            text = f"{title}. {_safe_excerpt(selftext, 240)}" if selftext else title
+            item = _normalize_item_fields(
+                {
+                    "url": url,
+                    "text": text,
+                    "problem_statement": title,
+                    "persona": "caregiver",
+                    "mode": "caregiver",
+                    "module": "Home / Monitoring",
+                    "type": "usability",
+                    "severity": "medium",
+                    "frequency": "occasional",
+                    "confidence": "low",
+                },
+                name,
+                family,
+                SOURCE_TYPE_BY_FAMILY.get(family, "community"),
+            )
+            if item:
+                out.append(item)
+
+    return SourceResult(name=name, family=family, status="OK" if out else "EMPTY", items=out)
+
+
+def collect_from_source(
+    source: dict,
+    max_items: int,
+    timeout: float,
+    retries: int,
+    cache: DiscoveryCache | None = None,
+    cache_max_age_seconds: int = 21600,
+) -> SourceResult:
     name = str(source.get("name", "unknown"))
     family = str(source.get("family", "other_community"))
     if family not in SOURCE_FAMILIES:
         return SourceResult(name=name, family=family, status="INVALID_SOURCE_FAMILY", items=[])
-
     if source.get("enabled") is False:
         return SourceResult(name=name, family=family, status="DISABLED", items=[])
 
-    if family == "reddit":
-        if not os.environ.get("REDDIT_CLIENT_ID") or not os.environ.get("REDDIT_CLIENT_SECRET"):
-            return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[])
+    fixture_items = _collect_fixture_items(source, max_items=max_items)
+    if fixture_items:
+        return SourceResult(name=name, family=family, status="OK", items=fixture_items)
 
-    fixture_items = source.get("fixture_items") or []
-    items: list[dict] = []
+    local_cache = cache or DiscoveryCache(DISCOVERY_CACHE_PATH)
 
-    for fixture in fixture_items[:max_items]:
-        url = canonicalize_url(str(fixture.get("url", "")))
-        text = str(fixture.get("text", "")).strip()
-        if not url or not text:
-            continue
-        items.append({
-            "canonical_url": url,
-            "source_name": name,
-            "source_family": family,
-            "source_type": SOURCE_TYPE_BY_FAMILY.get(family, "community"),
-            "retrieved_at": utc_now(),
-            "content_hash": content_hash(text),
-            "excerpt": _safe_excerpt(text),
-            "problem_statement": _problem_from_text(fixture.get("problem_statement") or text),
-            "persona": fixture.get("persona", "caregiver"),
-            "mode": fixture.get("mode", fixture.get("persona", "caregiver")),
-            "module": fixture.get("module", "Home / Monitoring"),
-            "type": fixture.get("type", "usability"),
-            "severity": fixture.get("severity", "medium"),
-            "frequency": fixture.get("frequency", "occasional"),
-            "confidence": fixture.get("confidence", "medium"),
-        })
+    kind = str(source.get("kind") or "").strip().lower()
+    if not kind:
+        if family == "reddit":
+            kind = "reddit_oauth"
+        elif "github" in name:
+            kind = "github_issues"
+        else:
+            kind = "official_pages"
 
-    urls = source.get("urls") or []
-    if items:
-        return SourceResult(name=name, family=family, status="OK", items=items)
-
-    # Bounded, lightweight fetch from configured URLs when no fixture items are provided.
-    fetched = 0
-    for url in urls:
-        if fetched >= max_items:
-            break
-        canon = canonicalize_url(str(url))
-        try:
-            body = _fetch_url(canon, timeout=timeout, retries=retries)
-        except Exception as exc:  # noqa: BLE001
-            return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=str(exc))
-        text = _extract_html_text(body)
-        if not text:
-            continue
-        items.append({
-            "canonical_url": canon,
-            "source_name": name,
-            "source_family": family,
-            "source_type": SOURCE_TYPE_BY_FAMILY.get(family, "community"),
-            "retrieved_at": utc_now(),
-            "content_hash": content_hash(text),
-            "excerpt": _safe_excerpt(text),
-            "problem_statement": _problem_from_text(text),
-            "persona": "caregiver",
-            "mode": "caregiver",
-            "module": "Home / Monitoring",
-            "type": "usability",
-            "severity": "low",
-            "frequency": "unknown",
-            "confidence": "low",
-        })
-        fetched += 1
-
-    status = "OK" if items else "EMPTY"
-    return SourceResult(name=name, family=family, status=status, items=items)
+    try:
+        if kind == "reddit_oauth":
+            return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
+        if kind == "github_issues":
+            items = _collect_github_issues(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
+            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items)
+        if kind == "official_pages":
+            items = _collect_official_pages(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
+            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items)
+        return SourceResult(name=name, family=family, status="INVALID_SOURCE_KIND", items=[])
+    except Exception as exc:  # noqa: BLE001
+        return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=str(exc))
 
 
 def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
     exact_seen = set()
-    text_seen = set()
-    output = []
+    normalized_seen_in_source = set()
+    out = []
     stats = {"exact_duplicates": 0, "normalized_duplicates": 0}
     for item in items:
-        exact_key = (item.get("canonical_url"), item.get("content_hash"))
+        source_identity = str(item.get("source_identity") or item.get("source_name") or "unknown")
+        exact_key = (source_identity, item.get("canonical_url"), item.get("content_hash"))
         if exact_key in exact_seen:
             stats["exact_duplicates"] += 1
             continue
         exact_seen.add(exact_key)
-        fp = text_fingerprint(item.get("problem_statement", ""))
+
+        fp = text_fingerprint(str(item.get("problem_statement") or ""))
         item["problem_fingerprint"] = fp
-        if fp in text_seen:
+        dup_key = (source_identity, fp)
+        if dup_key in normalized_seen_in_source:
             stats["normalized_duplicates"] += 1
             continue
-        text_seen.add(fp)
-        output.append(item)
-    return output, stats
+        normalized_seen_in_source.add(dup_key)
+        out.append(item)
+    return out, stats
 
 
-def cluster_items(items: list[dict], threshold: float = 0.58) -> list[dict]:
-    clusters = []
+def _stable_cluster_id_from_items(items: list[dict]) -> str:
+    token_counts: dict[str, int] = {}
+    for item in items:
+        for tok in set(tokenize(str(item.get("problem_statement") or ""))):
+            token_counts[tok] = token_counts.get(tok, 0) + 1
+
+    threshold = 2 if len(items) >= 2 else 1
+    anchor_tokens = sorted([t for t, c in token_counts.items() if c >= threshold])
+    if not anchor_tokens:
+        anchor_tokens = sorted(token_counts.keys())
+    if not anchor_tokens:
+        # Final fallback keeps determinism while staying content-derived.
+        fps = sorted(str(it.get("problem_fingerprint") or "") for it in items)
+        anchor_tokens = [x for x in fps if x]
+
+    material = " ".join(anchor_tokens)
+    digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
+    return f"DISC-{digest}"
+
+
+def cluster_items(items: list[dict], threshold: float = 0.40) -> list[dict]:
+    clusters: list[dict] = []
     for item in sorted(items, key=lambda i: (i.get("problem_fingerprint", ""), i.get("canonical_url", ""))):
-        tokens = set(tokenize(item.get("problem_statement", "")))
+        tokens = set(tokenize(str(item.get("problem_statement") or "")))
         placed = False
         for cluster in clusters:
-            sim = jaccard_similarity(tokens, cluster["token_union"])
-            if sim >= threshold:
+            best_sim = 0.0
+            for existing in cluster["items"]:
+                existing_tokens = set(tokenize(str(existing.get("problem_statement") or "")))
+                best_sim = max(best_sim, jaccard_similarity(tokens, existing_tokens))
+            if best_sim >= threshold:
                 cluster["items"].append(item)
                 cluster["token_union"] = cluster["token_union"] | tokens
                 placed = True
@@ -410,32 +775,45 @@ def cluster_items(items: list[dict], threshold: float = 0.58) -> list[dict]:
     out = []
     for raw in clusters:
         c_items = raw["items"]
-        problem_fps = [x["problem_fingerprint"] for x in c_items]
-        cluster_id = stable_cluster_id(problem_fps)
-        source_families = sorted(set(x["source_family"] for x in c_items))
-        evidence = [x.get("excerpt") or _safe_excerpt(x.get("problem_statement", "")) for x in c_items]
-        urls = sorted(set(x["canonical_url"] for x in c_items))
+        problem_fps = [str(x.get("problem_fingerprint") or "") for x in c_items if x.get("problem_fingerprint")]
+        cluster_id = _stable_cluster_id_from_items(c_items)
+
+        source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
+        source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
+        evidence = [x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")) for x in c_items]
+        urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
+
         persona_counts: dict[str, int] = {}
         module_counts: dict[str, int] = {}
         for it in c_items:
-            persona_counts[it.get("persona", "unknown")] = persona_counts.get(it.get("persona", "unknown"), 0) + 1
-            module_counts[it.get("module", "unknown")] = module_counts.get(it.get("module", "unknown"), 0) + 1
+            persona = str(it.get("persona", "unknown"))
+            module = str(it.get("module", "unknown"))
+            persona_counts[persona] = persona_counts.get(persona, 0) + 1
+            module_counts[module] = module_counts.get(module, 0) + 1
+
         persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        normalized_problem = sorted(c_items, key=lambda i: len(i.get("problem_statement", "")), reverse=True)[0]["problem_statement"]
-        out.append({
-            "cluster_id": cluster_id,
-            "normalized_problem": normalized_problem,
-            "persona_candidate": persona,
-            "module_candidate": module,
-            "evidence_items": evidence,
-            "source_urls": urls,
-            "source_families": source_families,
-            "source_count": len(c_items),
-            "independent_source_family_count": len(source_families),
-            "fingerprints": sorted(set(problem_fps)),
-            "raw_items": c_items,
-        })
+        normalized_problem = sorted(c_items, key=lambda i: len(str(i.get("problem_statement") or "")), reverse=True)[0][
+            "problem_statement"
+        ]
+
+        out.append(
+            {
+                "cluster_id": cluster_id,
+                "normalized_problem": normalized_problem,
+                "persona_candidate": persona,
+                "module_candidate": module,
+                "evidence_items": evidence,
+                "source_urls": urls,
+                "source_families": source_families,
+                "source_identities": source_identities,
+                "source_count": len(c_items),
+                "independent_source_family_count": len(source_identities),
+                "fingerprints": sorted(set(problem_fps)),
+                "raw_items": c_items,
+            }
+        )
+
     out.sort(key=lambda c: c["cluster_id"])
     return out
 
@@ -455,38 +833,44 @@ def load_foundation_index() -> dict:
             rec = load_record(path)
         except Exception:
             continue
-        requirements.append({
-            "id": rec.get("id", path.stem),
-            "text": str(rec.get("problem", "")),
-            "status": str(rec.get("status", "")),
-            "path": str(path.relative_to(ROOT)),
-        })
+        requirements.append(
+            {
+                "id": rec.get("id", path.stem),
+                "text": str(rec.get("problem", "")),
+                "status": str(rec.get("status", "")),
+                "path": str(path.relative_to(ROOT)),
+            }
+        )
 
     for path in iter_record_files(DECISIONS_DIR) or []:
         try:
             rec = load_record(path)
         except Exception:
             continue
-        decisions.append({
-            "id": rec.get("id", path.stem),
-            "subject": str(rec.get("subject", "")),
-            "decision": str(rec.get("decision", "")),
-            "status": str(rec.get("status", "")),
-            "path": str(path.relative_to(ROOT)),
-        })
+        decisions.append(
+            {
+                "id": rec.get("id", path.stem),
+                "subject": str(rec.get("subject", "")),
+                "decision": str(rec.get("decision", "")),
+                "status": str(rec.get("status", "")),
+                "path": str(path.relative_to(ROOT)),
+            }
+        )
 
     for path in iter_record_files(OBSERVATIONS_DIR) or []:
         try:
             rec = load_record(path)
         except Exception:
             continue
-        observations.append({
-            "id": rec.get("id", path.stem),
-            "text": str(rec.get("problem_statement", "")),
-            "path": str(path.relative_to(ROOT)),
-            "cluster_id": rec.get("cluster_id"),
-            "problem_fingerprint": rec.get("problem_fingerprint"),
-        })
+        observations.append(
+            {
+                "id": rec.get("id", path.stem),
+                "text": str(rec.get("problem_statement", "")),
+                "path": str(path.relative_to(ROOT)),
+                "cluster_id": rec.get("cluster_id"),
+                "problem_fingerprint": rec.get("problem_fingerprint"),
+            }
+        )
 
     if VALIDATED_CAPABILITIES_MD.exists():
         text = VALIDATED_CAPABILITIES_MD.read_text(encoding="utf-8")
@@ -503,7 +887,7 @@ def load_foundation_index() -> dict:
 
 
 def match_cluster_to_foundation(cluster: dict, foundation: dict) -> dict:
-    problem = cluster["normalized_problem"]
+    problem = str(cluster.get("normalized_problem") or "")
     best_req = (0.0, None)
     for req in foundation["requirements"]:
         score = _text_similarity(problem, req["text"])
@@ -518,21 +902,30 @@ def match_cluster_to_foundation(cluster: dict, foundation: dict) -> dict:
 
     best_dec = (0.0, None)
     for dec in foundation["decisions"]:
-        composite = f"{dec['subject']} {dec['decision']}"
-        score = _text_similarity(problem, composite)
+        score = _text_similarity(problem, f"{dec['subject']} {dec['decision']}")
         if score > best_dec[0]:
             best_dec = (score, dec)
 
+    linked = []
     suppress_reproposal = False
     suppress_reason = ""
-    linked = []
 
     if best_req[1] and best_req[0] >= 0.68:
         linked.append({"type": "requirement", "id": best_req[1]["id"], "score": round(best_req[0], 3), "path": best_req[1]["path"]})
+
     if best_cap[1] and best_cap[0] >= 0.68:
         linked.append({"type": "validated_capability", "id": best_cap[1], "score": round(best_cap[0], 3)})
+
     if best_dec[1] and best_dec[0] >= 0.68:
-        linked.append({"type": "decision", "id": best_dec[1]["id"], "status": best_dec[1]["status"], "score": round(best_dec[0], 3), "path": best_dec[1]["path"]})
+        linked.append(
+            {
+                "type": "decision",
+                "id": best_dec[1]["id"],
+                "status": best_dec[1]["status"],
+                "score": round(best_dec[0], 3),
+                "path": best_dec[1]["path"],
+            }
+        )
         if str(best_dec[1]["status"]).upper() in {"HOLD", "REJECT", "REJECTED"}:
             suppress_reproposal = True
             suppress_reason = f"Existing decision {best_dec[1]['id']} has status {best_dec[1]['status']}"
@@ -546,33 +939,65 @@ def match_cluster_to_foundation(cluster: dict, foundation: dict) -> dict:
     }
 
 
+def _foundation_match_summary(match: dict) -> str:
+    linked = match.get("linked") or []
+    if not linked:
+        return "Brak silnego dopasowania do Product Foundation"
+    parts = []
+    for row in linked:
+        rtype = row.get("type")
+        rid = row.get("id")
+        score = row.get("score")
+        if rtype == "decision" and row.get("status"):
+            parts.append(f"decision:{rid}({row.get('status')}, score={score})")
+        else:
+            parts.append(f"{rtype}:{rid}(score={score})")
+    return "; ".join(parts)
+
+
 def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
     compact = []
     for c in clusters:
-        compact.append({
-            "cluster_id": c["cluster_id"],
-            "normalized_problem": c["normalized_problem"],
-            "persona_candidate": c["persona_candidate"],
-            "module_candidate": c["module_candidate"],
-            "independent_source_family_count": c["independent_source_family_count"],
-            "source_families": c["source_families"],
-            "evidence_items": c["evidence_items"][:6],
-            "source_urls": c["source_urls"][:12],
-            "foundation_match": c.get("foundation_match", {}),
-        })
+        compact.append(
+            {
+                "cluster_id": c["cluster_id"],
+                "normalized_problem": c["normalized_problem"],
+                "persona_candidate": c["persona_candidate"],
+                "module_candidate": c["module_candidate"],
+                "independent_source_family_count": c["independent_source_family_count"],
+                "source_families": c["source_families"],
+                "source_identities": c.get("source_identities", []),
+                "evidence_items": c["evidence_items"][:6],
+                "source_urls": c["source_urls"][:12],
+                "foundation_match": c.get("foundation_match", {}),
+            }
+        )
 
-    instruction = {
+    payload = {
         "task": "Classify LibreCare discovery clusters. Advisory only.",
+        "run_id": run_id,
         "model": model,
         "required_output": {
             "type": "object",
             "required": ["clusters"],
             "clusters_item_required": [
-                "cluster_id", "classification", "persona", "problem_statement",
-                "evidence_summary", "source_diversity_summary", "current_librecare_match",
-                "solvability", "impact_score", "frequency_score", "evidence_score",
-                "solvability_score", "novelty_score", "effort_score", "confidence",
-                "counterargument", "candidate_recommendation"
+                "cluster_id",
+                "classification",
+                "persona",
+                "problem_statement",
+                "evidence_summary",
+                "source_diversity_summary",
+                "current_librecare_match",
+                "solvability",
+                "impact_score",
+                "frequency_score",
+                "evidence_score",
+                "solvability_score",
+                "novelty_score",
+                "effort_score",
+                "confidence",
+                "counterargument",
+                "candidate_recommendation",
             ],
             "classification_enum": sorted(CLASSIFICATIONS),
             "solvability_enum": sorted(SOLVABILITY_VALUES),
@@ -586,10 +1011,13 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         ],
         "clusters": compact,
     }
-    return json.dumps(instruction, ensure_ascii=False, indent=2)
+    return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
 def run_copilot_json(prompt: str, model: str) -> str:
+    if model != "gpt-5.4-mini":
+        raise RuntimeError(f"Discovery requires model gpt-5.4-mini, got: {model}")
+
     cmd = [
         "copilot",
         "-s",
@@ -599,17 +1027,16 @@ def run_copilot_json(prompt: str, model: str) -> str:
         "--allow-tool=read",
         "--deny-tool=write",
         "--deny-tool=shell",
-        f"--model={model}",
+        "--model=gpt-5.4-mini",
+        "-p",
+        prompt,
     ]
-    proc = subprocess.run(
-        cmd,
-        input=prompt,
-        capture_output=True,
-        text=True,
-        check=False,
-    )
+    proc = subprocess.run(cmd, capture_output=True, text=True, check=False)
     if proc.returncode != 0:
-        raise RuntimeError(f"Copilot CLI failed: {proc.stderr.strip()[:400]}")
+        stderr = (proc.stderr or "").strip()
+        if "model" in stderr.lower() and "gpt-5.4-mini" in stderr.lower():
+            raise RuntimeError("Copilot CLI failed: gpt-5.4-mini is unavailable in this environment")
+        raise RuntimeError(f"Copilot CLI failed: {stderr[:400]}")
     return proc.stdout
 
 
@@ -634,14 +1061,29 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     entries = payload.get("clusters")
     if not isinstance(entries, list):
         return False, ["AI payload missing 'clusters' array"]
+
     expected_ids = {c["cluster_id"] for c in clusters}
     got_ids = set()
     required = {
-        "cluster_id", "classification", "persona", "problem_statement", "evidence_summary",
-        "source_diversity_summary", "current_librecare_match", "solvability", "impact_score",
-        "frequency_score", "evidence_score", "solvability_score", "novelty_score", "effort_score",
-        "confidence", "counterargument", "candidate_recommendation"
+        "cluster_id",
+        "classification",
+        "persona",
+        "problem_statement",
+        "evidence_summary",
+        "source_diversity_summary",
+        "current_librecare_match",
+        "solvability",
+        "impact_score",
+        "frequency_score",
+        "evidence_score",
+        "solvability_score",
+        "novelty_score",
+        "effort_score",
+        "confidence",
+        "counterargument",
+        "candidate_recommendation",
     }
+
     for idx, row in enumerate(entries):
         if not isinstance(row, dict):
             errors.append(f"clusters[{idx}] is not an object")
@@ -660,10 +1102,18 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             errors.append(f"clusters[{idx}] invalid solvability: {row['solvability']}")
         if row["confidence"] not in CONFIDENCE_VALUES:
             errors.append(f"clusters[{idx}] invalid confidence: {row['confidence']}")
-        for score_key in ["impact_score", "frequency_score", "evidence_score", "solvability_score", "novelty_score", "effort_score"]:
+        for score_key in [
+            "impact_score",
+            "frequency_score",
+            "evidence_score",
+            "solvability_score",
+            "novelty_score",
+            "effort_score",
+        ]:
             val = row.get(score_key)
             if not isinstance(val, int) or val < 0 or val > 5:
                 errors.append(f"clusters[{idx}] {score_key} must be int 0..5")
+
     missing_cluster_ids = expected_ids - got_ids
     if missing_cluster_ids:
         errors.append(f"AI output missing clusters: {sorted(missing_cluster_ids)}")
@@ -674,7 +1124,6 @@ def apply_governance(cluster: dict, ai_row: dict) -> dict:
     out = dict(ai_row)
     match = cluster.get("foundation_match", {})
 
-    # Deterministic overrides: existing validated capability evidence suppresses proposals.
     if match.get("best_capability_score", 0.0) >= 0.68:
         out["classification"] = "VALIDATED_CAPABILITY"
 
@@ -711,19 +1160,16 @@ def compute_score(cluster: dict, decision: dict) -> int:
     solvability = int(decision.get("solvability_score", 0))
     novelty = int(decision.get("novelty_score", 0))
     effort = int(decision.get("effort_score", 0))
-
-    source_diversity = min(cluster.get("independent_source_family_count", 0), 3)
-    diversity_component = source_diversity * 4
+    source_diversity = min(int(cluster.get("independent_source_family_count", 0)), 3)
 
     strategic_fit = 5 if cluster.get("persona_candidate") == "caregiver" else 3
-
     raw = (
         impact * 9
         + freq * 8
         + evidence * 8
         + solvability * 9
         + novelty * 7
-        + diversity_component
+        + source_diversity * 4
         + strategic_fit * 3
         - effort * 5
     )
@@ -731,18 +1177,18 @@ def compute_score(cluster: dict, decision: dict) -> int:
 
 
 def next_observation_name(existing_names: set[str], date_stamp: str) -> tuple[str, str]:
-    n = 1
+    idx = 1
     while True:
-        obs_id = f"OBS-{date_stamp}-{n:02d}"
+        obs_id = f"OBS-{date_stamp}-{idx:02d}"
         filename = f"{obs_id}.json"
         if filename not in existing_names:
             return obs_id, filename
-        n += 1
+        idx += 1
 
 
 def load_existing_observation_fingerprints() -> tuple[set[str], set[str]]:
-    fingerprints = set()
-    cluster_ids = set()
+    fps = set()
+    clusters = set()
     for path in iter_record_files(OBSERVATIONS_DIR) or []:
         try:
             rec = load_record(path)
@@ -751,42 +1197,45 @@ def load_existing_observation_fingerprints() -> tuple[set[str], set[str]]:
         fp = rec.get("problem_fingerprint")
         cid = rec.get("cluster_id")
         if isinstance(fp, str) and fp:
-            fingerprints.add(fp)
+            fps.add(fp)
         if isinstance(cid, str) and cid:
-            cluster_ids.add(cid)
-    return fingerprints, cluster_ids
+            clusters.add(cid)
+    return fps, clusters
 
 
-def create_observations(clusters_ranked: list[dict], run_id: str) -> list[str]:
-    created_files = []
+def create_observations_from_clusters(clusters: list[dict], run_id: str) -> list[str]:
+    created = []
     OBSERVATIONS_DIR.mkdir(parents=True, exist_ok=True)
     existing_files = {p.name for p in OBSERVATIONS_DIR.glob("OBS-*.json")}
     existing_fp, existing_cluster_ids = load_existing_observation_fingerprints()
     date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
 
-    for row in clusters_ranked:
-        cls = row["governed"]["classification"]
-        if cls not in ELIGIBLE_CLASSIFICATIONS:
+    for cluster in clusters:
+        match = cluster.get("foundation_match", {})
+        if match.get("best_capability_score", 0.0) >= 0.80:
             continue
-        cid = row["cluster"]["cluster_id"]
-        fp = row["cluster"]["fingerprints"][0] if row["cluster"]["fingerprints"] else ""
+
+        cid = cluster["cluster_id"]
+        fp = cluster["fingerprints"][0] if cluster.get("fingerprints") else ""
         if cid in existing_cluster_ids or (fp and fp in existing_fp):
             continue
+
+        first = cluster["raw_items"][0]
         obs_id, filename = next_observation_name(existing_files, date_stamp)
         payload = {
             "id": obs_id,
             "created_at": utc_now(),
-            "source_type": row["cluster"]["raw_items"][0].get("source_type", "community"),
-            "source_reference": row["cluster"]["source_urls"][0],
-            "persona": row["governed"].get("persona", row["cluster"].get("persona_candidate", "unknown")),
-            "mode": row["cluster"].get("persona_candidate", "unknown"),
-            "module": row["cluster"].get("module_candidate", "unknown"),
-            "type": row["cluster"]["raw_items"][0].get("type", "usability"),
-            "severity": row["cluster"]["raw_items"][0].get("severity", "medium"),
-            "frequency": row["cluster"]["raw_items"][0].get("frequency", "unknown"),
-            "confidence": row["cluster"]["raw_items"][0].get("confidence", "medium"),
-            "evidence": row["cluster"]["evidence_items"][:3],
-            "problem_statement": row["governed"]["problem_statement"],
+            "source_type": first.get("source_type", "community"),
+            "source_reference": cluster["source_urls"][0] if cluster.get("source_urls") else "",
+            "persona": cluster.get("persona_candidate", "unknown"),
+            "mode": first.get("mode", cluster.get("persona_candidate", "unknown")),
+            "module": cluster.get("module_candidate", "unknown"),
+            "type": first.get("type", "usability"),
+            "severity": first.get("severity", "medium"),
+            "frequency": first.get("frequency", "unknown"),
+            "confidence": first.get("confidence", "medium"),
+            "evidence": cluster.get("evidence_items", [])[:3] or [cluster.get("normalized_problem", "")],
+            "problem_statement": cluster.get("normalized_problem", ""),
             "status": "new",
             "cluster_id": cid,
             "problem_fingerprint": fp,
@@ -798,9 +1247,9 @@ def create_observations(clusters_ranked: list[dict], run_id: str) -> list[str]:
         existing_cluster_ids.add(cid)
         if fp:
             existing_fp.add(fp)
-        created_files.append(str(path.relative_to(ROOT)))
+        created.append(str(path.relative_to(ROOT)))
 
-    return created_files
+    return created
 
 
 def build_inbox_issue_body(entry: dict, marker: str) -> str:
@@ -836,29 +1285,34 @@ def build_inbox_issue_body(entry: dict, marker: str) -> str:
 def publish_top3(top_ranked: list[dict], repo_owner: str, repo_name: str, github_token: str) -> list[dict]:
     client = GITHUB_CLIENT_FACTORY(repo_owner, repo_name, github_token)
     created = []
-    for entry in top_ranked[:3]:
-        if not entry["governed"].get("eligible_for_inbox"):
-            continue
+    eligible_rows = [row for row in top_ranked if row["governed"].get("eligible_for_inbox")]
+    for entry in eligible_rows[:3]:
         marker = f"<!-- LIBRECARE_DISCOVERY_CLUSTER: {entry['cluster']['cluster_id']} -->"
         existing = client.find_issue_by_marker(marker)
         if existing:
-            created.append({
-                "cluster_id": entry["cluster"]["cluster_id"],
-                "action": "SKIPPED_EXISTS",
-                "issue_number": existing.get("number"),
-                "issue_url": existing.get("html_url"),
-            })
+            created.append(
+                {
+                    "cluster_id": entry["cluster"]["cluster_id"],
+                    "action": "SKIPPED_EXISTS",
+                    "issue_number": existing.get("number"),
+                    "issue_url": existing.get("html_url"),
+                }
+            )
             continue
 
-        title = f"[Skrzynka Produktowa] Discovery {entry['cluster']['cluster_id']}"
-        body = build_inbox_issue_body(entry, marker)
-        issue = client.create_issue(title=title, body=body, labels=["product-inbox"])
-        created.append({
-            "cluster_id": entry["cluster"]["cluster_id"],
-            "action": "CREATED",
-            "issue_number": issue.get("number"),
-            "issue_url": issue.get("html_url"),
-        })
+        issue = client.create_issue(
+            title=f"[Skrzynka Produktowa] Discovery {entry['cluster']['cluster_id']}",
+            body=build_inbox_issue_body(entry, marker),
+            labels=["product-inbox"],
+        )
+        created.append(
+            {
+                "cluster_id": entry["cluster"]["cluster_id"],
+                "action": "CREATED",
+                "issue_number": issue.get("number"),
+                "issue_url": issue.get("html_url"),
+            }
+        )
     return created
 
 
@@ -874,14 +1328,17 @@ def run_discovery(
     ai_response_file: Path | None,
     timeout: float,
     retries: int,
+    cache_max_age_seconds: int,
 ) -> dict:
     started_at = utc_now()
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
     run_id = f"DISCOVERY-{run_stamp}"
 
     status = "SUCCESS"
-    errors = []
+    errors: list[str] = []
     ai_calls = 0
+
+    cache = DiscoveryCache(DISCOVERY_CACHE_PATH)
 
     sources_cfg = read_json(sources_file)
     sources = sources_cfg.get("sources", [])
@@ -889,14 +1346,23 @@ def run_discovery(
     source_results = []
     all_items = []
     for source in sources:
-        result = collect_from_source(source, max_items=max_items_per_source, timeout=timeout, retries=retries)
-        source_results.append({
-            "name": result.name,
-            "family": result.family,
-            "status": result.status,
-            "detail": result.detail,
-            "count": len(result.items),
-        })
+        result = collect_from_source(
+            source,
+            max_items=max_items_per_source,
+            timeout=timeout,
+            retries=retries,
+            cache=cache,
+            cache_max_age_seconds=cache_max_age_seconds,
+        )
+        source_results.append(
+            {
+                "name": result.name,
+                "family": result.family,
+                "status": result.status,
+                "detail": result.detail,
+                "count": len(result.items),
+            }
+        )
         all_items.extend(result.items)
         if result.status.endswith("DEGRADED") or result.status == "REDDIT_DISABLED":
             if status == "SUCCESS":
@@ -909,39 +1375,53 @@ def run_discovery(
     for c in clusters:
         c["foundation_match"] = match_cluster_to_foundation(c, foundation)
 
+    created_observations = []
+    if status != "FAILED":
+        created_observations = create_observations_from_clusters(clusters, run_id)
+
+    if ai_mode == "copilot" and ai_model != "gpt-5.4-mini":
+        status = "FAILED"
+        errors.append("Copilot mode requires exact model gpt-5.4-mini")
+
     if ai_response_file:
         raw = ai_response_file.read_text(encoding="utf-8")
         ai_calls = 1
-    elif ai_mode == "copilot" and clusters:
+    elif ai_mode == "copilot" and clusters and status != "FAILED":
         prompt = build_ai_prompt(run_id, clusters, model=ai_model)
-        raw = run_copilot_json(prompt, model=ai_model)
+        try:
+            raw = run_copilot_json(prompt, model=ai_model)
+        except Exception as exc:  # noqa: BLE001
+            status = "FAILED"
+            errors.append(str(exc))
+            raw = "{}"
         ai_calls = 1
     else:
-        # Deterministic fallback for offline/test environments.
         payload = {"clusters": []}
         for c in clusters:
             cls = "PRODUCT_PROBLEM"
             if c["foundation_match"].get("best_capability_score", 0) >= 0.68:
                 cls = "VALIDATED_CAPABILITY"
-            payload["clusters"].append({
-                "cluster_id": c["cluster_id"],
-                "classification": cls,
-                "persona": c["persona_candidate"],
-                "problem_statement": c["normalized_problem"],
-                "evidence_summary": _safe_excerpt("; ".join(c["evidence_items"]), 160),
-                "source_diversity_summary": f"{c['source_count']} items / {c['independent_source_family_count']} families",
-                "current_librecare_match": str(c.get("foundation_match", {}).get("linked", [])),
-                "solvability": "APP",
-                "impact_score": 3,
-                "frequency_score": 3,
-                "evidence_score": 3,
-                "solvability_score": 3,
-                "novelty_score": 3,
-                "effort_score": 2,
-                "confidence": "medium",
-                "counterargument": "Evidence may still be incomplete.",
-                "candidate_recommendation": "Needs human review.",
-            })
+            payload["clusters"].append(
+                {
+                    "cluster_id": c["cluster_id"],
+                    "classification": cls,
+                    "persona": c["persona_candidate"],
+                    "problem_statement": c["normalized_problem"],
+                    "evidence_summary": _safe_excerpt("; ".join(c["evidence_items"]), 160),
+                    "source_diversity_summary": f"{c['source_count']} items / {c['independent_source_family_count']} independent sources",
+                    "current_librecare_match": _foundation_match_summary(c.get("foundation_match", {})),
+                    "solvability": "APP",
+                    "impact_score": 3,
+                    "frequency_score": 3,
+                    "evidence_score": 3,
+                    "solvability_score": 3,
+                    "novelty_score": 3,
+                    "effort_score": 2,
+                    "confidence": "medium",
+                    "counterargument": "Evidence may still be incomplete.",
+                    "candidate_recommendation": "Needs human review.",
+                }
+            )
         raw = json.dumps(payload)
         ai_calls = 0
 
@@ -974,18 +1454,44 @@ def run_discovery(
     governed_rows.sort(key=lambda r: (-r["score"], r["cluster"]["cluster_id"]))
     top10 = governed_rows[:10]
 
-    created_observations = []
     created_issues = []
-    if status != "FAILED":
-        created_observations = create_observations(top10, run_id)
-        if publish_top3_flag and top10:
-            if not (repo_owner and repo_name and github_token):
-                status = "DEGRADED"
-                errors.append("publish_top3 requested but GitHub credentials/repo not provided")
-            else:
-                created_issues = publish_top3(top10, repo_owner=repo_owner, repo_name=repo_name, github_token=github_token)
+    if status != "FAILED" and publish_top3_flag and top10:
+        if not (repo_owner and repo_name and github_token):
+            status = "DEGRADED"
+            errors.append("publish_top3 requested but GitHub credentials/repo not provided")
+        else:
+            created_issues = publish_top3(top10, repo_owner=repo_owner, repo_name=repo_name, github_token=github_token)
 
     finished_at = utc_now()
+
+    report_top10 = []
+    for idx, row in enumerate(top10):
+        deterministic_match = row["cluster"].get("foundation_match", {})
+        report_top10.append(
+            {
+                "rank": idx + 1,
+                "score": row["score"],
+                "cluster_id": row["cluster"]["cluster_id"],
+                "problem": row["governed"].get("problem_statement"),
+                "persona": row["governed"].get("persona"),
+                "classification": row["governed"].get("classification"),
+                "evidence_count": len(row["cluster"].get("evidence_items", [])),
+                "source_families": row["cluster"].get("source_families", []),
+                "source_identities": row["cluster"].get("source_identities", []),
+                "current_librecare_match": _foundation_match_summary(deterministic_match),
+                "foundation_match_links": deterministic_match.get("linked", []),
+                "ai_current_librecare_match": row["governed"].get("current_librecare_match"),
+                "solvability": row["governed"].get("solvability"),
+                "effort": row["governed"].get("effort_score"),
+                "confidence": row["governed"].get("confidence"),
+                "counterargument": row["governed"].get("counterargument"),
+                "source_urls": row["cluster"].get("source_urls", []),
+                "eligibility": bool(row["governed"].get("eligible_for_inbox")),
+                "exclusion_reason": row["governed"].get("exclusion_reason", ""),
+                "suppressed_reason": row["governed"].get("suppressed_reason", ""),
+            }
+        )
+
     report = {
         "run_id": run_id,
         "started_at": started_at,
@@ -999,28 +1505,7 @@ def run_discovery(
         },
         "source_status": source_results,
         "dedupe": dedupe_stats,
-        "top10": [
-            {
-                "rank": idx + 1,
-                "score": row["score"],
-                "cluster_id": row["cluster"]["cluster_id"],
-                "problem": row["governed"].get("problem_statement"),
-                "persona": row["governed"].get("persona"),
-                "classification": row["governed"].get("classification"),
-                "evidence_count": len(row["cluster"].get("evidence_items", [])),
-                "source_families": row["cluster"].get("source_families", []),
-                "current_librecare_match": row["governed"].get("current_librecare_match"),
-                "solvability": row["governed"].get("solvability"),
-                "effort": row["governed"].get("effort_score"),
-                "confidence": row["governed"].get("confidence"),
-                "counterargument": row["governed"].get("counterargument"),
-                "source_urls": row["cluster"].get("source_urls", []),
-                "eligibility": bool(row["governed"].get("eligible_for_inbox")),
-                "exclusion_reason": row["governed"].get("exclusion_reason", ""),
-                "suppressed_reason": row["governed"].get("suppressed_reason", ""),
-            }
-            for idx, row in enumerate(top10)
-        ],
+        "top10": report_top10,
         "created_observations": created_observations,
         "top3_issue_actions": created_issues,
         "errors": errors,
@@ -1039,9 +1524,31 @@ def run_discovery(
     write_json(json_path, report)
     md_path.write_text(render_markdown_report(report), encoding="utf-8")
 
+    try:
+        cache.save()
+    except Exception as exc:  # noqa: BLE001
+        report["status"] = "DEGRADED" if report["status"] == "SUCCESS" else report["status"]
+        report["errors"].append(f"Cache save degraded: {exc}")
+
     report["json_report_path"] = str(json_path.relative_to(ROOT))
     report["md_report_path"] = str(md_path.relative_to(ROOT))
     return report
+
+
+def _report_section_for_item(item: dict) -> str:
+    if item.get("eligibility"):
+        return "TOP CANDIDATES"
+    if item.get("classification") == "TEST_COVERAGE_GAP":
+        return "TEST / RESEARCH GAPS"
+    if item.get("classification") == "INCONCLUSIVE":
+        return "INSUFFICIENT EVIDENCE"
+    if item.get("solvability") in {"ABBOTT_LIMITATION", "EXTERNAL_ONLY"}:
+        return "ABBOTT LIMITATION / NOT LIBRECARE-SOLVABLE"
+    if item.get("classification") == "VALIDATED_CAPABILITY" or item.get("suppressed_reason") or (
+        "existing requirement" in str(item.get("exclusion_reason", "")).lower()
+    ):
+        return "ALREADY COVERED"
+    return "WORTH REVIEWING"
 
 
 def render_markdown_report(report: dict) -> str:
@@ -1062,20 +1569,31 @@ def render_markdown_report(report: dict) -> str:
     for src in report.get("source_status", []):
         lines.append(f"- {src['name']}: {src['status']} ({src['count']})")
 
-    lines.extend(["", "## TOP CANDIDATES", ""])
+    sections = [
+        "TOP CANDIDATES",
+        "WORTH REVIEWING",
+        "ALREADY COVERED",
+        "ABBOTT LIMITATION / NOT LIBRECARE-SOLVABLE",
+        "TEST / RESEARCH GAPS",
+        "INSUFFICIENT EVIDENCE",
+    ]
 
-    def _emit_section(title: str, predicate: Callable[[dict], bool]):
-        lines.append(f"## {title}")
-        lines.append("")
-        emitted = 0
-        for item in report.get("top10", []):
-            if not predicate(item):
-                continue
-            emitted += 1
+    bucket: dict[str, list[dict]] = {name: [] for name in sections}
+    for item in report.get("top10", []):
+        bucket[_report_section_for_item(item)].append(item)
+
+    for section in sections:
+        lines.extend(["", f"## {section}", ""])
+        rows = bucket[section]
+        if not rows:
+            lines.append("Brak pozycji.")
+            lines.append("")
+            continue
+        for item in rows:
             lines.append(f"TOP {item['rank']} — {item['score']}/100")
             lines.append("")
             lines.append("Problem:")
-            lines.append(item.get("problem", ""))
+            lines.append(str(item.get("problem", "")))
             lines.append("")
             lines.append("Persona:")
             lines.append(str(item.get("persona", "")))
@@ -1084,7 +1602,9 @@ def render_markdown_report(report: dict) -> str:
             lines.append(str(item.get("classification", "")))
             lines.append("")
             lines.append("Evidence:")
-            lines.append(f"{item.get('evidence_count', 0)} items / {len(item.get('source_families', []))} independent families")
+            lines.append(
+                f"{item.get('evidence_count', 0)} items / {len(item.get('source_identities', []))} independent sources"
+            )
             lines.append("")
             lines.append("Current coverage:")
             lines.append(str(item.get("current_librecare_match", "")))
@@ -1105,15 +1625,6 @@ def render_markdown_report(report: dict) -> str:
             for url in item.get("source_urls", []):
                 lines.append(f"- {url}")
             lines.append("")
-        if emitted == 0:
-            lines.append("Brak pozycji.")
-            lines.append("")
-
-    _emit_section("WORTH REVIEWING", lambda i: i.get("eligibility") is True)
-    _emit_section("ALREADY COVERED", lambda i: i.get("classification") == "VALIDATED_CAPABILITY")
-    _emit_section("ABBOTT LIMITATION / NOT LIBRECARE-SOLVABLE", lambda i: i.get("solvability") in {"ABBOTT_LIMITATION", "EXTERNAL_ONLY"})
-    _emit_section("TEST / RESEARCH GAPS", lambda i: i.get("classification") == "TEST_COVERAGE_GAP")
-    _emit_section("INSUFFICIENT EVIDENCE", lambda i: i.get("classification") == "INCONCLUSIVE")
 
     if report.get("errors"):
         lines.extend(["## Errors", ""])
@@ -1136,6 +1647,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--ai-response-file", default="")
     parser.add_argument("--timeout", type=float, default=12.0)
     parser.add_argument("--retries", type=int, default=2)
+    parser.add_argument("--cache-max-age-seconds", type=int, default=21600)
     parser.add_argument("--output-file", default="")
     return parser
 
@@ -1161,6 +1673,7 @@ def main(argv: list[str] | None = None) -> int:
         ai_response_file=ai_response_file,
         timeout=args.timeout,
         retries=args.retries,
+        cache_max_age_seconds=max(1, int(args.cache_max_age_seconds)),
     )
 
     if args.output_file:
@@ -1180,4 +1693,3 @@ def main(argv: list[str] | None = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(main())
-

@@ -12,6 +12,7 @@ LibreCare Discovery Agent v1 zbiera publiczne sygnały produktowe i tworzy
 - Stosuje deterministyczne reguły governance i ranking 0-100.
 - Tworzy raporty w `product/generated/discovery/`.
 - Opcjonalnie publikuje maks. TOP 3 kandydatów do Product Inbox (`publish_top3=true`).
+- W workflow CI zapisuje wynik jako artifact GitHub Actions (bez automatycznego commita do repozytorium).
 
 ## Czego nie robi
 
@@ -78,6 +79,11 @@ Pierwszy realny run:
 - `publish_top3=false` (domyślnie),
 - najpierw review raportu TOP 10,
 - dopiero potem ewentualne publikowanie TOP 3.
+
+## Persistence w repozytorium
+
+Discovery v1 nie wykonuje `git commit/push` w workflow. Jeśli po review artifactu
+chcesz utrwalić wynik w repo, zrób osobny commit na branchu i osobny PR z review człowieka.
 
 ## Human decision gate
 
