@@ -49,10 +49,18 @@ Agent nie zapisuje pełnych postów/wątków ani nazw użytkowników Reddit.
 
 ## Idempotencja
 
-- Stabilne fingerprinty i stabilne `cluster_id`.
+- Stabilne `cluster_id` pochodzą z **stateful** rejestru problemów: `product/discovery/cluster-registry.json`.
 - Brak duplikatów obserwacji dla niezmienionego wejścia.
 - Marker issue: `<!-- LIBRECARE_DISCOVERY_CLUSTER: DISC-... -->`.
 - Marker jest sprawdzany w open+closed issue przed utworzeniem nowego kandydata.
+
+## Cluster registry (stateful identity)
+
+- Discovery ładuje `product/discovery/cluster-registry.json` jako główne źródło tożsamości klastrów.
+- Jeśli nowy klaster deterministycznie pasuje do istniejącego wpisu, używany jest istniejący `cluster_id`.
+- Jeśli nie ma dopasowania, tworzony jest nowy deterministyczny `cluster_id` i propozycja nowego wpisu.
+- Jeśli dopasowanie jest niejednoznaczne (ambiguous), Discovery nie publikuje takiego kandydata do Product Inbox.
+- Discovery **nie nadpisuje automatycznie** rejestu w repozytorium w workflow Actions.
 
 ## Reddit
 
@@ -84,6 +92,11 @@ Pierwszy realny run:
 
 Discovery v1 nie wykonuje `git commit/push` w workflow. Jeśli po review artifactu
 chcesz utrwalić wynik w repo, zrób osobny commit na branchu i osobny PR z review człowieka.
+
+W praktyce: run Discovery zapisuje tylko propozycję rejestru do artifactu
+`product/generated/discovery/cluster-registry.proposed.json`.
+To człowiek decyduje, czy przenieść tę zmianę do `product/discovery/cluster-registry.json`
+w oddzielnym, reviewowanym commicie/PR.
 
 ## Human decision gate
 

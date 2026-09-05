@@ -43,6 +43,12 @@ GENERATED_DISCOVERY_DIR = PRODUCT / "generated" / "discovery"
 VALIDATED_CAPABILITIES_MD = PRODUCT / "generated" / "VALIDATED_CAPABILITIES.md"
 SOURCES_CONFIG_DEFAULT = PRODUCT / "discovery" / "sources.json"
 DISCOVERY_CACHE_PATH = GENERATED_DISCOVERY_DIR / "cache" / "discovery-cache-v1.json"
+DISCOVERY_CLUSTER_REGISTRY_PATH = PRODUCT / "discovery" / "cluster-registry.json"
+DISCOVERY_PROPOSED_CLUSTER_REGISTRY_PATH = GENERATED_DISCOVERY_DIR / "cluster-registry.proposed.json"
+
+CLUSTER_REGISTRY_VERSION = 1
+CLUSTER_REGISTRY_MATCH_THRESHOLD = 0.72
+CLUSTER_REGISTRY_AMBIGUITY_DELTA = 0.02
 
 FORBIDDEN_CACHE_KEYS = {
     "access_token",
@@ -338,6 +344,146 @@ def write_json(path: Path, payload: dict | list) -> None:
     with path.open("w", encoding="utf-8") as fh:
         json.dump(payload, fh, ensure_ascii=False, indent=2)
         fh.write("\n")
+
+
+def _cluster_registry_payload(payload) -> dict:
+    if not isinstance(payload, dict):
+        return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        entries = []
+    out = []
+    for raw in entries:
+        if not isinstance(raw, dict):
+            continue
+        cid = str(raw.get("cluster_id") or "").strip()
+        key = str(raw.get("canonical_problem_key") or "").strip()
+        if not cid or not key:
+            continue
+        out.append(
+            {
+                "cluster_id": cid,
+                "canonical_problem_key": _truncate_text(key, 220),
+                "problem_fingerprint": str(raw.get("problem_fingerprint") or "").strip(),
+                "persona": _truncate_text(str(raw.get("persona") or "unknown"), 80),
+                "module": _truncate_text(str(raw.get("module") or "unknown"), 120),
+                "created_at": str(raw.get("created_at") or "").strip(),
+                "last_seen_at": str(raw.get("last_seen_at") or "").strip(),
+            }
+        )
+    out.sort(key=lambda x: x["cluster_id"])
+    return {"version": int(payload.get("version") or CLUSTER_REGISTRY_VERSION), "entries": out}
+
+
+def load_cluster_registry(path: Path = DISCOVERY_CLUSTER_REGISTRY_PATH) -> dict:
+    if not path.exists():
+        return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
+    try:
+        return _cluster_registry_payload(read_json(path))
+    except Exception:
+        return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
+
+
+def _deterministic_cluster_id_for_key(canonical_problem_key: str, persona: str, module: str) -> str:
+    material = "|".join([canonical_problem_key.strip(), persona.strip(), module.strip()])
+    digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
+    return f"DISC-{digest}"
+
+
+def _registry_match_score(cluster: dict, entry: dict) -> float:
+    cluster_tokens = set(_canonical_problem_tokens(str(cluster.get("canonical_problem_key") or "")))
+    entry_tokens = set(_canonical_problem_tokens(str(entry.get("canonical_problem_key") or "")))
+    score = jaccard_similarity(cluster_tokens, entry_tokens)
+    persona = str(cluster.get("persona_candidate") or "")
+    module = str(cluster.get("module_candidate") or "")
+    if persona and entry.get("persona") and persona != entry.get("persona"):
+        score *= 0.9
+    if module and entry.get("module") and module != entry.get("module"):
+        score *= 0.95
+    return score
+
+
+def resolve_cluster_ids_with_registry(
+    clusters: list[dict],
+    registry: dict,
+    now_iso: str,
+    observation_clusters: list[dict] | None = None,
+) -> tuple[list[dict], dict, dict]:
+    entries = [dict(x) for x in (registry.get("entries") or []) if isinstance(x, dict)]
+    existing_ids = {str(x.get("cluster_id") or "") for x in entries}
+    matched_existing = 0
+    new_entries = 0
+    ambiguous_matches = []
+
+    for cluster in clusters:
+        cluster_key = str(cluster.get("canonical_problem_key") or canonical_problem_key(str(cluster.get("normalized_problem") or "")))
+        cluster["canonical_problem_key"] = cluster_key
+        persona = str(cluster.get("persona_candidate") or "unknown")
+        module = str(cluster.get("module_candidate") or "unknown")
+
+        scored = []
+        for entry in entries:
+            score = _registry_match_score(cluster, entry)
+            if score >= CLUSTER_REGISTRY_MATCH_THRESHOLD:
+                scored.append((score, str(entry.get("cluster_id") or ""), entry))
+        scored.sort(key=lambda x: (-x[0], x[1]))
+
+        if len(scored) >= 2 and abs(scored[0][0] - scored[1][0]) <= CLUSTER_REGISTRY_AMBIGUITY_DELTA:
+            cluster["identity_ambiguous"] = True
+            cluster["identity_ambiguous_candidates"] = [
+                {"cluster_id": scored[0][1], "score": round(scored[0][0], 3)},
+                {"cluster_id": scored[1][1], "score": round(scored[1][0], 3)},
+            ]
+            ambiguous_matches.append(
+                {
+                    "provisional_cluster_id": cluster.get("cluster_id"),
+                    "canonical_problem_key": cluster_key,
+                    "candidates": cluster["identity_ambiguous_candidates"],
+                }
+            )
+            continue
+
+        if scored:
+            chosen = scored[0][2]
+            cluster["cluster_id"] = str(chosen.get("cluster_id") or cluster["cluster_id"])
+            cluster["identity_ambiguous"] = False
+            chosen["last_seen_at"] = now_iso
+            matched_existing += 1
+            continue
+
+        reused_cluster_id = _reuse_existing_cluster_id(cluster, observation_clusters or [])
+        if reused_cluster_id:
+            cluster_id = reused_cluster_id
+        else:
+            cluster_id = _deterministic_cluster_id_for_key(cluster_key, persona, module)
+        if cluster_id in existing_ids:
+            salt = hashlib.sha1(f"{cluster_key}|{persona}|{module}|{len(entries)}".encode("utf-8")).hexdigest()[:6].upper()
+            cluster_id = f"DISC-{salt}{cluster_id[-6:]}"
+        cluster["cluster_id"] = cluster_id
+        cluster["identity_ambiguous"] = False
+        entry = {
+            "cluster_id": cluster_id,
+            "canonical_problem_key": _truncate_text(cluster_key, 220),
+            "problem_fingerprint": str((cluster.get("fingerprints") or [""])[0]),
+            "persona": _truncate_text(persona, 80),
+            "module": _truncate_text(module, 120),
+            "created_at": now_iso,
+            "last_seen_at": now_iso,
+        }
+        entries.append(entry)
+        existing_ids.add(cluster_id)
+        new_entries += 1
+
+    entries.sort(key=lambda x: x["cluster_id"])
+    proposed = {"version": CLUSTER_REGISTRY_VERSION, "entries": entries}
+    summary = {
+        "existing_entries": len(registry.get("entries") or []),
+        "matched_existing": matched_existing,
+        "new_entries": new_entries,
+        "ambiguous_matches": ambiguous_matches,
+        "changed": bool(new_entries or matched_existing),
+    }
+    return clusters, summary, proposed
 
 
 def load_record(path: Path):
@@ -889,14 +1035,7 @@ def _cluster_representative_item(items: list[dict]) -> dict:
 
 
 def _stable_cluster_id_from_items(items: list[dict]) -> str:
-    canonical_keys = sorted(
-        set(
-            str(item.get("canonical_problem_key") or canonical_problem_key(str(item.get("problem_statement") or "")))
-            for item in items
-            if str(item.get("problem_statement") or "").strip()
-        )
-    )
-    material = canonical_keys[0] if canonical_keys else ""
+    material = _cluster_canonical_problem_key(items)
     if not material:
         representative = _cluster_representative_item(items)
         material = "|".join(
@@ -908,6 +1047,25 @@ def _stable_cluster_id_from_items(items: list[dict]) -> str:
         )
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
     return f"DISC-{digest}"
+
+
+def _cluster_canonical_problem_key(items: list[dict]) -> str:
+    token_counts: dict[str, int] = {}
+    item_count = 0
+    for item in items:
+        tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or "")))
+        if not tokens:
+            continue
+        item_count += 1
+        for token in tokens:
+            token_counts[token] = token_counts.get(token, 0) + 1
+    if not token_counts:
+        return ""
+    threshold = max(1, (item_count + 1) // 2)
+    anchors = sorted([token for token, count in token_counts.items() if count >= threshold])
+    if not anchors:
+        anchors = sorted(token_counts.keys())
+    return " ".join(anchors)
 
 
 def _existing_cluster_matches() -> list[dict]:
@@ -1017,12 +1175,13 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         normalized_problem = _truncate_text(str(representative.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH)
+        cluster_problem_key = _cluster_canonical_problem_key(c_items) or canonical_problem_key(normalized_problem)
 
         out.append(
             {
                 "cluster_id": cluster_id,
                 "normalized_problem": normalized_problem,
-                "canonical_problem_key": canonical_problem_key(normalized_problem),
+                "canonical_problem_key": cluster_problem_key,
                 "persona_candidate": persona,
                 "module_candidate": module,
                 "evidence_items": evidence,
@@ -1433,6 +1592,8 @@ def create_observations_from_clusters(clusters: list[dict], run_id: str) -> list
     date_stamp = datetime.now(timezone.utc).strftime("%Y%m%d")
 
     for cluster in clusters:
+        if cluster.get("identity_ambiguous"):
+            continue
         match = cluster.get("foundation_match", {})
         if match.get("best_capability_score", 0.0) >= 0.80:
             continue
@@ -1591,8 +1752,16 @@ def run_discovery(
                 status = "DEGRADED"
 
     deduped_items, dedupe_stats = dedupe_items(all_items)
-    existing_clusters = _existing_cluster_matches()
-    clusters = cluster_items(deduped_items, existing_clusters=existing_clusters)
+    # Build logical clusters without identity reuse first; stateful registry assigns final stable IDs.
+    clusters = cluster_items(deduped_items)
+    observation_clusters = _existing_cluster_matches()
+    cluster_registry = load_cluster_registry(DISCOVERY_CLUSTER_REGISTRY_PATH)
+    clusters, registry_summary, proposed_registry = resolve_cluster_ids_with_registry(
+        clusters,
+        cluster_registry,
+        now_iso=utc_now(),
+        observation_clusters=observation_clusters,
+    )
 
     foundation = load_foundation_index()
     for c in clusters:
@@ -1667,6 +1836,9 @@ def run_discovery(
             ai_map = {x["cluster_id"]: x for x in ai_payload["clusters"]}
             for cluster in clusters:
                 governed = apply_governance(cluster, ai_map[cluster["cluster_id"]])
+                if cluster.get("identity_ambiguous"):
+                    governed["eligible_for_inbox"] = False
+                    governed["exclusion_reason"] = "Cluster identity ambiguous; requires human registry review"
                 score = compute_score(cluster, governed)
                 governed_rows.append({"cluster": cluster, "governed": governed, "score": score})
 
@@ -1732,6 +1904,13 @@ def run_discovery(
         "created_observations": created_observations,
         "top3_issue_actions": created_issues,
         "errors": errors,
+        "cluster_registry": {
+            "existing_entries": registry_summary.get("existing_entries", 0),
+            "matched_existing": registry_summary.get("matched_existing", 0),
+            "new_entries": registry_summary.get("new_entries", 0),
+            "ambiguous_matches": registry_summary.get("ambiguous_matches", []),
+            "proposed_registry_path": "",
+        },
         "safety_guards": {
             "max_ai_calls": 2,
             "ai_calls_used": ai_calls,
@@ -1742,6 +1921,11 @@ def run_discovery(
     }
 
     GENERATED_DISCOVERY_DIR.mkdir(parents=True, exist_ok=True)
+    proposed_registry_path = DISCOVERY_PROPOSED_CLUSTER_REGISTRY_PATH
+    if registry_summary.get("changed"):
+        write_json(proposed_registry_path, proposed_registry)
+        report["cluster_registry"]["proposed_registry_path"] = str(proposed_registry_path.relative_to(ROOT))
+
     json_path = GENERATED_DISCOVERY_DIR / f"DISCOVERY-{run_stamp}.json"
     md_path = GENERATED_DISCOVERY_DIR / f"DISCOVERY-{run_stamp}.md"
     write_json(json_path, report)
@@ -1791,6 +1975,21 @@ def render_markdown_report(report: dict) -> str:
     ]
     for src in report.get("source_status", []):
         lines.append(f"- {src['name']}: {src['status']} ({src['count']})")
+
+    reg = report.get("cluster_registry") or {}
+    lines.extend(
+        [
+            "",
+            "## Cluster Registry",
+            "",
+            f"- Existing entries: {reg.get('existing_entries', 0)}",
+            f"- Matched existing: {reg.get('matched_existing', 0)}",
+            f"- New entries: {reg.get('new_entries', 0)}",
+            f"- Ambiguous matches: {len(reg.get('ambiguous_matches', []))}",
+        ]
+    )
+    if reg.get("proposed_registry_path"):
+        lines.append(f"- Proposed registry artifact: {reg.get('proposed_registry_path')}")
 
     sections = [
         "TOP CANDIDATES",

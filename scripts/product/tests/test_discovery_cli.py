@@ -38,6 +38,8 @@ def cli_env(monkeypatch):
     monkeypatch.setattr(cli, "VALIDATED_CAPABILITIES_MD", root / "product" / "generated" / "VALIDATED_CAPABILITIES.md")
     monkeypatch.setattr(cli, "SOURCES_CONFIG_DEFAULT", root / "product" / "discovery" / "sources.json")
     monkeypatch.setattr(cli, "DISCOVERY_CACHE_PATH", root / "product" / "generated" / "discovery" / "cache" / "discovery-cache-v1.json")
+    monkeypatch.setattr(cli, "DISCOVERY_CLUSTER_REGISTRY_PATH", root / "product" / "discovery" / "cluster-registry.json")
+    monkeypatch.setattr(cli, "DISCOVERY_PROPOSED_CLUSTER_REGISTRY_PATH", root / "product" / "generated" / "discovery" / "cluster-registry.proposed.json")
 
     monkeypatch.delenv("REDDIT_CLIENT_ID", raising=False)
     monkeypatch.delenv("REDDIT_CLIENT_SECRET", raising=False)
@@ -105,7 +107,11 @@ def _prepare_clusters(cli, sources_file):
         result = cli.collect_from_source(source, max_items=20, timeout=2.0, retries=1, cache=cache, cache_max_age_seconds=3600)
         collected.extend(result.items)
     deduped, _ = cli.dedupe_items(collected)
-    return cli.cluster_items(deduped)
+    clusters = cli.cluster_items(deduped)
+    observations = cli._existing_cluster_matches()
+    registry = cli.load_cluster_registry(cli.DISCOVERY_CLUSTER_REGISTRY_PATH)
+    clusters, _, _ = cli.resolve_cluster_ids_with_registry(clusters, registry, now_iso=cli.utc_now(), observation_clusters=observations)
+    return clusters
 
 
 def test_canonical_url_normalization(cli_env):
@@ -667,6 +673,8 @@ def _configure_cli_root(cli, root: Path, monkeypatch):
     monkeypatch.setattr(cli, "VALIDATED_CAPABILITIES_MD", root / "product" / "generated" / "VALIDATED_CAPABILITIES.md")
     monkeypatch.setattr(cli, "SOURCES_CONFIG_DEFAULT", root / "product" / "discovery" / "sources.json")
     monkeypatch.setattr(cli, "DISCOVERY_CACHE_PATH", root / "product" / "generated" / "discovery" / "cache" / "discovery-cache-v1.json")
+    monkeypatch.setattr(cli, "DISCOVERY_CLUSTER_REGISTRY_PATH", root / "product" / "discovery" / "cluster-registry.json")
+    monkeypatch.setattr(cli, "DISCOVERY_PROPOSED_CLUSTER_REGISTRY_PATH", root / "product" / "generated" / "discovery" / "cluster-registry.proposed.json")
 
 
 def _make_isolated_cli(monkeypatch):
@@ -736,6 +744,19 @@ def _write_ai_payload(root: Path, clusters):
     path = root / "ai.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
+
+
+def _seed_registry(root: Path, entries):
+    path = root / "product" / "discovery" / "cluster-registry.json"
+    path.write_text(json.dumps({"version": 1, "entries": entries}, indent=2), encoding="utf-8")
+
+
+def _run_custom_discovery(cli, root: Path, tmp_path: Path, texts: list[str], *, publish: bool = False):
+    src_path = tmp_path / f"sources-{len(texts)}.json"
+    _write_custom_sources(src_path, texts)
+    clusters = _prepare_clusters(cli, src_path)
+    ai_file = _write_ai_payload(root, clusters)
+    return run_discovery_with_ai_file(cli, src_path, ai_file, publish=publish, repo_owner="o", repo_name="r", github_token="t")
 
 
 def test_cluster_id_stable_across_clean_runs_without_prior_observations(cli_env, tmp_path, monkeypatch):
@@ -931,6 +952,229 @@ def test_incremental_rerun_no_duplicate_observations_and_markers(cli_env, fixtur
     assert len(obs_files) == len({p.name for p in obs_files})
     assert len(FakeClient.created) == len({issue["body"] for issue in FakeClient.created})
     assert any(action["action"] == "SKIPPED_EXISTS" for action in r2.get("top3_issue_actions", []))
+
+
+def test_registry_initial_creation_and_report_fields(cli_env, tmp_path):
+    cli, root = cli_env
+    _seed_registry(root, [])
+    report = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+        ],
+        publish=False,
+    )
+
+    reg = report.get("cluster_registry") or {}
+    assert reg.get("existing_entries") == 0
+    assert reg.get("new_entries") == 1
+    assert reg.get("matched_existing") == 0
+    assert reg.get("ambiguous_matches") == []
+    assert reg.get("proposed_registry_path")
+
+    proposed = root / reg["proposed_registry_path"]
+    data = json.loads(proposed.read_text(encoding="utf-8"))
+    assert len(data.get("entries", [])) == 1
+    assert data["entries"][0]["cluster_id"] == report["top10"][0]["cluster_id"]
+
+
+def test_registry_incremental_reuse_no_duplicate_observation_or_marker(cli_env, tmp_path, monkeypatch):
+    cli, root = cli_env
+
+    class FakeClient:
+        created = []
+
+        def __init__(self, owner, repo, token):
+            self.owner = owner
+            self.repo = repo
+            self.token = token
+
+        def find_issue_by_marker(self, marker):
+            for issue in self.__class__.created:
+                if marker in issue["body"]:
+                    return issue
+            return None
+
+        def create_issue(self, title, body, labels):
+            issue = {
+                "number": len(self.__class__.created) + 1,
+                "html_url": f"https://example/issues/{len(self.__class__.created)+1}",
+                "title": title,
+                "body": body,
+                "labels": labels,
+            }
+            self.__class__.created.append(issue)
+            return issue
+
+    monkeypatch.setattr(cli, "GITHUB_CLIENT_FACTORY", FakeClient)
+    _seed_registry(root, [])
+
+    report1 = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+        ],
+        publish=True,
+    )
+    cluster_id_1 = report1["top10"][0]["cluster_id"]
+    obs_count_1 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
+
+    # Simulate explicit human-reviewed persistence of proposed registry.
+    reg_path = root / "product" / "discovery" / "cluster-registry.json"
+    proposed1 = root / report1["cluster_registry"]["proposed_registry_path"]
+    shutil.copy2(proposed1, reg_path)
+
+    report2 = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+            "Caregiver cannot detect stale readings quickly because display is confusing",
+        ],
+        publish=True,
+    )
+    cluster_id_2 = report2["top10"][0]["cluster_id"]
+    obs_count_2 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
+
+    proposed2 = root / report2["cluster_registry"]["proposed_registry_path"]
+    reg2 = json.loads(proposed2.read_text(encoding="utf-8"))
+    ids = [x["cluster_id"] for x in reg2.get("entries", [])]
+
+    assert cluster_id_1 == cluster_id_2
+    assert obs_count_2 == obs_count_1
+    assert ids.count(cluster_id_1) == 1
+    assert any(action["action"] == "SKIPPED_EXISTS" for action in report2.get("top3_issue_actions", []))
+
+
+def test_registry_unrelated_problem_gets_new_cluster_id(cli_env, tmp_path):
+    cli, root = cli_env
+    _seed_registry(root, [])
+
+    report1 = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+        ],
+    )
+    proposed1 = root / report1["cluster_registry"]["proposed_registry_path"]
+    shutil.copy2(proposed1, root / "product" / "discovery" / "cluster-registry.json")
+
+    report2 = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        [
+            "Application startup crashes when opening settings",
+            "Users report startup crash before dashboard appears",
+        ],
+    )
+    assert report1["top10"][0]["cluster_id"] != report2["top10"][0]["cluster_id"]
+
+
+def test_registry_ambiguous_match_is_safe_and_not_published(cli_env, tmp_path, monkeypatch):
+    cli, root = cli_env
+
+    class FakeClient:
+        created = 0
+
+        def __init__(self, owner, repo, token):
+            self.owner = owner
+            self.repo = repo
+            self.token = token
+
+        def find_issue_by_marker(self, marker):
+            return None
+
+        def create_issue(self, title, body, labels):
+            self.__class__.created += 1
+            return {"number": self.__class__.created, "html_url": "https://example/issue"}
+
+    monkeypatch.setattr(cli, "GITHUB_CLIENT_FACTORY", FakeClient)
+
+    _seed_registry(
+        root,
+        [
+            {
+                "cluster_id": "DISC-AAAA1111AAAA",
+                "canonical_problem_key": "caregiver detect quickly reading stale",
+                "problem_fingerprint": "a1",
+                "persona": "caregiver",
+                "module": "Home / Monitoring",
+                "created_at": "2026-09-01T10:00:00Z",
+                "last_seen_at": "2026-09-01T10:00:00Z",
+            },
+            {
+                "cluster_id": "DISC-BBBB2222BBBB",
+                "canonical_problem_key": "caregiver detect quickly reading stale",
+                "problem_fingerprint": "b2",
+                "persona": "caregiver",
+                "module": "Home / Monitoring",
+                "created_at": "2026-09-01T10:00:00Z",
+                "last_seen_at": "2026-09-01T10:00:00Z",
+            },
+        ],
+    )
+
+    report = _run_custom_discovery(
+        cli,
+        root,
+        tmp_path,
+        ["Caregiver cannot quickly detect stale readings"],
+        publish=True,
+    )
+    reg = report.get("cluster_registry") or {}
+    assert reg.get("ambiguous_matches")
+    assert FakeClient.created == 0
+    assert all(not item.get("eligibility") for item in report.get("top10", []))
+
+
+def test_clean_workflow_simulation_with_persisted_registry_only(cli_env, tmp_path, monkeypatch):
+    cli1, root1, temp1 = _make_isolated_cli(monkeypatch)
+    cli2, root2, temp2 = _make_isolated_cli(monkeypatch)
+    try:
+        _seed_registry(root1, [])
+        report1 = _run_custom_discovery(
+            cli1,
+            root1,
+            tmp_path,
+            [
+                "Caregiver cannot quickly detect stale readings",
+                "Caregiver struggles to detect stale readings quickly",
+            ],
+        )
+        cluster_id_1 = report1["top10"][0]["cluster_id"]
+        proposed1 = root1 / report1["cluster_registry"]["proposed_registry_path"]
+
+        # Fresh checkout simulation: do not copy observations, copy only persisted registry state.
+        shutil.copy2(proposed1, root2 / "product" / "discovery" / "cluster-registry.json")
+        for obs in (root2 / "product" / "research" / "observations").glob("OBS-*.json"):
+            obs.unlink()
+
+        report2 = _run_custom_discovery(
+            cli2,
+            root2,
+            tmp_path,
+            [
+                "Caregiver cannot quickly detect stale readings",
+                "Caregiver struggles to detect stale readings quickly",
+                "Caregiver cannot detect stale readings quickly because display is confusing",
+            ],
+        )
+        assert report2["top10"][0]["cluster_id"] == cluster_id_1
+    finally:
+        temp1.cleanup()
+        temp2.cleanup()
 
 
 def test_malformed_ai_output_safe_failure_no_issue_creation(cli_env, fixture_sources, monkeypatch):
