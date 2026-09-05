@@ -88,7 +88,7 @@
     "branch": "copilot/fix-fast-test-suite",
     "state": "closed",
     "merged": true,
-    "merged_at": "2026-09-04T00:00:00Z",
+    "merged_at": "2026-09-04T17:22:41Z",
     "merged_by": "rafalbragan",
     "updated_at": "2026-09-04T20:37:36Z"
   },
@@ -187,7 +187,7 @@
       "master_commit": "b74749e7a0a6be40a3b1ed7e64f43c8cda65f099",
       "merged": true,
       "merged_by": "rafalbragan",
-      "merged_at": "2026-09-04T00:00:00Z",
+      "merged_at": "2026-09-04T17:22:41Z",
       "recorded_at": "2026-09-04T20:37:36Z"
     }
   ]

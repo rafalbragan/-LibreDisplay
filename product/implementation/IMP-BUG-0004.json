@@ -75,8 +75,6 @@
     "TEST-REDESIGNED-GLUCOSE-CARD-TREND-PROJECTION",
     "TEST-CI-FAST-SUITE-REGRESSION"
   ],
-  "ci_failures": [
-    "33900250965:success"
-  ],
+  "ci_failures": [],
   "updated_at": "2026-09-04T20:37:36Z"
 }
