@@ -1,0 +1,119 @@
+{
+  "sources": [
+    {
+      "name": "abbott_official",
+      "family": "official_vendor",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://www.freestyle.abbott/us-en/support.html?utm_source=test",
+          "text": "Users report delayed data refresh in caregiver dashboard when switching monitored persons.",
+          "problem_statement": "Caregiver dashboard refresh feels delayed while switching monitored persons.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "usability",
+          "severity": "medium",
+          "frequency": "frequent",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "name": "dexcom_official",
+      "family": "competitor",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://www.dexcom.com/en-us/faqs",
+          "text": "Competitor highlights easier caregiver switching between followed profiles.",
+          "problem_statement": "Caregivers need faster switching between followed profiles.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "idea",
+          "severity": "low",
+          "frequency": "occasional",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "name": "nightscout_github",
+      "family": "github_community",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://github.com/nightscout/cgm-remote-monitor/issues/1",
+          "text": "When data is stale, caregiver cannot quickly detect freshness and context.",
+          "problem_statement": "Caregiver cannot quickly detect stale data freshness context.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "confusion",
+          "severity": "high",
+          "frequency": "frequent",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "name": "xdrip_github",
+      "family": "github_community",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://github.com/NightscoutFoundation/xDrip/issues/2",
+          "text": "When data is stale, caregivers struggle to identify if readings are still current.",
+          "problem_statement": "Caregivers struggle to identify stale readings quickly.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "confusion",
+          "severity": "high",
+          "frequency": "frequent",
+          "confidence": "high"
+        }
+      ]
+    },
+    {
+      "name": "sugarmate_official",
+      "family": "competitor",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://sugarmate.io/",
+          "text": "Competitor includes strong context around stale/fresh indicators for caregivers.",
+          "problem_statement": "Caregivers expect clearer stale/fresh context in dashboard cards.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "idea",
+          "severity": "medium",
+          "frequency": "occasional",
+          "confidence": "medium"
+        }
+      ]
+    },
+    {
+      "name": "reddit_diabetes",
+      "family": "reddit",
+      "enabled": true,
+      "fixture_items": [
+        {
+          "url": "https://reddit.com/r/diabetes/comments/example",
+          "text": "Caregiver says data can look stale and hard to interpret quickly.",
+          "problem_statement": "Caregiver finds stale data hard to interpret quickly.",
+          "persona": "caregiver",
+          "mode": "caregiver",
+          "module": "Home / Monitoring",
+          "type": "usability",
+          "severity": "medium",
+          "frequency": "occasional",
+          "confidence": "medium"
+        }
+      ]
+    }
+  ]
+}
+
