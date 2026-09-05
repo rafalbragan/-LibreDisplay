@@ -346,7 +346,40 @@ def write_json(path: Path, payload: dict | list) -> None:
         fh.write("\n")
 
 
+def _validate_registry_entry(entry: dict) -> bool:
+    """Validate a single registry entry has required fields."""
+    if not isinstance(entry, dict):
+        return False
+    cid = str(entry.get("cluster_id") or "").strip()
+    key = str(entry.get("canonical_problem_key") or "").strip()
+    return bool(cid and key)
+
+
+def _strict_validate_registry_payload(payload) -> None:
+    """Strictly validate registry payload for existing files. Raises RuntimeError if invalid."""
+    if not isinstance(payload, dict):
+        raise RuntimeError(f"Registry file is not a JSON object: got {type(payload).__name__}")
+
+    if "entries" not in payload:
+        raise RuntimeError("Registry file missing required 'entries' field")
+
+    entries = payload.get("entries")
+    if not isinstance(entries, list):
+        raise RuntimeError(f"Registry 'entries' field is not a list: got {type(entries).__name__}")
+
+    for idx, entry in enumerate(entries):
+        if not isinstance(entry, dict):
+            raise RuntimeError(f"Registry entry[{idx}] is not an object: got {type(entry).__name__}")
+        if not _validate_registry_entry(entry):
+            raise RuntimeError(f"Registry entry[{idx}] missing required fields (cluster_id, canonical_problem_key)")
+
+    version = payload.get("version")
+    if version != CLUSTER_REGISTRY_VERSION:
+        raise RuntimeError(f"Unsupported registry version: {version}. Expected {CLUSTER_REGISTRY_VERSION}.")
+
+
 def _cluster_registry_payload(payload) -> dict:
+    """Normalize valid registry payload. For existing files, strict validation is done separately."""
     if not isinstance(payload, dict):
         return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
     entries = payload.get("entries")
@@ -380,19 +413,15 @@ def load_cluster_registry(path: Path = DISCOVERY_CLUSTER_REGISTRY_PATH) -> dict:
         return {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
     try:
         payload = read_json(path)
+        # Strict validation for existing files
+        _strict_validate_registry_payload(payload)
         cleaned = _cluster_registry_payload(payload)
-        version = cleaned.get("version")
-        if version != CLUSTER_REGISTRY_VERSION:
-            raise ValueError(f"Unsupported registry version: {version}. Expected {CLUSTER_REGISTRY_VERSION}.")
         return cleaned
-    except ValueError as ve:
-        # Only re-raise ValueError that we explicitly raised above (version check)
-        # Do NOT re-raise JSONDecodeError which is a subclass of ValueError
-        if "Unsupported registry version" in str(ve):
-            raise
-        # All other errors (including JSONDecodeError) should be wrapped
-        raise RuntimeError(f"Failed to load cluster registry from {path}: {ve}") from ve
+    except RuntimeError:
+        # Re-raise our own validation errors
+        raise
     except Exception as e:
+        # Wrap any other errors (JSONDecodeError, etc.)
         raise RuntimeError(f"Failed to load cluster registry from {path}: {e}") from e
 
 

@@ -1476,35 +1476,123 @@ def test_malformed_json_registry_fails_closed(cli_env):
         cli.load_cluster_registry(registry_path)
 
 
-def test_invalid_registry_structure_fails_closed(cli_env):
-    """Registry with missing entries key is tolerated (cleaned up)."""
+def test_malformed_json_registry_fails_closed(cli_env):
+    """Registry with malformed JSON should fail closed (raise RuntimeError)."""
     cli, root = cli_env
     registry_path = root / "product" / "discovery" / "cluster-registry.json"
     registry_path.parent.mkdir(parents=True, exist_ok=True)
-    # Missing entries key, but valid version - should be tolerated and cleaned
+    registry_path.write_text("{broken json content", encoding="utf-8")
+
+    # load_cluster_registry should raise RuntimeError, not return empty
+    with pytest.raises(RuntimeError):
+        cli.load_cluster_registry(registry_path)
+
+
+def test_top_level_list_registry_fails_closed(cli_env):
+    """Registry with top-level list (not object) should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+
+    # Should fail closed, not silently convert to empty
+    with pytest.raises(RuntimeError, match="is not a JSON object"):
+        cli.load_cluster_registry(registry_path)
+
+
+def test_missing_entries_field_registry_fails_closed(cli_env):
+    """Registry with missing entries field should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
     registry_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
 
-    # Should succeed with cleaned empty entries
-    registry = cli.load_cluster_registry(registry_path)
-    assert registry == {"version": 1, "entries": []}
+    # Should fail closed, not silently add empty entries
+    with pytest.raises(RuntimeError, match="missing required 'entries' field"):
+        cli.load_cluster_registry(registry_path)
 
-    # A list payload should trigger failure (not a dict)
-    registry_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
-    # _cluster_registry_payload accepts non-dict and returns default
-    # so this should actually succeed too
+
+def test_entries_not_list_registry_fails_closed(cli_env):
+    """Registry with entries not a list should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"version": 1, "entries": "not a list"}), encoding="utf-8")
+
+    # Should fail closed
+    with pytest.raises(RuntimeError, match="'entries' field is not a list"):
+        cli.load_cluster_registry(registry_path)
+
+
+def test_invalid_entry_missing_fields_registry_fails_closed(cli_env):
+    """Registry with entry missing required fields should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    # Entry missing cluster_id
+    registry_path.write_text(json.dumps({
+        "version": 1,
+        "entries": [
+            {"canonical_problem_key": "test", "persona": "caregiver"}
+        ]
+    }), encoding="utf-8")
+
+    # Should fail closed
+    with pytest.raises(RuntimeError, match="missing required fields"):
+        cli.load_cluster_registry(registry_path)
+
+
+def test_invalid_entry_not_object_registry_fails_closed(cli_env):
+    """Registry with entry not an object should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({
+        "version": 1,
+        "entries": [
+            "not an object"
+        ]
+    }), encoding="utf-8")
+
+    # Should fail closed
+    with pytest.raises(RuntimeError, match="is not an object"):
+        cli.load_cluster_registry(registry_path)
+
+
+def test_invalid_registry_structure_fails_closed(cli_env):
+    """Registry with structural issues should fail closed."""
+    cli, root = cli_env
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+
+    # Valid registry should still work
+    valid_registry = {
+        "version": 1,
+        "entries": [
+            {
+                "cluster_id": "DISC-TEST001",
+                "canonical_problem_key": "caregiver read glucose",
+                "problem_fingerprint": "abc123",
+                "persona": "caregiver",
+                "module": "monitoring"
+            }
+        ]
+    }
+    registry_path.write_text(json.dumps(valid_registry), encoding="utf-8")
     registry = cli.load_cluster_registry(registry_path)
-    assert registry == {"version": 1, "entries": []}
+    assert len(registry["entries"]) == 1
+    assert registry["entries"][0]["cluster_id"] == "DISC-TEST001"
 
 
 def test_unsupported_registry_version_fails_closed(cli_env):
-    """Registry with unsupported version should fail closed."""
+    """Registry with unsupported version should fail closed with RuntimeError."""
     cli, root = cli_env
     registry_path = root / "product" / "discovery" / "cluster-registry.json"
     registry_path.parent.mkdir(parents=True, exist_ok=True)
     registry_path.write_text(json.dumps({"version": 999, "entries": []}), encoding="utf-8")
 
-    # Should fail because version is unsupported
-    with pytest.raises(ValueError, match="Unsupported registry version"):
+    # Should fail closed with RuntimeError (not ValueError)
+    with pytest.raises(RuntimeError, match="Unsupported registry version"):
         cli.load_cluster_registry(registry_path)
 
 
@@ -1533,6 +1621,91 @@ def test_malformed_registry_prevents_inbox_publication(cli_env, fixture_sources)
     assert len(report["created_observations"]) == 0
 
     # No issues should be created
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_missing_entries_field_prevents_creation(cli_env, fixture_sources):
+    """Registry with missing entries field must block observation/issue creation."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(build_ai_payload_for_clusters(clusters)), encoding="utf-8")
+
+    # Break with missing entries
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"version": 1}), encoding="utf-8")
+
+    report = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True)
+
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_top_level_list_prevents_creation(cli_env, fixture_sources):
+    """Registry with top-level list must block observation/issue creation."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(build_ai_payload_for_clusters(clusters)), encoding="utf-8")
+
+    # Break with top-level list
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+
+    report = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True)
+
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_entries_not_list_prevents_creation(cli_env, fixture_sources):
+    """Registry with entries not a list must block observation/issue creation."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(build_ai_payload_for_clusters(clusters)), encoding="utf-8")
+
+    # Break with entries not a list
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"version": 1, "entries": "not a list"}), encoding="utf-8")
+
+    report = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True)
+
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
+    assert len(report["top3_issue_actions"]) == 0
+
+
+def test_invalid_entry_prevents_creation(cli_env, fixture_sources):
+    """Registry with invalid entry must block observation/issue creation."""
+    cli, root = cli_env
+
+    clusters = _prepare_clusters(cli, fixture_sources)
+    ai_file = root / "ai.json"
+    ai_file.write_text(json.dumps(build_ai_payload_for_clusters(clusters)), encoding="utf-8")
+
+    # Break with invalid entry
+    registry_path = root / "product" / "discovery" / "cluster-registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({
+        "version": 1,
+        "entries": [
+            {"canonical_problem_key": "test"}  # missing cluster_id
+        ]
+    }), encoding="utf-8")
+
+    report = run_discovery_with_ai_file(cli, fixture_sources, ai_file, publish=True)
+
+    assert report["status"] == "FAILED"
+    assert len(report["created_observations"]) == 0
     assert len(report["top3_issue_actions"]) == 0
 
 
