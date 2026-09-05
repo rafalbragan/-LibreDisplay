@@ -460,6 +460,324 @@ def test_reddit_oauth_with_credentials_collects_items(cli_env, tmp_path, monkeyp
     assert src["count"] > 0
 
 
+def _collect_cache_text(root: Path) -> str:
+    cache_path = root / "product" / "generated" / "discovery" / "cache" / "discovery-cache-v1.json"
+    return cache_path.read_text(encoding="utf-8")
+
+
+def _assert_cache_minimized(cache_payload):
+    forbidden_keys = {
+        "access_token",
+        "refresh_token",
+        "authorization",
+        "client_secret",
+        "reddit_client_secret",
+        "github_token",
+        "password",
+        "cookie",
+        "set-cookie",
+        "author",
+        "username",
+        "user",
+        "body",
+        "selftext",
+    }
+    if isinstance(cache_payload, dict):
+        for key, value in cache_payload.items():
+            assert str(key).lower() not in forbidden_keys
+            _assert_cache_minimized(value)
+    elif isinstance(cache_payload, list):
+        for item in cache_payload:
+            _assert_cache_minimized(item)
+
+
+def test_cache_sanitizes_raw_upstream_payloads_and_bounded_observations(cli_env, tmp_path, monkeypatch):
+    cli, root = cli_env
+    monkeypatch.setenv("REDDIT_CLIENT_ID", "id")
+    monkeypatch.setenv("REDDIT_CLIENT_SECRET", "sec")
+
+    long_github_body = "GITHUB BODY SECRET " + ("alpha beta gamma delta epsilon " * 30)
+    long_reddit_body = "REDDIT SELFTEXT SECRET " + ("one two three four five " * 30)
+    long_html = "<html><head><title>Official Page</title></head><body>" + ("<p>HTML SECRET MARKER</p>" * 80) + "</body></html>"
+
+    def fake_post_form_json(url, form, timeout, retries, headers=None):
+        assert "access_token" in url
+        return {"access_token": "token123", "refresh_token": "token456", "token_type": "bearer"}
+
+    def fake_fetch_json(url, timeout, retries, headers=None):
+        if "github.com" in url or "/repos/" in url:
+            return [
+                {
+                    "html_url": "https://github.com/example/repo/issues/77",
+                    "title": "GitHub issue exposes stale readings",
+                    "body": long_github_body,
+                    "user": {"login": "should_not_be_saved", "avatar_url": "https://example/avatar.png"},
+                }
+            ]
+        assert headers and headers.get("Authorization", "").startswith("Bearer ")
+        return {
+            "data": {
+                "children": [
+                    {
+                        "data": {
+                            "title": "Reddit caregivers need clearer stale data context",
+                            "selftext": long_reddit_body,
+                            "permalink": "/r/diabetes/comments/abc123/stale-context/",
+                            "author": "should_not_be_saved",
+                            "user": {"login": "should_not_be_saved"},
+                        }
+                    }
+                ]
+            }
+        }
+
+    def fake_fetch_url(url, timeout, retries):
+        assert "example.com" in url
+        return long_html
+
+    monkeypatch.setattr(cli, "_post_form_json", fake_post_form_json)
+    monkeypatch.setattr(cli, "_fetch_json", fake_fetch_json)
+    monkeypatch.setattr(cli, "_fetch_url", fake_fetch_url)
+
+    sources = {
+        "sources": [
+            {
+                "name": "official_help",
+                "family": "official_vendor",
+                "kind": "official_pages",
+                "enabled": True,
+                "urls": ["https://example.com/help/stale"],
+            },
+            {
+                "name": "nightscout_github",
+                "family": "github_community",
+                "kind": "github_issues",
+                "enabled": True,
+                "repos": ["example/repo"],
+            },
+            {
+                "name": "reddit_diabetes",
+                "family": "reddit",
+                "kind": "reddit_oauth",
+                "enabled": True,
+                "subreddits": ["diabetes"],
+            },
+        ]
+    }
+    path = tmp_path / "sources.json"
+    path.write_text(json.dumps(sources), encoding="utf-8")
+
+    report = cli.run_discovery(path, 5, False, "", "", "", "heuristic", "gpt-5.4-mini", None, 1.0, 1, 3600)
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+
+    cache_path = root / "product" / "generated" / "discovery" / "cache" / "discovery-cache-v1.json"
+    cache_text = cache_path.read_text(encoding="utf-8")
+    assert "token123" not in cache_text
+    assert "token456" not in cache_text
+    assert "access_token" not in cache_text
+    assert "should_not_be_saved" not in cache_text
+    assert "GITHUB BODY SECRET" not in cache_text
+    assert "REDDIT SELFTEXT SECRET" not in cache_text
+    assert "HTML SECRET MARKER" not in cache_text
+    assert "<html" not in cache_text.lower()
+    assert "<body" not in cache_text.lower()
+
+    cache_json = json.loads(cache_path.read_text(encoding="utf-8"))
+    _assert_cache_minimized(cache_json)
+
+    obs_files = list((root / "product" / "research" / "observations").glob("OBS-*.json"))
+    assert obs_files
+    for obs_file in obs_files:
+        data = json.loads(obs_file.read_text(encoding="utf-8"))
+        text = json.dumps(data).lower()
+        assert "should_not_be_saved" not in text
+        assert "token123" not in text
+        assert "token456" not in text
+        assert "author" not in text
+        assert "username" not in text
+        assert "<html" not in text
+        for evidence in data.get("evidence", []):
+            assert len(evidence) <= 220
+        assert len(data.get("problem_statement", "")) <= 180
+
+
+def test_cluster_id_stable_for_input_order_permutation(cli_env):
+    cli, _ = cli_env
+    a = {
+        "canonical_url": "https://example.com/a",
+        "content_hash": cli.content_hash("A"),
+        "problem_statement": "Caregiver cannot quickly detect stale readings",
+        "source_name": "source_a",
+        "source_identity": "source_a",
+        "source_family": "github_community",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+    b = {
+        "canonical_url": "https://example.com/b",
+        "content_hash": cli.content_hash("B"),
+        "problem_statement": "Caregiver struggles to detect stale readings quickly",
+        "source_name": "source_b",
+        "source_identity": "source_b",
+        "source_family": "reddit",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+    c = {
+        "canonical_url": "https://example.com/c",
+        "content_hash": cli.content_hash("C"),
+        "problem_statement": "Caregiver struggles to detect stale readings quickly today",
+        "source_name": "source_c",
+        "source_identity": "source_c",
+        "source_family": "official_vendor",
+        "persona": "caregiver",
+        "module": "Home / Monitoring",
+        "source_type": "community",
+        "type": "usability",
+        "severity": "medium",
+        "frequency": "frequent",
+        "confidence": "medium",
+    }
+
+    def cluster_id_for(items):
+        deduped, _ = cli.dedupe_items(items)
+        return cli.cluster_items(deduped)[0]["cluster_id"]
+
+    assert cluster_id_for([a, b, c]) == cluster_id_for([c, b, a])
+
+
+def test_incremental_cluster_id_and_idempotent_observation_and_issue(cli_env, tmp_path, monkeypatch):
+    cli, root = cli_env
+
+    class FakeClient:
+        created = []
+
+        def __init__(self, owner, repo, token):
+            self.owner = owner
+            self.repo = repo
+            self.token = token
+
+        def find_issue_by_marker(self, marker):
+            for issue in self.__class__.created:
+                if marker in issue["body"]:
+                    return issue
+            return None
+
+        def create_issue(self, title, body, labels):
+            issue = {
+                "number": len(self.__class__.created) + 1,
+                "html_url": f"https://example/issues/{len(self.__class__.created)+1}",
+                "title": title,
+                "body": body,
+                "labels": labels,
+            }
+            self.__class__.created.append(issue)
+            return issue
+
+    monkeypatch.setattr(cli, "GITHUB_CLIENT_FACTORY", FakeClient)
+
+    def write_sources(path: Path, texts: list[str]):
+        payload = {
+            "sources": [
+                {
+                    "name": "nightscout_github",
+                    "family": "github_community",
+                    "kind": "github_issues",
+                    "enabled": True,
+                    "fixture_items": [
+                        {
+                            "url": f"https://example.com/{idx}",
+                            "text": text,
+                            "problem_statement": text,
+                            "persona": "caregiver",
+                            "mode": "caregiver",
+                            "module": "Home / Monitoring",
+                            "type": "usability",
+                            "severity": "medium",
+                            "frequency": "frequent",
+                            "confidence": "medium",
+                        }
+                        for idx, text in enumerate(texts, start=1)
+                    ],
+                }
+            ]
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+
+    def ai_file_for(report_root: Path, clusters):
+        payload = {"clusters": []}
+        for cluster in clusters:
+            payload["clusters"].append(
+                {
+                    "cluster_id": cluster["cluster_id"],
+                    "classification": "PRODUCT_PROBLEM",
+                    "persona": cluster["persona_candidate"],
+                    "problem_statement": cluster["normalized_problem"],
+                    "evidence_summary": "Evidence summary",
+                    "source_diversity_summary": "Diverse sources",
+                    "current_librecare_match": "AI summary",
+                    "solvability": "APP",
+                    "impact_score": 4,
+                    "frequency_score": 4,
+                    "evidence_score": 4,
+                    "solvability_score": 4,
+                    "novelty_score": 3,
+                    "effort_score": 2,
+                    "confidence": "high",
+                    "counterargument": "Counter point",
+                    "candidate_recommendation": "Recommend human review",
+                }
+            )
+        path = report_root / "ai.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def run_with_sources(sources_path: Path):
+        clusters = _prepare_clusters(cli, sources_path)
+        ai_file = ai_file_for(root, clusters)
+        return run_discovery_with_ai_file(cli, sources_path, ai_file, publish=True, repo_owner="o", repo_name="r", github_token="t")
+
+    source_v1 = tmp_path / "sources-v1.json"
+    source_v2 = tmp_path / "sources-v2.json"
+    write_sources(
+        source_v1,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+        ],
+    )
+    write_sources(
+        source_v2,
+        [
+            "Caregiver cannot quickly detect stale readings",
+            "Caregiver struggles to detect stale readings quickly",
+            "Caregiver struggles to detect stale readings quickly today",
+        ],
+    )
+
+    report1 = run_with_sources(source_v1)
+    obs_count1 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
+    issue_count1 = len(FakeClient.created)
+    report2 = run_with_sources(source_v2)
+    obs_count2 = len(list((root / "product" / "research" / "observations").glob("OBS-*.json")))
+    issue_count2 = len(FakeClient.created)
+
+    assert report1["top10"][0]["cluster_id"] == report2["top10"][0]["cluster_id"]
+    assert obs_count2 == obs_count1
+    assert issue_count2 == issue_count1
+    assert any(action["action"] == "SKIPPED_EXISTS" for action in report2.get("top3_issue_actions", []))
+
+
 def test_malformed_ai_output_safe_failure_no_issue_creation(cli_env, fixture_sources, monkeypatch):
     cli, root = cli_env
 

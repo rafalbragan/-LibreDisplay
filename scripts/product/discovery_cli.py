@@ -44,6 +44,22 @@ VALIDATED_CAPABILITIES_MD = PRODUCT / "generated" / "VALIDATED_CAPABILITIES.md"
 SOURCES_CONFIG_DEFAULT = PRODUCT / "discovery" / "sources.json"
 DISCOVERY_CACHE_PATH = GENERATED_DISCOVERY_DIR / "cache" / "discovery-cache-v1.json"
 
+FORBIDDEN_CACHE_KEYS = {
+    "access_token",
+    "refresh_token",
+    "authorization",
+    "client_secret",
+    "reddit_client_secret",
+    "github_token",
+    "password",
+    "cookie",
+    "set-cookie",
+}
+
+MAX_CACHED_EXCERPT_LENGTH = 220
+MAX_CACHED_PROBLEM_LENGTH = 180
+MAX_CACHED_TEXT_LENGTH = 500
+
 CLASSIFICATIONS = {
     "VALIDATED_CAPABILITY",
     "PRODUCT_PROBLEM",
@@ -135,7 +151,7 @@ class DiscoveryCache:
             # Invalid cache must never break run determinism.
             self._data = {"version": 1, "entries": {}}
 
-    def get(self, key: str, max_age_seconds: int) -> dict | None:
+    def get(self, key: str, max_age_seconds: int):
         entries = self._data.get("entries", {})
         row = entries.get(key)
         if not isinstance(row, dict):
@@ -146,21 +162,86 @@ class DiscoveryCache:
         if time.time() - ts > max(1, max_age_seconds):
             return None
         value = row.get("value")
-        return value if isinstance(value, dict) else None
+        return value
 
-    def put(self, key: str, value: dict) -> None:
+    def put(self, key: str, value) -> None:
+        _validate_cache_payload(value)
         self._data.setdefault("entries", {})
         self._data["entries"][key] = {"cached_at": int(time.time()), "value": value}
 
     def save(self) -> None:
+        _validate_cache_payload(self._data)
         self.path.parent.mkdir(parents=True, exist_ok=True)
         serialized = json.dumps(self._data, ensure_ascii=False, indent=2)
         # Defensive redaction guard: never persist likely credentials.
         lowered = serialized.lower()
-        for marker in ["reddit_client_secret", "authorization", "bearer ", "github_token", "client_secret"]:
+        for marker in ["reddit_client_secret", "authorization", "bearer ", "github_token", "client_secret", "access_token", "refresh_token"]:
             if marker in lowered:
                 raise RuntimeError("Cache serialization blocked: credential-like marker detected")
         self.path.write_text(serialized + "\n", encoding="utf-8")
+
+
+def _truncate_text(text: str, limit: int) -> str:
+    cleaned = re.sub(r"\s+", " ", str(text)).strip()
+    if len(cleaned) <= limit:
+        return cleaned
+    return cleaned[: limit - 3].rstrip() + "..."
+
+
+def _validate_cache_payload(value, path: str = "cache") -> None:
+    if isinstance(value, dict):
+        for key, item in value.items():
+            key_str = str(key).lower()
+            if key_str in FORBIDDEN_CACHE_KEYS:
+                raise RuntimeError(f"Cache serialization blocked: forbidden key detected at {path}.{key_str}")
+            _validate_cache_payload(item, f"{path}.{key_str}")
+        return
+    if isinstance(value, list):
+        for idx, item in enumerate(value):
+            _validate_cache_payload(item, f"{path}[{idx}]")
+        return
+    if isinstance(value, str):
+        lowered = value.lower()
+        for marker in ["<html", "</html", "<body", "</body", "<script", "</script", "<style", "</style"]:
+            if marker in lowered:
+                raise RuntimeError(f"Cache serialization blocked: raw HTML detected at {path}")
+
+
+def _normalize_cached_item(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
+    normalized = _normalize_item_fields(item, source_name, source_family, source_type)
+    if not normalized:
+        return None
+    cached = {
+        "canonical_url": normalized["canonical_url"],
+        "source_name": normalized["source_name"],
+        "source_family": normalized["source_family"],
+        "source_identity": normalized["source_identity"],
+        "source_type": normalized["source_type"],
+        "retrieved_at": normalized["retrieved_at"],
+        "content_hash": normalized["content_hash"],
+        "excerpt": _truncate_text(normalized["problem_statement"], MAX_CACHED_EXCERPT_LENGTH),
+        "problem_statement": _truncate_text(normalized["problem_statement"], MAX_CACHED_PROBLEM_LENGTH),
+        "persona": normalized["persona"],
+        "mode": normalized["mode"],
+        "module": normalized["module"],
+        "type": normalized["type"],
+        "severity": normalized["severity"],
+        "frequency": normalized["frequency"],
+        "confidence": normalized["confidence"],
+    }
+    return cached
+
+
+def _cache_get_items(cache: DiscoveryCache, key: str, max_age_seconds: int) -> list[dict] | None:
+    value = cache.get(key, max_age_seconds)
+    if not isinstance(value, list):
+        return None
+    items = [item for item in value if isinstance(item, dict)]
+    return items or None
+
+
+def _cache_put_items(cache: DiscoveryCache, key: str, items: list[dict]) -> None:
+    cache.put(key, items)
 
 
 class GitHubIssueClient:
@@ -411,32 +492,6 @@ def _cache_key(source_name: str, suffix: str) -> str:
     return f"{source_name}::{suffix}"
 
 
-def _cache_get_json(cache: DiscoveryCache, key: str, max_age_seconds: int) -> dict | list | None:
-    payload = cache.get(key, max_age_seconds)
-    if not payload:
-        return None
-    value = payload.get("value")
-    if isinstance(value, (dict, list)):
-        return value
-    return None
-
-
-def _cache_put_json(cache: DiscoveryCache, key: str, value: dict | list) -> None:
-    cache.put(key, {"value": value})
-
-
-def _cache_get_text(cache: DiscoveryCache, key: str, max_age_seconds: int) -> str | None:
-    payload = cache.get(key, max_age_seconds)
-    if not payload:
-        return None
-    value = payload.get("value")
-    return value if isinstance(value, str) else None
-
-
-def _cache_put_text(cache: DiscoveryCache, key: str, value: str) -> None:
-    cache.put(key, {"value": value})
-
-
 def _normalize_item_fields(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
     url = canonicalize_url(str(item.get("url") or item.get("canonical_url") or "").strip())
     text = str(item.get("text") or "").strip()
@@ -451,8 +506,8 @@ def _normalize_item_fields(item: dict, source_name: str, source_family: str, sou
         "source_type": source_type,
         "retrieved_at": utc_now(),
         "content_hash": content_hash(text),
-        "excerpt": _safe_excerpt(text),
-        "problem_statement": problem,
+        "excerpt": _truncate_text(_safe_excerpt(text), MAX_CACHED_TEXT_LENGTH),
+        "problem_statement": _truncate_text(problem, MAX_CACHED_PROBLEM_LENGTH),
         "persona": item.get("persona", "caregiver"),
         "mode": item.get("mode", item.get("persona", "caregiver")),
         "module": item.get("module", "Home / Monitoring"),
@@ -485,17 +540,19 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
             break
         canon = canonicalize_url(str(raw_url))
         key = _cache_key(source_name, f"html:{canon}")
-        html = _cache_get_text(cache, key, cache_max_age_seconds)
-        if html is None:
-            html = _fetch_url(canon, timeout=timeout, retries=retries)
-            _cache_put_text(cache, key, html)
+        cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
+        if cached_items is not None:
+            out.extend(cached_items[: max_items - len(out)])
+            continue
+
+        html = _fetch_url(canon, timeout=timeout, retries=retries)
         title = _extract_html_title(html)
         plain = _extract_html_text(html)
         if not plain:
             continue
         headline = title or _problem_from_text(plain)
         text = f"{headline}. {_safe_excerpt(plain, 500)}"
-        item = _normalize_item_fields(
+        item = _normalize_cached_item(
             {
                 "url": canon,
                 "text": text,
@@ -513,6 +570,7 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
             source_type,
         )
         if item:
+            _cache_put_items(cache, key, [item])
             out.append(item)
     return out
 
@@ -541,11 +599,16 @@ def _collect_github_issues(source: dict, max_items: int, timeout: float, retries
         owner, repo = owner_repo.split("/", 1)
         api_url = f"https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page={min(100, max_items)}"
         key = _cache_key(source_name, f"gh:{owner_repo}")
-        data = _cache_get_json(cache, key, cache_max_age_seconds)
-        if data is None:
-            headers = {"Accept": "application/vnd.github+json"}
-            data = _fetch_json(api_url, timeout=timeout, retries=retries, headers=headers)
-            _cache_put_json(cache, key, data)
+        cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
+        if cached_items is not None:
+            for item in cached_items:
+                if len(out) >= max_items:
+                    break
+                out.append(item)
+            continue
+
+        data = _fetch_json(api_url, timeout=timeout, retries=retries, headers={"Accept": "application/vnd.github+json"})
+        normalized_items: list[dict] = []
         if not isinstance(data, list):
             continue
         for issue in data:
@@ -561,7 +624,7 @@ def _collect_github_issues(source: dict, max_items: int, timeout: float, retries
             if not issue_url or not title:
                 continue
             text = f"{title}. {_safe_excerpt(body, 260)}" if body else title
-            item = _normalize_item_fields(
+            item = _normalize_cached_item(
                 {
                     "url": issue_url,
                     "text": text,
@@ -579,7 +642,10 @@ def _collect_github_issues(source: dict, max_items: int, timeout: float, retries
                 source_type,
             )
             if item:
+                normalized_items.append(item)
                 out.append(item)
+        if normalized_items:
+            _cache_put_items(cache, key, normalized_items)
     return out
 
 
@@ -596,17 +662,13 @@ def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries:
         "Authorization": f"Basic {basic}",
         "Content-Type": "application/x-www-form-urlencoded",
     }
-    token_key = _cache_key(name, "reddit-token")
-    token_payload = _cache_get_json(cache, token_key, max_age_seconds=45)
-    if token_payload is None:
-        token_payload = _post_form_json(
-            "https://www.reddit.com/api/v1/access_token",
-            {"grant_type": "client_credentials"},
-            timeout=timeout,
-            retries=retries,
-            headers=token_headers,
-        )
-        _cache_put_json(cache, token_key, token_payload)
+    token_payload = _post_form_json(
+        "https://www.reddit.com/api/v1/access_token",
+        {"grant_type": "client_credentials"},
+        timeout=timeout,
+        retries=retries,
+        headers=token_headers,
+    )
 
     access_token = ""
     if isinstance(token_payload, dict):
@@ -622,14 +684,17 @@ def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries:
         limit = min(50, max_items - len(out))
         endpoint = f"https://oauth.reddit.com/r/{sub}/new?limit={limit}&raw_json=1"
         key = _cache_key(name, f"reddit:{sub}")
-        data = _cache_get_json(cache, key, max_age_seconds=cache_max_age_seconds)
-        if data is None:
-            headers = {"Authorization": f"Bearer {access_token}"}
-            data = _fetch_json(endpoint, timeout=timeout, retries=retries, headers=headers)
-            _cache_put_json(cache, key, data)
-        posts = []
+        cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
+        if cached_items is not None:
+            out.extend(cached_items[: max_items - len(out)])
+            continue
+
+        data = _fetch_json(endpoint, timeout=timeout, retries=retries, headers={"Authorization": f"Bearer {access_token}"})
+        normalized_items: list[dict] = []
         if isinstance(data, dict):
             posts = ((data.get("data") or {}).get("children") or [])
+        else:
+            posts = []
         for post in posts:
             if len(out) >= max_items:
                 break
@@ -643,7 +708,7 @@ def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries:
                 continue
             url = canonicalize_url(f"https://www.reddit.com{permalink}")
             text = f"{title}. {_safe_excerpt(selftext, 240)}" if selftext else title
-            item = _normalize_item_fields(
+            item = _normalize_cached_item(
                 {
                     "url": url,
                     "text": text,
@@ -661,7 +726,10 @@ def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries:
                 SOURCE_TYPE_BY_FAMILY.get(family, "community"),
             )
             if item:
+                normalized_items.append(item)
                 out.append(item)
+        if normalized_items:
+            _cache_put_items(cache, key, normalized_items)
 
     return SourceResult(name=name, family=family, status="OK" if out else "EMPTY", items=out)
 
@@ -734,27 +802,78 @@ def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
     return out, stats
 
 
+def _cluster_representative_item(items: list[dict]) -> dict:
+    return sorted(
+        items,
+        key=lambda item: (
+            str(item.get("problem_fingerprint") or ""),
+            str(item.get("canonical_url") or ""),
+            str(item.get("problem_statement") or ""),
+        ),
+    )[0]
+
+
 def _stable_cluster_id_from_items(items: list[dict]) -> str:
-    token_counts: dict[str, int] = {}
-    for item in items:
-        for tok in set(tokenize(str(item.get("problem_statement") or ""))):
-            token_counts[tok] = token_counts.get(tok, 0) + 1
-
-    threshold = 2 if len(items) >= 2 else 1
-    anchor_tokens = sorted([t for t, c in token_counts.items() if c >= threshold])
-    if not anchor_tokens:
-        anchor_tokens = sorted(token_counts.keys())
-    if not anchor_tokens:
-        # Final fallback keeps determinism while staying content-derived.
-        fps = sorted(str(it.get("problem_fingerprint") or "") for it in items)
-        anchor_tokens = [x for x in fps if x]
-
-    material = " ".join(anchor_tokens)
+    representative = _cluster_representative_item(items)
+    material = "|".join(
+        [
+            str(representative.get("problem_fingerprint") or ""),
+            str(representative.get("canonical_url") or ""),
+            str(representative.get("problem_statement") or ""),
+            str(representative.get("source_family") or ""),
+        ]
+    )
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
     return f"DISC-{digest}"
 
 
-def cluster_items(items: list[dict], threshold: float = 0.40) -> list[dict]:
+def _existing_cluster_matches() -> list[dict]:
+    matches: list[dict] = []
+    for path in iter_record_files(OBSERVATIONS_DIR) or []:
+        try:
+            rec = load_record(path)
+        except Exception:
+            continue
+        text = str(rec.get("problem_statement") or rec.get("text") or "").strip()
+        cid = str(rec.get("cluster_id") or "").strip()
+        if not text or not cid:
+            continue
+        matches.append(
+            {
+                "cluster_id": cid,
+                "problem_statement": text,
+                "problem_fingerprint": str(rec.get("problem_fingerprint") or "").strip(),
+                "persona": str(rec.get("persona") or "").strip(),
+                "module": str(rec.get("module") or "").strip(),
+                "source_type": str(rec.get("source_type") or "").strip(),
+            }
+        )
+    return matches
+
+
+def _reuse_existing_cluster_id(cluster: dict, existing_clusters: list[dict]) -> str | None:
+    if not existing_clusters:
+        return None
+    problem = str(cluster.get("normalized_problem") or "").strip()
+    if not problem:
+        return None
+    persona = str(cluster.get("persona_candidate") or "").strip()
+    module = str(cluster.get("module_candidate") or "").strip()
+    best_score = 0.0
+    best_cluster_id = None
+    for existing in existing_clusters:
+        score = _text_similarity(problem, existing["problem_statement"])
+        if persona and existing.get("persona") and persona != existing.get("persona"):
+            score *= 0.9
+        if module and existing.get("module") and module != existing.get("module"):
+            score *= 0.95
+        if score > best_score:
+            best_score = score
+            best_cluster_id = existing["cluster_id"]
+    return best_cluster_id if best_score >= 0.70 else None
+
+
+def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters: list[dict] | None = None) -> list[dict]:
     clusters: list[dict] = []
     for item in sorted(items, key=lambda i: (i.get("problem_fingerprint", ""), i.get("canonical_url", ""))):
         tokens = set(tokenize(str(item.get("problem_statement") or "")))
@@ -775,12 +894,27 @@ def cluster_items(items: list[dict], threshold: float = 0.40) -> list[dict]:
     out = []
     for raw in clusters:
         c_items = raw["items"]
-        problem_fps = [str(x.get("problem_fingerprint") or "") for x in c_items if x.get("problem_fingerprint")]
+        representative = _cluster_representative_item(c_items)
+        problem_fps = [str(representative.get("problem_fingerprint") or "")]
         cluster_id = _stable_cluster_id_from_items(c_items)
+        if existing_clusters:
+            reused_cluster_id = _reuse_existing_cluster_id(
+                {
+                    "normalized_problem": representative.get("problem_statement", ""),
+                    "persona_candidate": representative.get("persona", ""),
+                    "module_candidate": representative.get("module", ""),
+                },
+                existing_clusters,
+            )
+            if reused_cluster_id:
+                cluster_id = reused_cluster_id
 
         source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
         source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
-        evidence = [x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")) for x in c_items]
+        evidence = [
+            _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
+            for x in c_items
+        ]
         urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
 
         persona_counts: dict[str, int] = {}
@@ -793,9 +927,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40) -> list[dict]:
 
         persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        normalized_problem = sorted(c_items, key=lambda i: len(str(i.get("problem_statement") or "")), reverse=True)[0][
-            "problem_statement"
-        ]
+        normalized_problem = _truncate_text(str(representative.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH)
 
         out.append(
             {
@@ -809,7 +941,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40) -> list[dict]:
                 "source_identities": source_identities,
                 "source_count": len(c_items),
                 "independent_source_family_count": len(source_identities),
-                "fingerprints": sorted(set(problem_fps)),
+                "fingerprints": problem_fps,
                 "raw_items": c_items,
             }
         )
@@ -1369,7 +1501,8 @@ def run_discovery(
                 status = "DEGRADED"
 
     deduped_items, dedupe_stats = dedupe_items(all_items)
-    clusters = cluster_items(deduped_items)
+    existing_clusters = _existing_cluster_matches()
+    clusters = cluster_items(deduped_items, existing_clusters=existing_clusters)
 
     foundation = load_foundation_index()
     for c in clusters:
