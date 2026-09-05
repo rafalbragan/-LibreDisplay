@@ -147,7 +147,7 @@ jobs:
           python scripts/product/automation_cli.py bug-sync-fix-handoff \
             --bug-id "${{ steps.bug.outputs.bug_id }}" \
             --repo-owner "${{ github.repository_owner }}" \
-            --repo-name "${{ github.event.repository.name }}" \
+            --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
             --copilot-agent-user-token "$COPILOT_AGENT_USER_TOKEN" \
             --base-branch master \
