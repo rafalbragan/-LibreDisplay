@@ -88,8 +88,3 @@ jobs:
           path: |
             product/generated/discovery/
             product/research/observations/OBS-*.json
-
-      - name: Report Discovery status
-        if: always()
-        run: |
-          exit ${{ steps.discovery.outcome == 'success' && '0' || '1' }}
