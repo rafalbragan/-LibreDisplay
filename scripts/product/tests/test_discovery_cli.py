@@ -2338,6 +2338,65 @@ def test_v15_sources_have_explicit_roles_and_no_unapproved_sites():
     assert all(source.get("kind") != "rss_atom" or source.get("allowlisted") is True for source in config["sources"])
 
 
+def test_discovery_github_source_expansion_contract():
+    config = json.loads((WORKSPACE_ROOT / "product" / "discovery" / "sources.json").read_text(encoding="utf-8"))
+    sources = config["sources"]
+    by_name = {source["name"]: source for source in sources}
+    assert len(by_name) == len(sources)
+
+    existing = {
+        "nightscout_github": "nightscout/cgm-remote-monitor",
+        "xdrip_github": "NightscoutFoundation/xDrip",
+        "juggluco_github": "j-kaltes/Juggluco",
+        "librelinkup_github": "timoschlueter/nightscout-librelink-up",
+    }
+    approved = {
+        "librelinkup_desktop_github": "Crazy-Marvin/LibreLinkUpDesktop",
+        "glucosedirect_github": "creepymonster/GlucoseDirect",
+        "glucodataauto_github": "pachi81/GlucoDataAuto",
+    }
+    assert {name: by_name[name]["repos"][0] for name in existing} == existing
+    assert {name: by_name[name]["repos"][0] for name in approved} == approved
+
+    github_sources = [source for source in sources if source.get("family") == "github_community"]
+    assert len(github_sources) == 7
+    assert sum(len(source["repos"]) * source["max_pages"] for source in github_sources) == 14
+    for name, repo in approved.items():
+        source = by_name[name]
+        assert source["family"] == "github_community"
+        assert source["kind"] == "github_issue_search"
+        assert source["evidence_role"] == "developer_community"
+        assert source["enabled"] is True
+        assert source["repos"] == [repo]
+        assert source["max_queries"] == 24
+        assert source["max_pages"] <= 2
+        assert source["max_results_per_query"] == 10
+        assert source["urls"] == [f"https://github.com/{repo}/issues"]
+
+    assert "gillesvs/librelink" not in {repo for source in github_sources for repo in source["repos"]}
+    assert by_name["reddit_cgm_communities"] == {
+        "name": "reddit_cgm_communities",
+        "family": "reddit",
+        "kind": "reddit_oauth",
+        "evidence_role": "user_community",
+        "enabled": True,
+        "max_queries": 24,
+        "subreddits": ["diabetes", "Type1Diabetes", "Freestylelibre", "dexcom", "Polska", "poland"],
+        "urls": [],
+    }
+
+    packs = json.loads((WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json").read_text(encoding="utf-8"))
+    assert {concept["concept_id"] for concept in packs["concepts"]} == {
+        "stale_or_missing_readings", "alerts_not_firing", "false_or_repeated_alerts", "signal_loss_disconnect",
+        "caregiver_remote_monitoring", "glucose_sharing_delay_or_failure", "sensor_activation_connection_failure",
+        "sensor_expiry_notification", "phone_os_compatibility", "watch_widget_glanceability",
+        "history_reports_statistics", "notification_customization",
+    }
+    serialized_packs = json.dumps(packs).lower()
+    for forbidden in ["dose", "dosing", "bolus recommendation", "basal recommendation", "insulin calculation", "insulin therapy recommendation"]:
+        assert forbidden not in serialized_packs
+
+
 def test_v15_cached_github_excerpt_preserves_sanitized_bounded_body(cli_env):
     cli, _ = cli_env
     title = "Libre alarms stop after Android update"

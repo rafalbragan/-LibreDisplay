@@ -90,6 +90,54 @@
       ]
     },
     {
+      "name": "librelinkup_desktop_github",
+      "family": "github_community",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "enabled": true,
+      "repos": [
+        "Crazy-Marvin/LibreLinkUpDesktop"
+      ],
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
+      "urls": [
+        "https://github.com/Crazy-Marvin/LibreLinkUpDesktop/issues"
+      ]
+    },
+    {
+      "name": "glucosedirect_github",
+      "family": "github_community",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "enabled": true,
+      "repos": [
+        "creepymonster/GlucoseDirect"
+      ],
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
+      "urls": [
+        "https://github.com/creepymonster/GlucoseDirect/issues"
+      ]
+    },
+    {
+      "name": "glucodataauto_github",
+      "family": "github_community",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "enabled": true,
+      "repos": [
+        "pachi81/GlucoDataAuto"
+      ],
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
+      "urls": [
+        "https://github.com/pachi81/GlucoDataAuto/issues"
+      ]
+    },
+    {
       "name": "reddit_cgm_communities",
       "family": "reddit",
       "kind": "reddit_oauth",
