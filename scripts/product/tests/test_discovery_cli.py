@@ -3,6 +3,7 @@ import json
 import shutil
 import tempfile
 import time
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 import pytest
@@ -438,6 +439,7 @@ def test_reddit_oauth_with_credentials_collects_items(cli_env, tmp_path, monkeyp
                             "title": "Stale readings are hard to interpret",
                             "selftext": "Need clearer state for caregivers",
                             "permalink": "/r/diabetes/comments/abc123/stale/",
+                            "created_utc": time.time(),
                             "author": "should_not_be_saved",
                         }
                     }
@@ -530,6 +532,7 @@ def test_cache_sanitizes_raw_upstream_payloads_and_bounded_observations(cli_env,
                             "title": "Reddit caregivers need clearer stale data context",
                             "selftext": long_reddit_body,
                             "permalink": "/r/diabetes/comments/abc123/stale-context/",
+                            "created_utc": time.time(),
                             "author": "should_not_be_saved",
                             "user": {"login": "should_not_be_saved"},
                         }
@@ -583,14 +586,17 @@ def test_cache_sanitizes_raw_upstream_payloads_and_bounded_observations(cli_env,
     assert "token456" not in cache_text
     assert "access_token" not in cache_text
     assert "should_not_be_saved" not in cache_text
-    assert "GITHUB BODY SECRET" not in cache_text
-    assert "REDDIT SELFTEXT SECRET" not in cache_text
-    assert "HTML SECRET MARKER" not in cache_text
+    assert long_github_body not in cache_text
+    assert long_reddit_body not in cache_text
+    assert cli._extract_html_text(long_html) not in cache_text
+    assert "REDDIT SELFTEXT SECRET" in cache_text
     assert "<html" not in cache_text.lower()
     assert "<body" not in cache_text.lower()
 
     cache_json = json.loads(cache_path.read_text(encoding="utf-8"))
     _assert_cache_minimized(cache_json)
+    cached_items = [item for entry in cache_json["entries"].values() for item in entry["value"]]
+    assert all(len(item.get("excerpt", "")) <= cli.MAX_CACHED_EXCERPT_LENGTH for item in cached_items)
 
     obs_files = list((root / "product" / "research" / "observations").glob("OBS-*.json"))
     assert obs_files == []  # Single-source WEAK evidence is cacheable but cannot create observations.
@@ -2226,7 +2232,7 @@ def test_v15_privacy_redaction(cli_env):
 def test_v15_bounded_query_schedule_covers_all_concepts(cli_env):
     cli, _ = cli_env
     packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
-    rows = list(cli.iter_queries(packs, ["pl", "en", "de", "fr", "es"], max_queries=48))
+    rows = list(cli.iter_queries(packs, ["pl", "en", "de", "fr", "es"], ["pl", "en"], max_queries=48))
     assert {row["concept_id"] for row in rows} == {concept["concept_id"] for concept in packs["concepts"]}
     primary_count = sum(row["language"] in {"pl", "en"} for row in rows)
     secondary_count = len(rows) - primary_count
@@ -2241,7 +2247,7 @@ def test_v15_reddit_query_search_carries_language_and_concept(cli_env, monkeypat
     urls = []
     def fake_fetch(url, timeout, retries, headers=None):
         urls.append(url)
-        return {"data": {"children": [{"data": {"title": "LibreLinkUp delayed readings for caregiver", "selftext": "Missing current data", "permalink": "/r/diabetes/comments/x/y"}}]}}
+        return {"data": {"children": [{"data": {"title": "LibreLinkUp delayed readings for caregiver", "selftext": "Missing current data", "permalink": "/r/diabetes/comments/x/y", "created_utc": time.time()}}]}}
     monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
     packs = {"concepts": [{"concept_id": "glucose_sharing_delay_or_failure", "topic_id": "caregiver", "queries": {"en": ["LibreLinkUp delayed readings"]}}]}
     result = cli._collect_reddit_oauth({"name": "reddit", "family": "reddit", "subreddits": ["diabetes"], "max_queries": 1}, 1, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
@@ -2323,3 +2329,157 @@ def test_v15_sources_have_explicit_roles_and_no_unapproved_sites():
     serialized = json.dumps(config).lower()
     assert "mojacukrzyca" not in serialized and "facebook" not in serialized
     assert all(source.get("kind") != "rss_atom" or source.get("allowlisted") is True for source in config["sources"])
+
+
+def test_v15_cached_github_excerpt_preserves_sanitized_bounded_body(cli_env):
+    cli, _ = cli_env
+    title = "Libre alarms stop after Android update"
+    body = "Caregiver receives no warning at user@example.com from 2001:db8::1. " + ("Alarm impact continues. " * 30)
+    item = cli._normalize_cached_item(
+        {"url": "https://github.com/o/r/issues/1", "text": f"{title}. {body}", "problem_statement": title,
+         "language": "en", "concept_id": "alerts_not_firing", "updated_at": cli.utc_now()},
+        "gh", "github_community", "community",
+    )
+    assert item["problem_statement"] == title
+    assert "Caregiver receives no warning" in item["excerpt"]
+    assert item["excerpt"] != title
+    assert len(item["excerpt"]) <= cli.MAX_CACHED_EXCERPT_LENGTH
+    assert "user@example.com" not in item["excerpt"]
+    assert "2001:db8::1" not in item["excerpt"]
+    assert item["privacy_redacted"] is True
+
+
+def test_v15_cached_reddit_excerpt_preserves_selftext_without_identity_or_secrets(cli_env):
+    cli, _ = cli_env
+    title = "LibreLinkUp readings are delayed for caregiver"
+    selftext = "My caregiver sees readings twenty minutes late. @private_user Cookie: session-secret-value"
+    item = cli._normalize_cached_item(
+        {"url": "https://reddit.com/r/diabetes/comments/1/x", "text": f"{title}. {selftext}", "problem_statement": title,
+         "language": "en", "concept_id": "glucose_sharing_delay_or_failure", "updated_at": time.time()},
+        "reddit", "reddit", "community",
+    )
+    assert "twenty minutes late" in item["excerpt"]
+    assert "@private_user" not in item["excerpt"]
+    assert "session-secret-value" not in item["excerpt"]
+    assert "selftext" not in item and "author" not in item and "username" not in item
+    assert len(item["excerpt"]) <= cli.MAX_CACHED_EXCERPT_LENGTH
+
+
+def test_v15_cross_language_requires_shared_problem_intent(cli_env):
+    cli, _ = cli_env
+    compatible_pl = _v15_item(cli, "LibreLinkUp nie pokazuje nowych danych opiekunowi", "reddit_Polska", "reddit", "pl", "glucose_sharing_delay_or_failure", "user_community")
+    compatible_en = _v15_item(cli, "LibreLinkUp readings are delayed for caregiver", "github_en", "github_community", "en", "glucose_sharing_delay_or_failure")
+    compatible = cli.cluster_items(cli.dedupe_items([compatible_pl, compatible_en])[0])
+    assert len(compatible) == 1
+    assert "caregiver_visibility" in cli.problem_intent_facets(compatible_pl["problem_statement"], "pl", compatible_pl["concept_id"])
+
+    unrelated_pl = _v15_item(cli, "Chcę łatwiej dodać kolejnego opiekuna", "reddit_other", "reddit", "pl", "glucose_sharing_delay_or_failure", "user_community")
+    separated = cli.cluster_items(cli.dedupe_items([unrelated_pl, compatible_en])[0])
+    assert len(separated) == 2
+    assert all(cluster["independent_source_identity_count"] == 1 for cluster in separated)
+    assert all(cluster["independent_source_family_count"] == 1 for cluster in separated)
+    assert all(cluster["language_count"] == 1 for cluster in separated)
+    assert all(cluster["evidence_tier"] == "WEAK" for cluster in separated)
+
+
+def test_v15_different_languages_same_concept_without_facets_stay_separate(cli_env):
+    cli, _ = cli_env
+    pl = _v15_item(cli, "Wygodniejszy ekran dla rodziny", "pl_source", "reddit", "pl", "glucose_sharing_delay_or_failure", "user_community")
+    en = _v15_item(cli, "Simpler invitation flow for relatives", "en_source", "github_community", "en", "glucose_sharing_delay_or_failure")
+    assert len(cli.cluster_items(cli.dedupe_items([pl, en])[0])) == 2
+
+
+def _single_query_pack():
+    return {"languages": {"en": {"priority": 1.0}}, "concepts": [{"concept_id": "stale_or_missing_readings", "topic_id": "data_freshness", "queries": {"en": ["Libre missing readings"]}}]}
+
+
+def test_v15_github_cache_is_window_aware_and_rechecks_cached_timestamp(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    cache = cli.DiscoveryCache(tmp_path / "github-cache.json")
+    stale_at = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat().replace("+00:00", "Z")
+    fresh_at = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat().replace("+00:00", "Z")
+    response_time = [stale_at]
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"items": [{"html_url": "https://github.com/o/r/issues/1", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": response_time[0]}]})
+    source = {"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 1, "max_pages": 1}
+    old_window = cli._collect_github_issue_search(source, 5, 1, 1, cache, 21600, _single_query_pack(), ["en"], 365, primary_languages=["en"])
+    assert len(old_window) == 1
+    old_key = next(iter(cache._data["entries"]))
+    current_key = old_key.replace("lookback-days:365", "lookback-days:30")
+    cache._data["entries"][current_key] = cache._data["entries"][old_key]
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: pytest.fail("cached hit must not fetch"))
+    assert cli._collect_github_issue_search(source, 5, 1, 1, cache, 21600, _single_query_pack(), ["en"], 30, primary_languages=["en"]) == []
+    assert "token" not in old_key.lower() and "authorization" not in old_key.lower()
+
+    response_time[0] = fresh_at
+    fresh_cache = cli.DiscoveryCache(tmp_path / "github-fresh-cache.json")
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"items": [{"html_url": "https://github.com/o/r/issues/2", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": fresh_at}]})
+    assert len(cli._collect_github_issue_search(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, primary_languages=["en"])) == 1
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: pytest.fail("fresh cached hit must not fetch"))
+    assert len(cli._collect_github_issue_search(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, primary_languages=["en"])) == 1
+    assert cli._timestamp_at_or_after("", datetime.now(timezone.utc) - timedelta(days=30)) is False
+
+
+def test_v15_reddit_cache_is_window_aware_and_rechecks_cached_timestamp(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    monkeypatch.setenv("REDDIT_CLIENT_ID", "id")
+    monkeypatch.setenv("REDDIT_CLIENT_SECRET", "secret")
+    monkeypatch.setattr(cli, "_post_form_json", lambda *a, **k: {"access_token": "temporary-token"})
+    cache = cli.DiscoveryCache(tmp_path / "reddit-cache.json")
+    created = [time.time() - 120 * 86400]
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"data": {"children": [{"data": {"title": "Libre missing readings", "selftext": "Caregiver has no current data", "permalink": "/r/diabetes/comments/1/x", "created_utc": created[0]}}]}})
+    source = {"name": "reddit", "family": "reddit", "subreddits": ["diabetes"], "max_queries": 1}
+    old_window = cli._collect_reddit_oauth(source, 5, 1, 1, cache, 21600, _single_query_pack(), ["en"], 365, ["en"])
+    assert len(old_window.items) == 1
+    old_key = next(iter(cache._data["entries"]))
+    current_key = old_key.replace("lookback-days:365", "lookback-days:30")
+    cache._data["entries"][current_key] = cache._data["entries"][old_key]
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: pytest.fail("cached hit must not fetch"))
+    assert cli._collect_reddit_oauth(source, 5, 1, 1, cache, 21600, _single_query_pack(), ["en"], 30, ["en"]).items == []
+    assert "token" not in old_key.lower() and "authorization" not in old_key.lower()
+
+    created[0] = time.time() - 5 * 86400
+    fresh_cache = cli.DiscoveryCache(tmp_path / "reddit-fresh-cache.json")
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"data": {"children": [{"data": {"title": "Libre missing readings", "selftext": "Caregiver has no current data", "permalink": "/r/diabetes/comments/2/y", "created_utc": created[0]}}]}})
+    assert len(cli._collect_reddit_oauth(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, ["en"]).items) == 1
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: pytest.fail("fresh cached hit must not fetch"))
+    assert len(cli._collect_reddit_oauth(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, ["en"]).items) == 1
+
+
+def test_v15_runtime_primary_languages_are_authoritative_and_bounded(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    default_rows = list(cli.iter_queries(packs, ["pl", "en", "de"], ["pl", "en"], 48))
+    assert sum(row["language"] in {"pl", "en"} for row in default_rows) > sum(row["language"] == "de" for row in default_rows)
+    pl_primary = list(cli.iter_queries(packs, ["pl", "en", "de"], ["pl"], 48))
+    assert sum(row["language"] == "pl" for row in pl_primary) > sum(row["language"] == "en" for row in pl_primary)
+    assert len([row for row in pl_primary if row["language"] != "pl"]) <= 48 // 4
+    invalid_ignored = list(cli.iter_queries(packs, ["pl", "en", "de"], ["pl", "xx"], 48))
+    assert all(row["language"] in {"pl", "en", "de"} for row in invalid_ignored)
+    no_primary = list(cli.iter_queries(packs, ["pl", "en", "de"], [], 48))
+    assert len(no_primary) <= 48 // 4
+    implicit_default = list(cli.iter_queries(packs, ["pl", "en", "de"], max_queries=48))
+    assert sum(row["language"] in {"pl", "en"} for row in implicit_default) > sum(row["language"] == "de" for row in implicit_default)
+
+
+def test_v15_source_reporting_separates_requested_and_observed_languages(cli_env, tmp_path):
+    cli, root = cli_env
+    sources = {"sources": [
+        {"name": "reddit_disabled", "family": "reddit", "kind": "reddit_oauth", "enabled": True},
+        {"name": "polish_fixture", "family": "reddit", "kind": "reddit_oauth", "enabled": True, "fixture_items": [
+            {"url": "https://example.com/pl", "text": "Brak danych dla opiekuna", "problem_statement": "Brak danych dla opiekuna", "language": "pl"}
+        ]},
+        {"name": "github_empty", "family": "github_community", "kind": "github_issue_search", "enabled": False},
+    ]}
+    path = tmp_path / "language-sources.json"
+    path.write_text(json.dumps(sources), encoding="utf-8")
+    report = cli.run_discovery(path, 5, False, "", "", "", "heuristic", "gpt-5.4-mini", None, 1, 1, 3600,
+                               languages=["pl", "en", "de"], primary_languages=["pl", "en"])
+    by_name = {row["name"]: row for row in report["source_status"]}
+    assert by_name["reddit_disabled"]["requested_languages"] == ["pl", "en", "de"]
+    assert by_name["reddit_disabled"]["observed_languages"] == []
+    assert by_name["polish_fixture"]["observed_languages"] == ["pl"]
+    assert by_name["github_empty"]["requested_languages"] == ["pl", "en", "de"]
+    assert by_name["github_empty"]["observed_languages"] == []
+    markdown = (root / report["md_report_path"]).read_text(encoding="utf-8")
+    assert "requested_languages=pl,en,de" in markdown
+    assert "observed_languages=-" in markdown

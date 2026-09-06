@@ -69,6 +69,7 @@ MAX_CACHED_PROBLEM_LENGTH = 180
 MAX_CACHED_TEXT_LENGTH = 500
 SUPPORTED_LANGUAGES = {"pl", "en", "de", "fr", "es"}
 PRIMARY_LANGUAGES = {"pl", "en"}
+CROSS_LANGUAGE_SIMILARITY_THRESHOLD = 0.60
 EVIDENCE_ROLES = {"user_community", "developer_community", "official_reference"}
 EVIDENCE_TIER_ORDER = {"WEAK": 0, "SUPPORTED": 1, "CORROBORATED": 2, "STRONG": 3}
 EVIDENCE_SCORE_CAPS = {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}
@@ -148,6 +149,69 @@ CANONICAL_TOKEN_ALIASES_PL = {
     "alarmy": "alert", "alarm": "alert", "powiadomienie": "notification",
     "działa": "working", "opóźnienie": "delay", "opóźnione": "delay",
     "stare": "stale", "opiekunowi": "caregiver", "opiekun": "caregiver",
+}
+
+PROBLEM_INTENT_ALIASES = {
+    "en": {
+        "missing_data": (r"\b(?:missing|no)\s+(?:new\s+)?(?:data|readings?)\b", r"\b(?:data|readings?)\s+(?:are\s+)?missing\b"),
+        "stale_data": (r"\bstale\s+(?:data|readings?)\b",),
+        "delay": (r"\bdelay(?:ed|s)?\b",),
+        "signal_loss": (r"\bsignal\s+loss\b", r"\blost\s+signal\b"),
+        "disconnect": (r"\bdisconnect(?:ed|s|ing)?\b",),
+        "alert_not_firing": (r"\b(?:alerts?|alarms?|notifications?)\b.{0,32}\b(?:not|stop(?:ped)?)\s+(?:firing|working)\b",),
+        "false_alert": (r"\bfalse\s+(?:alert|alarm)\b",),
+        "repeated_alert": (r"\b(?:repeated|duplicate)\s+(?:alert|alarm|notification)\b",),
+        "activation_failure": (r"\b(?:activation|activate)\b.{0,24}\b(?:fail|failed|cannot|unable)\b",),
+        "connection_failure": (r"\b(?:cannot|can't|unable|fails? to)\s+connect\b", r"\bconnection\s+(?:failure|failed)\b"),
+        "sharing_failure": (r"\bshar(?:e|ing)\b.{0,28}\b(?:fail|failed|not working|missing|delay)\w*\b",),
+        "caregiver_visibility": (r"\b(?:data|readings?)\b.{0,40}\b(?:missing|delay\w*|not visible)\b.{0,40}\bcaregiver\b", r"\bcaregiver\b.{0,40}\b(?:cannot see|can't see|missing|delay\w*|not visible)\b"),
+        "expiry_notification": (r"\bexpir\w*\b.{0,24}\bnotification\b",),
+        "os_update_breakage": (r"\b(?:android|ios|os)\s+update\b.{0,40}\b(?:broke|broken|stop\w*|not working|fail\w*)\b",),
+        "history_missing": (r"\b(?:missing|lost|no)\s+history\b",),
+        "notification_customization": (r"\bcustomi[sz]\w*\b.{0,24}\bnotifications?\b",),
+        "watch_visibility": (r"\b(?:watch|smartwatch)\b.{0,32}\b(?:cannot see|can't see|missing|not visible|blank)\b",),
+    },
+    "pl": {
+        "missing_data": (r"\bbrak\s+(?:nowych\s+)?(?:danych|odczytów?)\b", r"\bnie pokazuje\s+(?:nowych\s+)?(?:danych|odczytów?)\b"),
+        "stale_data": (r"\bstare\s+(?:dane|odczyty)\b", r"\bnieaktualne\s+(?:dane|odczyty)\b"),
+        "delay": (r"\bopóźn(?:ienie|ione|iony|ionych)\b",),
+        "signal_loss": (r"\b(?:utrata|brak)\s+sygnału\b",),
+        "disconnect": (r"\brozłącz\w*\b",),
+        "alert_not_firing": (r"\b(?:alarmy?|powiadomienia?)\b.{0,32}\b(?:nie dział\w*|przestał\w*)\b",),
+        "false_alert": (r"\bfałszyw\w*\s+(?:alarm|alert|powiadomienie)\b",),
+        "repeated_alert": (r"\b(?:powtarzające|zduplikowane)\s+(?:alarmy|alerty|powiadomienia)\b",),
+        "activation_failure": (r"\b(?:aktywacja|aktywować)\b.{0,24}\b(?:nie działa|nie można|błąd)\b",),
+        "connection_failure": (r"\b(?:nie można|nie da się|nie)\s+połącz\w*\b",),
+        "sharing_failure": (r"\budostępnian\w*\b.{0,28}\b(?:nie działa|błąd|brak|opóź)\w*\b",),
+        "caregiver_visibility": (r"\bnie pokazuje\s+(?:nowych\s+)?(?:danych|odczytów?)\b.{0,40}\bopiekun\w*\b", r"\bopiekun\w*\b.{0,40}\b(?:nie widzi|brak|opóźn\w*)\b"),
+        "expiry_notification": (r"\b(?:wygaśnięci|końcu ważności)\w*\b.{0,24}\bpowiadomieni\w*\b",),
+        "os_update_breakage": (r"\bpo aktualizacji\b.{0,32}\b(?:android|ios|systemu)\b.{0,40}\b(?:nie dział\w*|przestał\w*)\b",),
+        "history_missing": (r"\b(?:brak|utrata|zniknęła)\s+historii\b",),
+        "notification_customization": (r"\b(?:dostosowa|personaliz)\w*\b.{0,24}\bpowiadomieni\w*\b",),
+        "watch_visibility": (r"\b(?:zegarek|smartwatch)\b.{0,32}\b(?:nie pokazuje|nie widać|brak|pusty)\b",),
+    },
+    "de": {
+        "missing_data": (r"\bkeine\s+(?:daten|messwerte)\b", r"\bfehlende\s+(?:daten|messwerte)\b"),
+        "delay": (r"\bverzöger\w*\b",), "signal_loss": (r"\bsignalverlust\b",),
+        "disconnect": (r"\bverbindungsabbruch\b",), "alert_not_firing": (r"\balarm\w*\b.{0,24}\bfunktioniert nicht\b",),
+        "connection_failure": (r"\bkeine verbindung\b", r"\bverbindung fehlgeschlagen\b"),
+        "caregiver_visibility": (r"\b(?:daten|messwerte)\b.{0,32}\b(?:fehlen|verzöger\w*)\b.{0,32}\bbetreuer\w*\b",),
+        "history_missing": (r"\b(?:fehlende|keine)\s+historie\b",), "watch_visibility": (r"\buhr\b.{0,24}\bnicht sichtbar\b",),
+    },
+    "fr": {
+        "missing_data": (r"\b(?:données|lectures)\s+manquantes\b",), "delay": (r"\bretard\w*\b",),
+        "signal_loss": (r"\bperte de signal\b",), "disconnect": (r"\bdéconnexion\b",),
+        "alert_not_firing": (r"\balarme\w*\b.{0,24}\bne fonctionne pas\b",), "connection_failure": (r"\béchec de connexion\b",),
+        "caregiver_visibility": (r"\b(?:données|lectures)\b.{0,32}\b(?:manquantes|retard\w*)\b.{0,32}\baidant\w*\b",),
+        "history_missing": (r"\bhistorique\s+manquant\b",), "watch_visibility": (r"\bmontre\b.{0,24}\b(?:invisible|vide)\b",),
+    },
+    "es": {
+        "missing_data": (r"\b(?:datos|lecturas)\s+(?:faltantes|ausentes)\b",), "delay": (r"\bretras\w*\b",),
+        "signal_loss": (r"\bpérdida de señal\b",), "disconnect": (r"\bdesconexión\b",),
+        "alert_not_firing": (r"\balarma\w*\b.{0,24}\bno funciona\b",), "connection_failure": (r"\bfallo de conexión\b",),
+        "caregiver_visibility": (r"\b(?:datos|lecturas)\b.{0,32}\b(?:faltan|retras\w*)\b.{0,32}\bcuidador\w*\b",),
+        "history_missing": (r"\bhistorial\s+(?:faltante|perdido)\b",), "watch_visibility": (r"\breloj\b.{0,24}\b(?:no visible|vacío)\b",),
+    },
 }
 
 PII_PATTERNS = [
@@ -323,11 +387,15 @@ def load_query_packs(path: Path = QUERY_PACKS_DEFAULT) -> dict:
     return payload
 
 
-def iter_queries(query_packs: dict, languages: list[str], max_queries: int = 48):
+def iter_queries(query_packs: dict, languages: list[str], primary_languages: list[str] | None = None, max_queries: int = 48):
     concepts = query_packs.get("concepts", [])
     language_cfg = query_packs.get("languages") or {}
-    primary = [lang for lang in languages if float(language_cfg.get(lang, {}).get("priority", 1.0)) >= 1.0]
+    requested_primary = PRIMARY_LANGUAGES if primary_languages is None else set(primary_languages)
+    language_order = {lang: idx for idx, lang in enumerate(languages)}
+    primary = [lang for lang in languages if lang in requested_primary]
+    primary.sort(key=lambda lang: (-float(language_cfg.get(lang, {}).get("priority", 0.0)), language_order[lang]))
     secondary = [lang for lang in languages if lang not in primary]
+    secondary.sort(key=lambda lang: (-float(language_cfg.get(lang, {}).get("priority", 0.0)), language_order[lang]))
     ordered = []
     # Cover every concept in primary languages before spending the secondary budget.
     for concept in concepts:
@@ -360,8 +428,8 @@ def iter_queries(query_packs: dict, languages: list[str], max_queries: int = 48)
         }
 
 
-def bounded_query_rows(query_packs: dict, languages: list[str], max_queries: int) -> list[dict]:
-    rows = list(iter_queries(query_packs, languages, max_queries=max_queries))
+def bounded_query_rows(query_packs: dict, languages: list[str], max_queries: int, primary_languages: list[str] | None = None) -> list[dict]:
+    rows = list(iter_queries(query_packs, languages, primary_languages=primary_languages, max_queries=max_queries))
     if rows:
         return rows
     return [{"query": "Libre missing readings", "language": "en", "query_id": "fallback:en:1", "concept_id": "stale_or_missing_readings", "topic_id": "data_freshness"}]
@@ -398,7 +466,7 @@ def _normalize_cached_item(item: dict, source_name: str, source_family: str, sou
         "source_type": normalized["source_type"],
         "retrieved_at": normalized["retrieved_at"],
         "content_hash": normalized["content_hash"],
-        "excerpt": _truncate_text(normalized["problem_statement"], MAX_CACHED_EXCERPT_LENGTH),
+        "excerpt": _truncate_text(normalized["excerpt"], MAX_CACHED_EXCERPT_LENGTH),
         "problem_statement": _truncate_text(normalized["problem_statement"], MAX_CACHED_PROBLEM_LENGTH),
         "canonical_problem_key": normalized["canonical_problem_key"],
         "canonical_problem_fingerprint": normalized["canonical_problem_fingerprint"],
@@ -910,6 +978,45 @@ def _cache_key(source_name: str, suffix: str) -> str:
     return f"{source_name}::{suffix}"
 
 
+def _lookback_window_key(lookback_days: int) -> str:
+    return f"lookback-days:{max(1, min(int(lookback_days), 1825))}"
+
+
+def _timestamp_at_or_after(value, cutoff: datetime) -> bool:
+    try:
+        if isinstance(value, bool) or value in {None, ""}:
+            return False
+        if isinstance(value, (int, float)):
+            timestamp = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        else:
+            raw = str(value).strip()
+            if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+                timestamp = datetime.fromtimestamp(float(raw), tz=timezone.utc)
+            else:
+                timestamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.astimezone(timezone.utc)
+        return timestamp >= cutoff
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
+def _items_within_lookback(items: list[dict], cutoff: datetime) -> list[dict]:
+    return [item for item in items if _timestamp_at_or_after(item.get("updated_at"), cutoff)]
+
+
+def problem_intent_facets(text: str, language: str, concept_id: str) -> set[str]:
+    if not concept_id or concept_id == "unclassified":
+        return set()
+    normalized = normalize_text(text)
+    return {
+        facet
+        for facet, patterns in PROBLEM_INTENT_ALIASES.get(language, {}).items()
+        if any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in patterns)
+    }
+
+
 def _normalize_item_fields(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
     url = canonicalize_url(str(item.get("url") or item.get("canonical_url") or "").strip())
     raw_text = str(item.get("text") or "").strip()
@@ -1021,7 +1128,7 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
 def _collect_github_issue_search(
     source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache,
     cache_max_age_seconds: int, query_packs: dict, languages: list[str], lookback_days: int,
-    github_token: str = "",
+    github_token: str = "", primary_languages: list[str] | None = None,
 ) -> list[dict]:
     out: list[dict] = []
     source_name = str(source.get("name", "unknown"))
@@ -1029,6 +1136,7 @@ def _collect_github_issue_search(
     source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
     repos = [str(repo).strip().strip("/") for repo in source.get("repos", []) if "/" in str(repo)]
     since = (datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))).date().isoformat()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))
     max_queries = max(1, min(int(source.get("max_queries", 24)), 48))
     max_pages = max(1, min(int(source.get("max_pages", 2)), 2))
     per_query = max(1, min(int(source.get("max_results_per_query", 10)), 10))
@@ -1037,7 +1145,7 @@ def _collect_github_issue_search(
         headers["Authorization"] = f"Bearer {github_token}"
     concept_counts: dict[str, int] = {}
     for repo_full in repos:
-        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries):
+        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries, primary_languages=primary_languages):
             if len(out) >= max_items:
                 break
             search = f'repo:{repo_full} is:issue updated:>={since} "{query_meta["query"]}"'
@@ -1046,9 +1154,10 @@ def _collect_github_issue_search(
                     break
                 encoded = urllib_parse.urlencode({"q": search, "sort": "updated", "order": "desc", "per_page": per_query, "page": page})
                 api_url = f"https://api.github.com/search/issues?{encoded}"
-                key = _cache_key(source_name, f"gh-search:{repo_full}:{query_meta['query_id']}:{page}")
+                key = _cache_key(source_name, f"gh-search:{_lookback_window_key(lookback_days)}:{repo_full}:{query_meta['query_id']}:{page}")
                 cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
                 if cached_items is not None:
+                    cached_items = _items_within_lookback(cached_items, cutoff)
                     remaining_concept = max(0, 10 - concept_counts.get(query_meta["concept_id"], 0))
                     selected = cached_items[: min(max_items - len(out), remaining_concept)]
                     out.extend(selected)
@@ -1064,6 +1173,8 @@ def _collect_github_issue_search(
                         continue
                     title = str(issue.get("title") or "").strip()
                     body = str(issue.get("body") or "").strip()
+                    if not _timestamp_at_or_after(issue.get("updated_at"), cutoff):
+                        continue
                     labels = " ".join(str(x.get("name", "")) for x in issue.get("labels", []) if isinstance(x, dict))
                     item = _normalize_cached_item(
                         {
@@ -1086,7 +1197,7 @@ def _collect_github_issue_search(
 def _collect_reddit_oauth(
     source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache,
     cache_max_age_seconds: int, query_packs: dict | None = None, languages: list[str] | None = None,
-    lookback_days: int = 365,
+    lookback_days: int = 365, primary_languages: list[str] | None = None,
 ) -> SourceResult:
     name = str(source.get("name", "reddit"))
     family = str(source.get("family", "reddit"))
@@ -1120,9 +1231,9 @@ def _collect_reddit_oauth(
     max_queries = max(1, min(int(source.get("max_queries", 24)), 48))
     out: list[dict] = []
     concept_counts: dict[str, int] = {}
-    cutoff_epoch = (datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))).timestamp()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))
     for sub in subreddits:
-        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries):
+        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries, primary_languages=primary_languages):
             if len(out) >= max_items:
                 break
             query = query_meta["query"]
@@ -1131,9 +1242,10 @@ def _collect_reddit_oauth(
             limit = min(10, max_items - len(out))
             params = urllib_parse.urlencode({"q": query, "restrict_sr": "on", "sort": "new", "t": "all", "limit": limit, "raw_json": 1})
             endpoint = f"https://oauth.reddit.com/r/{sub}/search?{params}"
-            key = _cache_key(name, f"reddit-search:{sub}:{query_meta['query_id']}")
+            key = _cache_key(name, f"reddit-search:{_lookback_window_key(lookback_days)}:{sub}:{query_meta['query_id']}")
             cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
             if cached_items is not None:
+                cached_items = _items_within_lookback(cached_items, cutoff)
                 remaining_concept = max(0, 10 - concept_counts.get(query_meta["concept_id"], 0))
                 selected = cached_items[: min(max_items - len(out), remaining_concept)]
                 out.extend(selected)
@@ -1147,7 +1259,7 @@ def _collect_reddit_oauth(
                     continue
                 pdata = post.get("data") or {} if isinstance(post, dict) else {}
                 created_utc = pdata.get("created_utc")
-                if isinstance(created_utc, (int, float)) and created_utc < cutoff_epoch:
+                if not _timestamp_at_or_after(created_utc, cutoff):
                     continue
                 title, selftext, permalink = str(pdata.get("title") or "").strip(), str(pdata.get("selftext") or "").strip(), str(pdata.get("permalink") or "").strip()
                 if not title or not permalink:
@@ -1209,6 +1321,7 @@ def collect_from_source(
     languages: list[str] | None = None,
     lookback_days: int = 365,
     github_token: str = "",
+    primary_languages: list[str] | None = None,
 ) -> SourceResult:
     name = str(source.get("name", "unknown"))
     family = str(source.get("family", "other_community"))
@@ -1237,9 +1350,9 @@ def collect_from_source(
 
     try:
         if kind == "reddit_oauth":
-            return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs, languages, lookback_days)
+            return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs, languages, lookback_days, primary_languages)
         if kind in {"github_issues", "github_issue_search"}:
-            items = _collect_github_issue_search(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs or {"concepts": []}, languages or ["pl", "en"], lookback_days, github_token)
+            items = _collect_github_issue_search(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs or {"concepts": []}, languages or ["pl", "en"], lookback_days, github_token, primary_languages)
             return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
         if kind == "official_pages":
             items = _collect_official_pages(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
@@ -1379,13 +1492,22 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or ""), language))
         placed = False
         for cluster in clusters:
-            best_sim = 0.0
+            matches_existing = False
             for existing in cluster["items"]:
-                existing_tokens = set(_canonical_problem_tokens(str(existing.get("problem_statement") or ""), str(existing.get("language") or "unknown")))
-                best_sim = max(best_sim, jaccard_similarity(tokens, existing_tokens))
-            same_concept = item.get("concept_id") not in {None, "", "unclassified"} and item.get("concept_id") == cluster.get("concept_id")
-            cross_language_match = language != cluster.get("language") and same_concept and item.get("user_facing", True)
-            if best_sim >= threshold or (same_concept and best_sim >= 0.10) or cross_language_match:
+                existing_language = str(existing.get("language") or "unknown")
+                existing_tokens = set(_canonical_problem_tokens(str(existing.get("problem_statement") or ""), existing_language))
+                similarity = jaccard_similarity(tokens, existing_tokens)
+                same_concept = item.get("concept_id") not in {None, "", "unclassified"} and item.get("concept_id") == existing.get("concept_id")
+                if language == existing_language:
+                    matches_existing = similarity >= threshold or (same_concept and similarity >= 0.10)
+                else:
+                    shared_facets = problem_intent_facets(str(item.get("problem_statement") or ""), language, str(item.get("concept_id") or "")) & problem_intent_facets(
+                        str(existing.get("problem_statement") or ""), existing_language, str(existing.get("concept_id") or "")
+                    )
+                    matches_existing = same_concept and (similarity >= max(threshold, CROSS_LANGUAGE_SIMILARITY_THRESHOLD) or bool(shared_facets))
+                if matches_existing:
+                    break
+            if matches_existing:
                 cluster["items"].append(item)
                 cluster["token_union"] = cluster["token_union"] | tokens
                 placed = True
@@ -2212,7 +2334,8 @@ def run_discovery(
     query_path = query_packs_file or QUERY_PACKS_DEFAULT
     query_packs = load_query_packs(query_path) if query_path.exists() else {"version": 1, "languages": {}, "concepts": []}
     configured_languages = [lang for lang in (languages or ["pl", "en", "de", "fr", "es"]) if lang in SUPPORTED_LANGUAGES]
-    configured_primary = [lang for lang in (primary_languages or ["pl", "en"]) if lang in configured_languages]
+    requested_primary = ["pl", "en"] if primary_languages is None else primary_languages
+    configured_primary = [lang for lang in requested_primary if lang in configured_languages]
 
     sources_cfg = read_json(sources_file)
     sources = sources_cfg.get("sources", [])
@@ -2232,16 +2355,19 @@ def run_discovery(
             cache_max_age_seconds=cache_max_age_seconds,
             query_packs=query_packs,
             languages=configured_languages,
+            primary_languages=configured_primary,
             lookback_days=lookback_days,
             github_token=github_token,
         )
         accepted_count = sum(1 for item in result.items if item.get("eligible_for_clustering", True))
         observed_languages = sorted(set(str(item.get("language") or "unknown") for item in result.items))
-        if not observed_languages:
-            if source.get("language") in SUPPORTED_LANGUAGES:
-                observed_languages = [str(source["language"])]
-            elif source.get("kind") in {"github_issues", "github_issue_search", "reddit_oauth"}:
-                observed_languages = list(configured_languages)
+        kind = str(source.get("kind") or "").strip().lower()
+        if kind in {"github_issues", "github_issue_search", "reddit_oauth"} or (not kind and result.family in {"github_community", "reddit"}):
+            requested_languages = list(configured_languages)
+        elif source.get("language") in SUPPORTED_LANGUAGES:
+            requested_languages = [str(source["language"])]
+        else:
+            requested_languages = []
         source_results.append(
             {
                 "name": result.name,
@@ -2253,7 +2379,8 @@ def run_discovery(
                 "accepted": accepted_count,
                 "filtered": len(result.items) - accepted_count,
                 "evidence_role": result.evidence_role,
-                "languages": observed_languages,
+                "requested_languages": requested_languages,
+                "observed_languages": observed_languages,
             }
         )
         all_items.extend(result.items)
@@ -2584,7 +2711,7 @@ def render_markdown_report(report: dict) -> str:
         "",
     ]
     for src in report.get("source_status", []):
-        lines.append(f"- {src['name']}: {src['status']} | role={src.get('evidence_role')} | languages={','.join(src.get('languages', [])) or '-'} | collected={src.get('collected', 0)} accepted={src.get('accepted', 0)} filtered={src.get('filtered', 0)}")
+        lines.append(f"- {src['name']}: {src['status']} | role={src.get('evidence_role')} | requested_languages={','.join(src.get('requested_languages', [])) or '-'} | observed_languages={','.join(src.get('observed_languages', [])) or '-'} | collected={src.get('collected', 0)} accepted={src.get('accepted', 0)} filtered={src.get('filtered', 0)}")
 
     lines.extend(["", "## Filter Summary", ""])
     for reason, count in sorted(report.get("filter_summary", {}).items()):
