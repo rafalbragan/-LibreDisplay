@@ -157,16 +157,42 @@ CANONICAL_TOKEN_ALIASES_PL = {
 
 PROBLEM_INTENT_ALIASES = {
     "en": {
-        "missing_data": (r"\b(?:missing|no)\s+(?:new\s+)?(?:data|readings?)\b", r"\b(?:data|readings?)\s+(?:are\s+)?missing\b"),
-        "stale_data": (r"\bstale\s+(?:data|readings?)\b",),
+        "missing_data": (
+            r"\b(?:missing|no)\s+(?:new\s+)?(?:data|readings?)\b",
+            r"\b(?:data|readings?)\s+(?:are\s+)?missing\b",
+            r"\bnot\s+receiv(?:e|ing)\s+(?:new\s+)?(?:blood\s+)?glucose\s+(?:data|values?|readings?)\b",
+            r"\bno\s+new\s+(?:(?:blood\s+)?glucose\s+)?(?:value|reading)\b",
+        ),
+        "stale_data": (
+            r"\bstale\s+(?:data|readings?)\b",
+            r"\b(?:(?:blood\s+)?glucose\s+(?:data|values?|readings?)|(?:cgm|sensor)\s+(?:data|values?|readings?)|readings?)\b.{0,24}\b(?:isn\s+t|aren\s+t|not|stops?|stopped)\s+updating\b",
+            r"\bfrozen\s+readings?\b",
+            r"\blast\s+received\s+(?:(?:blood\s+)?glucose\s+)?value\s+remains\b",
+        ),
         "delay": (r"\bdelay(?:ed|s)?\b",),
         "signal_loss": (r"\bsignal\s+loss\b", r"\blost\s+signal\b"),
-        "disconnect": (r"\bdisconnect(?:ed|s|ing)?\b", r"\b(?:losing|loosing)\s+(?:the\s+)?connection\b", r"\bconnection\s+drops?\b"),
+        "disconnect": (
+            r"\bdisconnect(?:ed|s|ing)?\b",
+            r"\b(?:losing|loosing|lost)\s+(?:the\s+)?connection\b",
+            r"\bconnection\s+(?:to\s+(?:the\s+)?sensor\s+)?(?:is\s+)?lost\b",
+            r"\bconnection\s+drops?\b",
+        ),
         "alert_not_firing": (r"\b(?:alerts?|alarms?|notifications?)\b.{0,32}\b(?:not|stop(?:ped)?)\s+(?:firing|working)\b",),
         "false_alert": (r"\bfalse\s+(?:alert|alarm)\b",),
         "repeated_alert": (r"\b(?:repeated|duplicate)\s+(?:alert|alarm|notification)\b",),
-        "activation_failure": (r"\b(?:activation|activate)\b.{0,24}\b(?:fail|failed|cannot|unable)\b",),
-        "connection_failure": (r"\b(?:cannot|can't|unable|fails? to)\s+connect\b", r"\bconnection\s+(?:failure|failed)\b"),
+        "activation_failure": (
+            r"\b(?:activation|activate)\b.{0,24}\b(?:fail|failed|cannot|unable)\b",
+            r"\b(?:unsupported|unrecognized)\s+sensor\b",
+            r"\bsensor\s+(?:is\s+)?not\s+recognized\b",
+        ),
+        "connection_failure": (
+            r"\b(?:cannot|can\s+t|unable|fails?\s+to)\s+connect\b(?!\s+(?:the\s+)?sensor\b)",
+            r"\b(?<!sensor\s)connection\s+(?:failure|failed)\b",
+        ),
+        "sensor_connection_failure": (
+            r"\bsensor\s+connection\s+failed\b",
+            r"\b(?:sensor\s+(?:cannot|can\s+t|is\s+unable\s+to)\s+connect|(?:cannot|can\s+t|unable\s+to)\s+connect\s+(?:the\s+)?sensor)\b",
+        ),
         "sharing_failure": (r"\bshar(?:e|ing)\b.{0,28}\b(?:fail|failed|not working|missing|delay)\w*\b",),
         "caregiver_visibility": (r"\b(?:data|readings?)\b.{0,40}\b(?:missing|delay\w*|not visible)\b.{0,40}\bcaregiver\b", r"\bcaregiver\b.{0,40}\b(?:cannot see|can't see|missing|delay\w*|not visible)\b"),
         "expiry_notification": (r"\bexpir\w*\b.{0,24}\bnotification\b",),
@@ -225,7 +251,7 @@ CONCEPT_INTENT_FACETS = {
     "signal_loss_disconnect": {"signal_loss", "disconnect", "connection_failure"},
     "caregiver_remote_monitoring": {"sharing_failure", "caregiver_visibility"},
     "glucose_sharing_delay_or_failure": {"missing_data", "stale_data", "delay", "sharing_failure", "caregiver_visibility"},
-    "sensor_activation_connection_failure": {"activation_failure", "connection_failure"},
+    "sensor_activation_connection_failure": {"activation_failure", "connection_failure", "sensor_connection_failure"},
     "sensor_expiry_notification": {"expiry_notification"},
     "phone_os_compatibility": {"os_update_breakage"},
     "watch_widget_glanceability": {"watch_visibility"},
@@ -234,6 +260,7 @@ CONCEPT_INTENT_FACETS = {
 }
 
 CONCEPT_CONTEXT_PATTERNS = {
+    "stale_or_missing_readings": r"\b(?:glucose|cgm|libre|dexcom|readings?|odczyt\w*|glukoz\w*|cukr\w*|messwert\w*|lectures?|lecturas?)\b",
     "caregiver_remote_monitoring": r"\b(?:caregiver|family|share|opiekun\w*|rodzin\w*|udostępn\w*)\b",
     "glucose_sharing_delay_or_failure": r"\b(?:librelinkup|caregiver|opiekun\w*)\b",
     "sensor_activation_connection_failure": r"\b(?:sensor|capteur)\b",
@@ -250,7 +277,8 @@ PII_PATTERNS = [
     (re.compile(r"(?<![\w:])(?:[A-F0-9]{0,4}:){2,7}[A-F0-9]{0,4}(?![\w:])", re.I), "[REDACTED_IP]"),
     (re.compile(r"(?<!\w)@[A-Za-z0-9_]{2,30}\b"), "[REDACTED_HANDLE]"),
     (re.compile(r"(?<!\w)(?:\+?\d[\s().-]?){8,15}(?!\w)"), "[REDACTED_PHONE]"),
-    (re.compile(r"\b(?:sensor|serial|order|account|device)[\s:#_-]*(?:id[\s:#_-]*)?[A-Z0-9-]{8,}\b", re.I), "[REDACTED_IDENTIFIER]"),
+    (re.compile(r"\b(?:sensor|serial|order|account|device)(?:\s*(?:id|sn)\s*[:#_-]?\s*[A-Z0-9-]{6,}|[\s:#_-]+(?=[A-Z0-9-]*\d)[A-Z0-9-]{8,})\b", re.I), "[REDACTED_IDENTIFIER]"),
+    (re.compile(r"\b(?:sensor|serial|order|account|device)\s+[A-Z][A-Z0-9-]{7,}\b"), "[REDACTED_IDENTIFIER]"),
     (re.compile(r"\b(?:bearer\s+|token[\s:=]+)[A-Za-z0-9._~-]{12,}\b", re.I), "[REDACTED_TOKEN]"),
     (re.compile(r"\b(?:authorization|cookie|set-cookie)\s*:\s*[^\s,;]+", re.I), "[REDACTED_SECRET]"),
     (re.compile(r"\b[A-F0-9]{24,}\b", re.I), "[REDACTED_IDENTIFIER]"),
@@ -260,6 +288,8 @@ MARKETING_MARKERS = {"help center", "continuous glucose monitoring", "official s
 TECHNICAL_MARKERS = {"manifest", "receiver", "sdk", "dependency", "dependencies", "ci", "lint", "refactor", "schema migration", "broadcast", "gradle", "build system", "oop2"}
 USER_IMPACT_MARKERS = {
     "no reading", "missing reading", "missing data", "stale", "signal loss", "disconnect", "not working", "won't connect", "cannot connect",
+    "connection to sensor is lost", "glucose values aren t updating", "glucose values are not updating", "glucose values not updating",
+    "not receiving glucose values", "unsupported sensor",
     "alert", "alarm", "blank", "delayed", "delay", "activate sensor", "loses history", "lost history", "brak odczytu", "brak danych",
     "utrata sygnału", "nie działa", "nie łączy", "rozłącza", "opóź", "stare dane", "przestały działać", "nie pokazuje",
     "crash", "crashes", "awaria",
