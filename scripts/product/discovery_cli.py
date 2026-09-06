@@ -12,7 +12,8 @@ import re
 import subprocess
 import sys
 import time
-from datetime import datetime, timezone
+import xml.etree.ElementTree as ET
+from datetime import datetime, timedelta, timezone
 from html import unescape
 from pathlib import Path
 from typing import Callable
@@ -42,6 +43,7 @@ DECISIONS_DIR = PRODUCT / "decisions"
 GENERATED_DISCOVERY_DIR = PRODUCT / "generated" / "discovery"
 VALIDATED_CAPABILITIES_MD = PRODUCT / "generated" / "VALIDATED_CAPABILITIES.md"
 SOURCES_CONFIG_DEFAULT = PRODUCT / "discovery" / "sources.json"
+QUERY_PACKS_DEFAULT = PRODUCT / "discovery" / "query-packs.json"
 DISCOVERY_CACHE_PATH = GENERATED_DISCOVERY_DIR / "cache" / "discovery-cache-v1.json"
 DISCOVERY_CLUSTER_REGISTRY_PATH = PRODUCT / "discovery" / "cluster-registry.json"
 DISCOVERY_PROPOSED_CLUSTER_REGISTRY_PATH = GENERATED_DISCOVERY_DIR / "cluster-registry.proposed.json"
@@ -65,6 +67,13 @@ FORBIDDEN_CACHE_KEYS = {
 MAX_CACHED_EXCERPT_LENGTH = 220
 MAX_CACHED_PROBLEM_LENGTH = 180
 MAX_CACHED_TEXT_LENGTH = 500
+SUPPORTED_LANGUAGES = {"pl", "en", "de", "fr", "es"}
+PRIMARY_LANGUAGES = {"pl", "en"}
+CROSS_LANGUAGE_SIMILARITY_THRESHOLD = 0.60
+EVIDENCE_ROLES = {"user_community", "developer_community", "official_reference"}
+EVIDENCE_TIER_ORDER = {"WEAK": 0, "SUPPORTED": 1, "CORROBORATED": 2, "STRONG": 3}
+EVIDENCE_SCORE_CAPS = {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}
+MAX_TOTAL_COLLECTED = 300
 
 CLASSIFICATIONS = {
     "VALIDATED_CAPABILITY",
@@ -88,46 +97,12 @@ SOURCE_TYPE_BY_FAMILY = {
     "competitor": "competitor",
 }
 
-STOPWORDS = {
-    "a",
-    "an",
-    "the",
-    "and",
-    "or",
-    "to",
-    "for",
-    "of",
-    "in",
-    "on",
-    "is",
-    "are",
-    "be",
-    "it",
-    "that",
-    "this",
-    "with",
-    "as",
-    "at",
-    "by",
-    "from",
-    "i",
-    "we",
-    "you",
-    "they",
-    "he",
-    "she",
-    "can",
-    "cannot",
-    "nie",
-    "oraz",
-    "dla",
-    "jest",
-    "sie",
-    "się",
-    "jak",
-    "przy",
-    "if",
-    "then",
+STOPWORDS_BY_LANGUAGE = {
+    "en": {"a", "an", "the", "and", "or", "to", "for", "of", "in", "on", "is", "are", "be", "it", "that", "this", "with", "as", "at", "by", "from", "i", "we", "you", "they", "can", "if", "then"},
+    "pl": {"a", "i", "oraz", "lub", "dla", "jest", "są", "sie", "się", "jak", "przy", "na", "do", "od", "po", "z", "ze", "w", "we", "ten", "ta", "to"},
+    "de": {"der", "die", "das", "und", "oder", "für", "von", "mit", "ist", "sind", "zu", "im", "in", "auf", "ein", "eine"},
+    "fr": {"le", "la", "les", "un", "une", "et", "ou", "pour", "de", "des", "du", "avec", "est", "sont", "dans", "sur"},
+    "es": {"el", "la", "los", "las", "un", "una", "y", "o", "para", "de", "del", "con", "es", "son", "en", "por"},
 }
 
 CANONICAL_NOISE_TOKENS = {
@@ -160,16 +135,115 @@ CANONICAL_TOKEN_ALIASES = {
     "detection": "detect",
     "readings": "reading",
     "caregivers": "caregiver",
+    "missing": "missing",
+    "delayed": "delay",
+    "stale": "stale",
+    "disconnects": "disconnect",
+    "alerts": "alert",
+    "crashes": "crash",
+}
+
+CANONICAL_TOKEN_ALIASES_PL = {
+    "odczytu": "missing_reading", "odczytów": "missing_reading", "danych": "data",
+    "sygnału": "signal_loss", "rozłącza": "disconnect", "łączy": "connect",
+    "alarmy": "alert", "alarm": "alert", "powiadomienie": "notification",
+    "działa": "working", "opóźnienie": "delay", "opóźnione": "delay",
+    "stare": "stale", "opiekunowi": "caregiver", "opiekun": "caregiver",
+}
+
+PROBLEM_INTENT_ALIASES = {
+    "en": {
+        "missing_data": (r"\b(?:missing|no)\s+(?:new\s+)?(?:data|readings?)\b", r"\b(?:data|readings?)\s+(?:are\s+)?missing\b"),
+        "stale_data": (r"\bstale\s+(?:data|readings?)\b",),
+        "delay": (r"\bdelay(?:ed|s)?\b",),
+        "signal_loss": (r"\bsignal\s+loss\b", r"\blost\s+signal\b"),
+        "disconnect": (r"\bdisconnect(?:ed|s|ing)?\b",),
+        "alert_not_firing": (r"\b(?:alerts?|alarms?|notifications?)\b.{0,32}\b(?:not|stop(?:ped)?)\s+(?:firing|working)\b",),
+        "false_alert": (r"\bfalse\s+(?:alert|alarm)\b",),
+        "repeated_alert": (r"\b(?:repeated|duplicate)\s+(?:alert|alarm|notification)\b",),
+        "activation_failure": (r"\b(?:activation|activate)\b.{0,24}\b(?:fail|failed|cannot|unable)\b",),
+        "connection_failure": (r"\b(?:cannot|can't|unable|fails? to)\s+connect\b", r"\bconnection\s+(?:failure|failed)\b"),
+        "sharing_failure": (r"\bshar(?:e|ing)\b.{0,28}\b(?:fail|failed|not working|missing|delay)\w*\b",),
+        "caregiver_visibility": (r"\b(?:data|readings?)\b.{0,40}\b(?:missing|delay\w*|not visible)\b.{0,40}\bcaregiver\b", r"\bcaregiver\b.{0,40}\b(?:cannot see|can't see|missing|delay\w*|not visible)\b"),
+        "expiry_notification": (r"\bexpir\w*\b.{0,24}\bnotification\b",),
+        "os_update_breakage": (r"\b(?:android|ios|os)\s+update\b.{0,40}\b(?:broke|broken|stop\w*|not working|fail\w*)\b",),
+        "history_missing": (r"\b(?:missing|lost|no)\s+history\b",),
+        "notification_customization": (r"\bcustomi[sz]\w*\b.{0,24}\bnotifications?\b",),
+        "watch_visibility": (r"\b(?:watch|smartwatch)\b.{0,32}\b(?:cannot see|can't see|missing|not visible|blank)\b",),
+    },
+    "pl": {
+        "missing_data": (r"\bbrak\s+(?:nowych\s+)?(?:danych|odczytów?)\b", r"\bnie pokazuje\s+(?:nowych\s+)?(?:danych|odczytów?)\b"),
+        "stale_data": (r"\bstare\s+(?:dane|odczyty)\b", r"\bnieaktualne\s+(?:dane|odczyty)\b"),
+        "delay": (r"\bopóźn(?:ienie|ione|iony|ionych)\b",),
+        "signal_loss": (r"\b(?:utrata|brak)\s+sygnału\b",),
+        "disconnect": (r"\brozłącz\w*\b",),
+        "alert_not_firing": (r"\b(?:alarmy?|powiadomienia?)\b.{0,32}\b(?:nie dział\w*|przestał\w*)\b",),
+        "false_alert": (r"\bfałszyw\w*\s+(?:alarm|alert|powiadomienie)\b",),
+        "repeated_alert": (r"\b(?:powtarzające|zduplikowane)\s+(?:alarmy|alerty|powiadomienia)\b",),
+        "activation_failure": (r"\b(?:aktywacja|aktywować)\b.{0,24}\b(?:nie działa|nie można|błąd)\b",),
+        "connection_failure": (r"\b(?:nie można|nie da się|nie)\s+połącz\w*\b",),
+        "sharing_failure": (r"\budostępnian\w*\b.{0,28}\b(?:nie działa|błąd|brak|opóź)\w*\b",),
+        "caregiver_visibility": (r"\bnie pokazuje\s+(?:nowych\s+)?(?:danych|odczytów?)\b.{0,40}\bopiekun\w*\b", r"\bopiekun\w*\b.{0,40}\b(?:nie widzi|brak|opóźn\w*)\b"),
+        "expiry_notification": (r"\b(?:wygaśnięci|końcu ważności)\w*\b.{0,24}\bpowiadomieni\w*\b",),
+        "os_update_breakage": (r"\bpo aktualizacji\b.{0,32}\b(?:android|ios|systemu)\b.{0,40}\b(?:nie dział\w*|przestał\w*)\b",),
+        "history_missing": (r"\b(?:brak|utrata|zniknęła)\s+historii\b",),
+        "notification_customization": (r"\b(?:dostosowa|personaliz)\w*\b.{0,24}\bpowiadomieni\w*\b",),
+        "watch_visibility": (r"\b(?:zegarek|smartwatch)\b.{0,32}\b(?:nie pokazuje|nie widać|brak|pusty)\b",),
+    },
+    "de": {
+        "missing_data": (r"\bkeine\s+(?:daten|messwerte)\b", r"\bfehlende\s+(?:daten|messwerte)\b"),
+        "delay": (r"\bverzöger\w*\b",), "signal_loss": (r"\bsignalverlust\b",),
+        "disconnect": (r"\bverbindungsabbruch\b",), "alert_not_firing": (r"\balarm\w*\b.{0,24}\bfunktioniert nicht\b",),
+        "connection_failure": (r"\bkeine verbindung\b", r"\bverbindung fehlgeschlagen\b"),
+        "caregiver_visibility": (r"\b(?:daten|messwerte)\b.{0,32}\b(?:fehlen|verzöger\w*)\b.{0,32}\bbetreuer\w*\b",),
+        "history_missing": (r"\b(?:fehlende|keine)\s+historie\b",), "watch_visibility": (r"\buhr\b.{0,24}\bnicht sichtbar\b",),
+    },
+    "fr": {
+        "missing_data": (r"\b(?:données|lectures)\s+manquantes\b",), "delay": (r"\bretard\w*\b",),
+        "signal_loss": (r"\bperte de signal\b",), "disconnect": (r"\bdéconnexion\b",),
+        "alert_not_firing": (r"\balarme\w*\b.{0,24}\bne fonctionne pas\b",), "connection_failure": (r"\béchec de connexion\b",),
+        "caregiver_visibility": (r"\b(?:données|lectures)\b.{0,32}\b(?:manquantes|retard\w*)\b.{0,32}\baidant\w*\b",),
+        "history_missing": (r"\bhistorique\s+manquant\b",), "watch_visibility": (r"\bmontre\b.{0,24}\b(?:invisible|vide)\b",),
+    },
+    "es": {
+        "missing_data": (r"\b(?:datos|lecturas)\s+(?:faltantes|ausentes)\b",), "delay": (r"\bretras\w*\b",),
+        "signal_loss": (r"\bpérdida de señal\b",), "disconnect": (r"\bdesconexión\b",),
+        "alert_not_firing": (r"\balarma\w*\b.{0,24}\bno funciona\b",), "connection_failure": (r"\bfallo de conexión\b",),
+        "caregiver_visibility": (r"\b(?:datos|lecturas)\b.{0,32}\b(?:faltan|retras\w*)\b.{0,32}\bcuidador\w*\b",),
+        "history_missing": (r"\bhistorial\s+(?:faltante|perdido)\b",), "watch_visibility": (r"\breloj\b.{0,24}\b(?:no visible|vacío)\b",),
+    },
+}
+
+PII_PATTERNS = [
+    (re.compile(r"\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b", re.I), "[REDACTED_EMAIL]"),
+    (re.compile(r"(?<![\w:])(?:\d{1,3}\.){3}\d{1,3}(?![\w:])"), "[REDACTED_IP]"),
+    (re.compile(r"(?<![\w:])(?:[A-F0-9]{0,4}:){2,7}[A-F0-9]{0,4}(?![\w:])", re.I), "[REDACTED_IP]"),
+    (re.compile(r"(?<!\w)@[A-Za-z0-9_]{2,30}\b"), "[REDACTED_HANDLE]"),
+    (re.compile(r"(?<!\w)(?:\+?\d[\s().-]?){8,15}(?!\w)"), "[REDACTED_PHONE]"),
+    (re.compile(r"\b(?:sensor|serial|order|account|device)[\s:#_-]*(?:id[\s:#_-]*)?[A-Z0-9-]{8,}\b", re.I), "[REDACTED_IDENTIFIER]"),
+    (re.compile(r"\b(?:bearer\s+|token[\s:=]+)[A-Za-z0-9._~-]{12,}\b", re.I), "[REDACTED_TOKEN]"),
+    (re.compile(r"\b(?:authorization|cookie|set-cookie)\s*:\s*[^\s,;]+", re.I), "[REDACTED_SECRET]"),
+    (re.compile(r"\b[A-F0-9]{24,}\b", re.I), "[REDACTED_IDENTIFIER]"),
+]
+
+MARKETING_MARKERS = {"help center", "continuous glucose monitoring", "official site", "learn more", "sugarmate", "freestyle libre", "dexcom"}
+TECHNICAL_MARKERS = {"manifest", "receiver", "sdk", "dependency", "dependencies", "ci", "lint", "refactor", "schema migration", "broadcast", "gradle", "build system", "oop2"}
+USER_IMPACT_MARKERS = {
+    "no reading", "missing reading", "missing data", "stale", "signal loss", "disconnect", "not working", "won't connect", "cannot connect",
+    "alert", "alarm", "blank", "delayed", "delay", "activate sensor", "loses history", "lost history", "brak odczytu", "brak danych",
+    "utrata sygnału", "nie działa", "nie łączy", "rozłącza", "opóź", "stare dane", "przestały działać", "nie pokazuje",
+    "crash", "crashes", "awaria",
 }
 
 
 class SourceResult:
-    def __init__(self, name: str, family: str, status: str, items: list[dict], detail: str = ""):
+    def __init__(self, name: str, family: str, status: str, items: list[dict], detail: str = "", evidence_role: str = "user_community"):
         self.name = name
         self.family = family
         self.status = status
         self.items = items
         self.detail = detail
+        self.evidence_role = evidence_role
 
 
 class DiscoveryCache:
@@ -220,10 +294,145 @@ class DiscoveryCache:
 
 
 def _truncate_text(text: str, limit: int) -> str:
-    cleaned = re.sub(r"\s+", " ", str(text)).strip()
+    cleaned = sanitize_text(text)[0]
     if len(cleaned) <= limit:
         return cleaned
     return cleaned[: limit - 3].rstrip() + "..."
+
+
+def sanitize_text(text: str) -> tuple[str, bool]:
+    cleaned = str(text or "")
+    redacted = False
+    for pattern, replacement in PII_PATTERNS:
+        cleaned, count = pattern.subn(replacement, cleaned)
+        redacted = redacted or count > 0
+    cleaned = re.sub(r"\s+", " ", cleaned).strip()
+    return cleaned, redacted
+
+
+def detect_language(text: str, configured: str = "") -> str:
+    configured = configured.lower().strip()
+    if configured in SUPPORTED_LANGUAGES:
+        return configured
+    normalized = normalize_text(text)
+    words = set(normalized.split())
+    markers = {
+        "pl": {"brak", "odczytu", "sygnału", "działa", "alarmy", "opiekun", "danych", "aktualizacji", "łączy"},
+        "en": {"readings", "signal", "working", "caregiver", "missing", "delayed", "alerts", "connection"},
+        "de": {"keine", "messwerte", "signalverlust", "alarm", "verbindung", "betreuer"},
+        "fr": {"lectures", "manquantes", "alarme", "connexion", "retard", "aidant"},
+        "es": {"lecturas", "faltan", "alarma", "conexión", "retraso", "cuidador"},
+    }
+    scores = {lang: len(words & terms) for lang, terms in markers.items()}
+    best = max(scores, key=scores.get)
+    return best if scores[best] > 0 and list(scores.values()).count(scores[best]) == 1 else "unknown"
+
+
+def _default_evidence_role(family: str) -> str:
+    if family in {"official_vendor", "competitor"}:
+        return "official_reference"
+    if family == "github_community":
+        return "developer_community"
+    return "user_community"
+
+
+def assess_problem_signal(text: str, title: str, evidence_role: str) -> dict:
+    lowered = normalize_text(f"{title} {text}")
+    title_lower = normalize_text(title)
+    user_facing = any(marker in lowered for marker in USER_IMPACT_MARKERS)
+    technical = any(marker in lowered for marker in TECHNICAL_MARKERS) and not user_facing
+    title_only = not text.strip() or normalize_text(text) == title_lower
+    marketing = evidence_role == "official_reference" and (title_only or any(marker in title_lower for marker in MARKETING_MARKERS))
+    quality = 0
+    if user_facing:
+        quality = 3
+    elif evidence_role != "official_reference" and len(lowered.split()) >= 5 and not technical:
+        quality = 2
+    elif len(lowered.split()) >= 3:
+        quality = 1
+    eligible = quality >= 2 and not marketing and not technical and evidence_role != "official_reference"
+    reason = "accepted" if eligible else "marketing_only" if marketing else "technical_only" if technical else "insufficient_problem_signal"
+    return {
+        "problem_signal_quality": quality,
+        "user_facing": user_facing,
+        "technical_only": technical,
+        "marketing_only": marketing,
+        "eligible_for_clustering": eligible,
+        "filter_reason": reason,
+    }
+
+
+def infer_concept(text: str) -> tuple[str, str]:
+    lowered = normalize_text(text)
+    rules = [
+        ("app_startup_failure", "reliability", ("startup", "uruchom", "launch"), ("crash", "crashes", "awaria")),
+        ("glucose_sharing_delay_or_failure", "caregiver", ("librelinkup", "caregiver", "opiekun", "family", "rodzin"), ("delay", "delayed", "missing", "brak", "nie pokazuje", "stale")),
+        ("alerts_not_firing", "alert_reliability", ("alarm", "alert", "powiadom"), ("not working", "nie działa", "przestały", "missing", "brak")),
+        ("signal_loss_disconnect", "connectivity", ("signal", "sygnał", "connect", "połączen", "disconnect", "rozłącza"), ("loss", "utrata", "brak", "failed", "nie łączy")),
+        ("sensor_activation_connection_failure", "sensor_lifecycle", ("sensor", "capteur"), ("activate", "activation", "connect", "łączy", "failed", "działa")),
+        ("stale_or_missing_readings", "data_freshness", ("reading", "odczyt", "data", "dane"), ("stale", "missing", "brak", "fresh", "current")),
+        ("phone_os_compatibility", "compatibility", ("android", "phone", "telefon"), ("update", "aktualizacji", "problem", "stop")),
+        ("watch_widget_glanceability", "glanceability", ("watch", "smartwatch", "zegarek", "widget", "widżet"), ("glucose", "glukoza", "cgm", "libre")),
+    ]
+    for concept, topic, anchors, impacts in rules:
+        if any(x in lowered for x in anchors) and any(x in lowered for x in impacts):
+            return concept, topic
+    return "unclassified", "unclassified"
+
+
+def load_query_packs(path: Path = QUERY_PACKS_DEFAULT) -> dict:
+    payload = read_json(path)
+    if payload.get("version") != 1 or not isinstance(payload.get("concepts"), list):
+        raise RuntimeError("Invalid Discovery query-packs version or concepts")
+    return payload
+
+
+def iter_queries(query_packs: dict, languages: list[str], primary_languages: list[str] | None = None, max_queries: int = 48):
+    concepts = query_packs.get("concepts", [])
+    language_cfg = query_packs.get("languages") or {}
+    requested_primary = PRIMARY_LANGUAGES if primary_languages is None else set(primary_languages)
+    language_order = {lang: idx for idx, lang in enumerate(languages)}
+    primary = [lang for lang in languages if lang in requested_primary]
+    primary.sort(key=lambda lang: (-float(language_cfg.get(lang, {}).get("priority", 0.0)), language_order[lang]))
+    secondary = [lang for lang in languages if lang not in primary]
+    secondary.sort(key=lambda lang: (-float(language_cfg.get(lang, {}).get("priority", 0.0)), language_order[lang]))
+    ordered = []
+    # Cover every concept in primary languages before spending the secondary budget.
+    for concept in concepts:
+        for language in primary:
+            queries = (concept.get("queries") or {}).get(language, [])
+            if queries:
+                ordered.append((concept, language, 0, queries[0]))
+    max_depth = max((len((concept.get("queries") or {}).get(lang, [])) for concept in concepts for lang in primary), default=1)
+    for idx in range(1, max_depth):
+        for concept in concepts:
+            for language in primary:
+                queries = (concept.get("queries") or {}).get(language, [])
+                if idx < len(queries):
+                    ordered.append((concept, language, idx, queries[idx]))
+    # Half-budget languages get one rotating starter query per concept first.
+    secondary_rows = []
+    if secondary:
+        for concept_idx, concept in enumerate(concepts):
+            language = secondary[concept_idx % len(secondary)]
+            queries = (concept.get("queries") or {}).get(language, [])
+            if queries:
+                secondary_rows.append((concept, language, 0, queries[0]))
+    secondary_budget = min(len(secondary_rows), max_queries // 4) if secondary else 0
+    selected = ordered[: max_queries - secondary_budget] + secondary_rows[:secondary_budget]
+    for concept, language, idx, query in selected:
+        yield {
+            "query": str(query), "language": language,
+            "query_id": f"{concept['concept_id']}:{language}:{idx + 1}",
+            "concept_id": concept["concept_id"], "topic_id": concept["topic_id"],
+        }
+
+
+def bounded_query_rows(query_packs: dict, languages: list[str], max_queries: int, primary_languages: list[str] | None = None) -> list[dict]:
+    rows = list(iter_queries(query_packs, languages, primary_languages=primary_languages, max_queries=max_queries))
+    if rows:
+        return rows
+    return [{"query": "Libre missing readings", "language": "en", "query_id": "fallback:en:1", "concept_id": "stale_or_missing_readings", "topic_id": "data_freshness"}]
 
 
 def _validate_cache_payload(value, path: str = "cache") -> None:
@@ -257,7 +466,7 @@ def _normalize_cached_item(item: dict, source_name: str, source_family: str, sou
         "source_type": normalized["source_type"],
         "retrieved_at": normalized["retrieved_at"],
         "content_hash": normalized["content_hash"],
-        "excerpt": _truncate_text(normalized["problem_statement"], MAX_CACHED_EXCERPT_LENGTH),
+        "excerpt": _truncate_text(normalized["excerpt"], MAX_CACHED_EXCERPT_LENGTH),
         "problem_statement": _truncate_text(normalized["problem_statement"], MAX_CACHED_PROBLEM_LENGTH),
         "canonical_problem_key": normalized["canonical_problem_key"],
         "canonical_problem_fingerprint": normalized["canonical_problem_fingerprint"],
@@ -268,6 +477,19 @@ def _normalize_cached_item(item: dict, source_name: str, source_family: str, sou
         "severity": normalized["severity"],
         "frequency": normalized["frequency"],
         "confidence": normalized["confidence"],
+        "language": normalized["language"],
+        "concept_id": normalized["concept_id"],
+        "topic_id": normalized["topic_id"],
+        "query_id": normalized["query_id"],
+        "evidence_role": normalized["evidence_role"],
+        "problem_signal_quality": normalized["problem_signal_quality"],
+        "user_facing": normalized["user_facing"],
+        "technical_only": normalized["technical_only"],
+        "marketing_only": normalized["marketing_only"],
+        "eligible_for_clustering": normalized["eligible_for_clustering"],
+        "filter_reason": normalized["filter_reason"],
+        "privacy_redacted": normalized["privacy_redacted"],
+        "updated_at": normalized.get("updated_at", ""),
     }
     return cached
 
@@ -455,6 +677,7 @@ def resolve_cluster_ids_with_registry(
     matched_existing = 0
     new_entries = 0
     ambiguous_matches = []
+    excluded_weak_or_noise = 0
 
     for cluster in clusters:
         cluster_key = str(cluster.get("canonical_problem_key") or canonical_problem_key(str(cluster.get("normalized_problem") or "")))
@@ -502,6 +725,10 @@ def resolve_cluster_ids_with_registry(
             cluster_id = f"DISC-{salt}{cluster_id[-6:]}"
         cluster["cluster_id"] = cluster_id
         cluster["identity_ambiguous"] = False
+        registry_eligible = cluster.get("quality_gate_passes", True) and EVIDENCE_TIER_ORDER.get(str(cluster.get("evidence_tier") or "SUPPORTED"), 0) >= EVIDENCE_TIER_ORDER["SUPPORTED"]
+        if not registry_eligible:
+            excluded_weak_or_noise += 1
+            continue
         entry = {
             "cluster_id": cluster_id,
             "canonical_problem_key": _truncate_text(cluster_key, 220),
@@ -522,6 +749,7 @@ def resolve_cluster_ids_with_registry(
         "matched_existing": matched_existing,
         "new_entries": new_entries,
         "ambiguous_matches": ambiguous_matches,
+        "excluded_weak_or_noise": excluded_weak_or_noise,
         "changed": bool(new_entries or matched_existing),
     }
     return clusters, summary, proposed
@@ -582,12 +810,13 @@ def normalize_text(text: str) -> str:
     return lowered
 
 
-def tokenize(text: str) -> list[str]:
-    return [t for t in normalize_text(text).split(" ") if t and t not in STOPWORDS and len(t) > 2]
+def tokenize(text: str, language: str = "unknown") -> list[str]:
+    stopwords = STOPWORDS_BY_LANGUAGE.get(language, set())
+    return [t for t in normalize_text(text).split(" ") if t and t not in stopwords and len(t) > 2]
 
 
-def text_fingerprint(text: str) -> str:
-    tokens = sorted(set(tokenize(text)))
+def text_fingerprint(text: str, language: str = "unknown") -> str:
+    tokens = sorted(set(tokenize(text, language)))
     return hashlib.sha256(" ".join(tokens).encode("utf-8")).hexdigest()[:16]
 
 
@@ -603,27 +832,28 @@ def _stem_canonical_token(token: str) -> str:
     return token
 
 
-def _canonical_problem_tokens(text: str) -> list[str]:
+def _canonical_problem_tokens(text: str, language: str = "unknown") -> list[str]:
     canonical = []
-    for token in tokenize(text):
-        mapped = CANONICAL_TOKEN_ALIASES.get(token, token)
+    aliases = CANONICAL_TOKEN_ALIASES_PL if language == "pl" else CANONICAL_TOKEN_ALIASES
+    for token in tokenize(text, language):
+        mapped = aliases.get(token, token)
         mapped = _stem_canonical_token(mapped)
-        if not mapped or mapped in STOPWORDS or mapped in CANONICAL_NOISE_TOKENS:
+        if not mapped or mapped in STOPWORDS_BY_LANGUAGE.get(language, set()) or mapped in CANONICAL_NOISE_TOKENS:
             continue
         if len(mapped) > 2:
             canonical.append(mapped)
     return sorted(set(canonical))
 
 
-def canonical_problem_key(text: str) -> str:
-    tokens = _canonical_problem_tokens(text)
+def canonical_problem_key(text: str, language: str = "unknown") -> str:
+    tokens = _canonical_problem_tokens(text, language)
     if not tokens:
         return text_fingerprint(text)
     return " ".join(tokens)
 
 
-def canonical_problem_fingerprint(text: str) -> str:
-    return hashlib.sha256(canonical_problem_key(text).encode("utf-8")).hexdigest()[:16]
+def canonical_problem_fingerprint(text: str, language: str = "unknown") -> str:
+    return hashlib.sha256(canonical_problem_key(text, language).encode("utf-8")).hexdigest()[:16]
 
 
 def content_hash(text: str) -> str:
@@ -748,25 +978,72 @@ def _cache_key(source_name: str, suffix: str) -> str:
     return f"{source_name}::{suffix}"
 
 
+def _lookback_window_key(lookback_days: int) -> str:
+    return f"lookback-days:{max(1, min(int(lookback_days), 1825))}"
+
+
+def _timestamp_at_or_after(value, cutoff: datetime) -> bool:
+    try:
+        if isinstance(value, bool) or value in {None, ""}:
+            return False
+        if isinstance(value, (int, float)):
+            timestamp = datetime.fromtimestamp(float(value), tz=timezone.utc)
+        else:
+            raw = str(value).strip()
+            if re.fullmatch(r"\d+(?:\.\d+)?", raw):
+                timestamp = datetime.fromtimestamp(float(raw), tz=timezone.utc)
+            else:
+                timestamp = datetime.fromisoformat(raw.replace("Z", "+00:00"))
+                if timestamp.tzinfo is None:
+                    timestamp = timestamp.replace(tzinfo=timezone.utc)
+                timestamp = timestamp.astimezone(timezone.utc)
+        return timestamp >= cutoff
+    except (OverflowError, TypeError, ValueError):
+        return False
+
+
+def _items_within_lookback(items: list[dict], cutoff: datetime) -> list[dict]:
+    return [item for item in items if _timestamp_at_or_after(item.get("updated_at"), cutoff)]
+
+
+def problem_intent_facets(text: str, language: str, concept_id: str) -> set[str]:
+    if not concept_id or concept_id == "unclassified":
+        return set()
+    normalized = normalize_text(text)
+    return {
+        facet
+        for facet, patterns in PROBLEM_INTENT_ALIASES.get(language, {}).items()
+        if any(re.search(pattern, normalized, flags=re.IGNORECASE) for pattern in patterns)
+    }
+
+
 def _normalize_item_fields(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
     url = canonicalize_url(str(item.get("url") or item.get("canonical_url") or "").strip())
-    text = str(item.get("text") or "").strip()
+    raw_text = str(item.get("text") or "").strip()
+    text, redacted = sanitize_text(raw_text)
     if not url or not text:
         return None
-    problem = _problem_from_text(str(item.get("problem_statement") or text))
-    canonical_key = canonical_problem_key(problem)
+    problem_raw, problem_redacted = sanitize_text(str(item.get("problem_statement") or text))
+    problem = _problem_from_text(problem_raw)
+    language = detect_language(f"{problem} {text}", str(item.get("language") or ""))
+    evidence_role = str(item.get("evidence_role") or _default_evidence_role(source_family))
+    if evidence_role not in EVIDENCE_ROLES:
+        evidence_role = _default_evidence_role(source_family)
+    quality = assess_problem_signal(text, problem, evidence_role)
+    inferred_concept, inferred_topic = infer_concept(f"{problem} {text}")
+    canonical_key = canonical_problem_key(problem, language)
     return {
         "canonical_url": url,
         "source_name": source_name,
         "source_family": source_family,
-        "source_identity": source_name,
+        "source_identity": str(item.get("source_identity") or source_name),
         "source_type": source_type,
         "retrieved_at": utc_now(),
         "content_hash": content_hash(text),
         "excerpt": _truncate_text(_safe_excerpt(text), MAX_CACHED_TEXT_LENGTH),
         "problem_statement": _truncate_text(problem, MAX_CACHED_PROBLEM_LENGTH),
         "canonical_problem_key": canonical_key,
-        "canonical_problem_fingerprint": canonical_problem_fingerprint(problem),
+        "canonical_problem_fingerprint": canonical_problem_fingerprint(problem, language),
         "persona": item.get("persona", "caregiver"),
         "mode": item.get("mode", item.get("persona", "caregiver")),
         "module": item.get("module", "Home / Monitoring"),
@@ -774,6 +1051,14 @@ def _normalize_item_fields(item: dict, source_name: str, source_family: str, sou
         "severity": item.get("severity", "medium"),
         "frequency": item.get("frequency", "occasional"),
         "confidence": item.get("confidence", "medium"),
+        "language": language,
+        "concept_id": str(item.get("concept_id") or inferred_concept),
+        "topic_id": str(item.get("topic_id") or inferred_topic),
+        "query_id": str(item.get("query_id") or "fixture"),
+        "evidence_role": evidence_role,
+        "privacy_redacted": bool(redacted or problem_redacted),
+        "updated_at": str(item.get("updated_at") or item.get("published_at") or ""),
+        **quality,
     }
 
 
@@ -782,8 +1067,9 @@ def _collect_fixture_items(source: dict, max_items: int) -> list[dict]:
     source_family = str(source.get("family", "other_community"))
     source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
     out: list[dict] = []
+    evidence_role = str(source.get("evidence_role") or _default_evidence_role(source_family))
     for raw in (source.get("fixture_items") or [])[:max_items]:
-        item = _normalize_item_fields(raw, source_name, source_family, source_type)
+        item = _normalize_item_fields({**raw, "evidence_role": raw.get("evidence_role", evidence_role)}, source_name, source_family, source_type)
         if item:
             out.append(item)
     return out
@@ -816,6 +1102,11 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
                 "url": canon,
                 "text": text,
                 "problem_statement": headline,
+                "evidence_role": "official_reference",
+                "language": source.get("language", ""),
+                "concept_id": "official_context",
+                "topic_id": "official_reference",
+                "query_id": f"official:{idx + 1}",
                 "persona": "caregiver",
                 "mode": "caregiver",
                 "module": "Home / Monitoring",
@@ -834,85 +1125,84 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
     return out
 
 
-def _collect_github_issues(source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache, cache_max_age_seconds: int) -> list[dict]:
+def _collect_github_issue_search(
+    source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache,
+    cache_max_age_seconds: int, query_packs: dict, languages: list[str], lookback_days: int,
+    github_token: str = "", primary_languages: list[str] | None = None,
+) -> list[dict]:
     out: list[dict] = []
     source_name = str(source.get("name", "unknown"))
     source_family = str(source.get("family", "github_community"))
     source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
-    repos = source.get("repos") or []
-    if not repos:
-        url_guess = ""
-        urls = source.get("urls") or []
-        if urls:
-            url_guess = str(urls[0])
-        match = re.search(r"github\.com/([^/]+)/([^/]+)", url_guess)
-        if match:
-            repos = [f"{match.group(1)}/{match.group(2)}"]
-
+    repos = [str(repo).strip().strip("/") for repo in source.get("repos", []) if "/" in str(repo)]
+    since = (datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))).date().isoformat()
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))
+    max_queries = max(1, min(int(source.get("max_queries", 24)), 48))
+    max_pages = max(1, min(int(source.get("max_pages", 2)), 2))
+    per_query = max(1, min(int(source.get("max_results_per_query", 10)), 10))
+    headers = {"Accept": "application/vnd.github+json"}
+    if github_token:
+        headers["Authorization"] = f"Bearer {github_token}"
+    concept_counts: dict[str, int] = {}
     for repo_full in repos:
-        if len(out) >= max_items:
-            break
-        owner_repo = str(repo_full).strip().strip("/")
-        if "/" not in owner_repo:
-            continue
-        owner, repo = owner_repo.split("/", 1)
-        api_url = f"https://api.github.com/repos/{owner}/{repo}/issues?state=open&per_page={min(100, max_items)}"
-        key = _cache_key(source_name, f"gh:{owner_repo}")
-        cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
-        if cached_items is not None:
-            for item in cached_items:
-                if len(out) >= max_items:
-                    break
-                out.append(item)
-            continue
-
-        data = _fetch_json(api_url, timeout=timeout, retries=retries, headers={"Accept": "application/vnd.github+json"})
-        normalized_items: list[dict] = []
-        if not isinstance(data, list):
-            continue
-        for issue in data:
+        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries, primary_languages=primary_languages):
             if len(out) >= max_items:
                 break
-            if not isinstance(issue, dict):
-                continue
-            if issue.get("pull_request"):
-                continue
-            issue_url = canonicalize_url(str(issue.get("html_url") or ""))
-            title = str(issue.get("title") or "").strip()
-            body = str(issue.get("body") or "").strip()
-            if not issue_url or not title:
-                continue
-            text = f"{title}. {_safe_excerpt(body, 260)}" if body else title
-            item = _normalize_cached_item(
-                {
-                    "url": issue_url,
-                    "text": text,
-                    "problem_statement": title,
-                    "persona": "caregiver",
-                    "mode": "caregiver",
-                    "module": "Home / Monitoring",
-                    "type": "usability",
-                    "severity": "medium",
-                    "frequency": "unknown",
-                    "confidence": "medium",
-                },
-                source_name,
-                source_family,
-                source_type,
-            )
-            if item:
-                normalized_items.append(item)
-                out.append(item)
-        if normalized_items:
-            _cache_put_items(cache, key, normalized_items)
+            search = f'repo:{repo_full} is:issue updated:>={since} "{query_meta["query"]}"'
+            for page in range(1, max_pages + 1):
+                if len(out) >= max_items:
+                    break
+                encoded = urllib_parse.urlencode({"q": search, "sort": "updated", "order": "desc", "per_page": per_query, "page": page})
+                api_url = f"https://api.github.com/search/issues?{encoded}"
+                key = _cache_key(source_name, f"gh-search:{_lookback_window_key(lookback_days)}:{repo_full}:{query_meta['query_id']}:{page}")
+                cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
+                if cached_items is not None:
+                    cached_items = _items_within_lookback(cached_items, cutoff)
+                    remaining_concept = max(0, 10 - concept_counts.get(query_meta["concept_id"], 0))
+                    selected = cached_items[: min(max_items - len(out), remaining_concept)]
+                    out.extend(selected)
+                    concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + len(selected)
+                    continue
+                data = _fetch_json(api_url, timeout=timeout, retries=retries, headers=headers)
+                issues = data.get("items", []) if isinstance(data, dict) else []
+                normalized_items = []
+                for issue in issues[:per_query]:
+                    if len(out) >= max_items or not isinstance(issue, dict) or "pull_request" in issue:
+                        continue
+                    if concept_counts.get(query_meta["concept_id"], 0) >= 10:
+                        continue
+                    title = str(issue.get("title") or "").strip()
+                    body = str(issue.get("body") or "").strip()
+                    if not _timestamp_at_or_after(issue.get("updated_at"), cutoff):
+                        continue
+                    labels = " ".join(str(x.get("name", "")) for x in issue.get("labels", []) if isinstance(x, dict))
+                    item = _normalize_cached_item(
+                        {
+                            "url": issue.get("html_url", ""), "text": f"{title}. {_safe_excerpt(body, 260)} Labels: {_safe_excerpt(labels, 80)}",
+                            "problem_statement": title, "persona": "caregiver", "module": "Home / Monitoring", "type": "usability",
+                            "severity": "medium", "frequency": "unknown", "confidence": "medium", "evidence_role": source.get("evidence_role", "developer_community"),
+                            "language": query_meta["language"], "concept_id": query_meta["concept_id"], "topic_id": query_meta["topic_id"],
+                            "query_id": query_meta["query_id"], "updated_at": issue.get("updated_at", ""),
+                        }, source_name, source_family, source_type,
+                    )
+                    if item:
+                        normalized_items.append(item)
+                        out.append(item)
+                        concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + 1
+                if normalized_items:
+                    _cache_put_items(cache, key, normalized_items)
     return out
 
 
-def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache, cache_max_age_seconds: int) -> SourceResult:
+def _collect_reddit_oauth(
+    source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache,
+    cache_max_age_seconds: int, query_packs: dict | None = None, languages: list[str] | None = None,
+    lookback_days: int = 365, primary_languages: list[str] | None = None,
+) -> SourceResult:
     name = str(source.get("name", "reddit"))
     family = str(source.get("family", "reddit"))
     if not os.environ.get("REDDIT_CLIENT_ID") or not os.environ.get("REDDIT_CLIENT_SECRET"):
-        return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[])
+        return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[], evidence_role=str(source.get("evidence_role", "user_community")))
 
     cid = os.environ.get("REDDIT_CLIENT_ID", "")
     secret = os.environ.get("REDDIT_CLIENT_SECRET", "")
@@ -936,61 +1226,88 @@ def _collect_reddit_oauth(source: dict, max_items: int, timeout: float, retries:
         return SourceResult(name=name, family=family, status="REDDIT_DISABLED", items=[], detail="oauth_token_missing")
 
     subreddits = source.get("subreddits") or ["diabetes", "Type1Diabetes"]
+    query_packs = query_packs or {"concepts": []}
+    languages = languages or ["pl", "en"]
+    max_queries = max(1, min(int(source.get("max_queries", 24)), 48))
     out: list[dict] = []
+    concept_counts: dict[str, int] = {}
+    cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))
     for sub in subreddits:
-        if len(out) >= max_items:
-            break
-        limit = min(50, max_items - len(out))
-        endpoint = f"https://oauth.reddit.com/r/{sub}/new?limit={limit}&raw_json=1"
-        key = _cache_key(name, f"reddit:{sub}")
-        cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
-        if cached_items is not None:
-            out.extend(cached_items[: max_items - len(out)])
-            continue
-
-        data = _fetch_json(endpoint, timeout=timeout, retries=retries, headers={"Authorization": f"Bearer {access_token}"})
-        normalized_items: list[dict] = []
-        if isinstance(data, dict):
-            posts = ((data.get("data") or {}).get("children") or [])
-        else:
-            posts = []
-        for post in posts:
+        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries, primary_languages=primary_languages):
             if len(out) >= max_items:
                 break
-            if not isinstance(post, dict):
+            query = query_meta["query"]
+            if sub.lower() in {"polska", "poland"} and not re.search(r"\b(libre|dexcom|cgm|glukoz|glucose)\b", query, re.I):
                 continue
-            pdata = post.get("data") or {}
-            title = str(pdata.get("title") or "").strip()
-            selftext = str(pdata.get("selftext") or "").strip()
-            permalink = str(pdata.get("permalink") or "").strip()
-            if not title or not permalink:
+            limit = min(10, max_items - len(out))
+            params = urllib_parse.urlencode({"q": query, "restrict_sr": "on", "sort": "new", "t": "all", "limit": limit, "raw_json": 1})
+            endpoint = f"https://oauth.reddit.com/r/{sub}/search?{params}"
+            key = _cache_key(name, f"reddit-search:{_lookback_window_key(lookback_days)}:{sub}:{query_meta['query_id']}")
+            cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
+            if cached_items is not None:
+                cached_items = _items_within_lookback(cached_items, cutoff)
+                remaining_concept = max(0, 10 - concept_counts.get(query_meta["concept_id"], 0))
+                selected = cached_items[: min(max_items - len(out), remaining_concept)]
+                out.extend(selected)
+                concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + len(selected)
                 continue
-            url = canonicalize_url(f"https://www.reddit.com{permalink}")
-            text = f"{title}. {_safe_excerpt(selftext, 240)}" if selftext else title
-            item = _normalize_cached_item(
-                {
-                    "url": url,
-                    "text": text,
-                    "problem_statement": title,
-                    "persona": "caregiver",
-                    "mode": "caregiver",
-                    "module": "Home / Monitoring",
-                    "type": "usability",
-                    "severity": "medium",
-                    "frequency": "occasional",
-                    "confidence": "low",
-                },
-                name,
-                family,
-                SOURCE_TYPE_BY_FAMILY.get(family, "community"),
-            )
-            if item:
-                normalized_items.append(item)
-                out.append(item)
-        if normalized_items:
-            _cache_put_items(cache, key, normalized_items)
+            data = _fetch_json(endpoint, timeout=timeout, retries=retries, headers={"Authorization": f"Bearer {access_token}"})
+            posts = ((data.get("data") or {}).get("children") or []) if isinstance(data, dict) else []
+            normalized_items = []
+            for post in posts[:limit]:
+                if concept_counts.get(query_meta["concept_id"], 0) >= 10:
+                    continue
+                pdata = post.get("data") or {} if isinstance(post, dict) else {}
+                created_utc = pdata.get("created_utc")
+                if not _timestamp_at_or_after(created_utc, cutoff):
+                    continue
+                title, selftext, permalink = str(pdata.get("title") or "").strip(), str(pdata.get("selftext") or "").strip(), str(pdata.get("permalink") or "").strip()
+                if not title or not permalink:
+                    continue
+                item = _normalize_cached_item(
+                    {
+                        "url": f"https://www.reddit.com{permalink}", "text": f"{title}. {_safe_excerpt(selftext, 180)}", "problem_statement": title,
+                        "source_identity": f"reddit_{sub}",
+                        "persona": "caregiver", "module": "Home / Monitoring", "type": "usability", "severity": "medium", "frequency": "occasional",
+                        "confidence": "low", "evidence_role": "user_community", "language": query_meta["language"], "concept_id": query_meta["concept_id"],
+                        "topic_id": query_meta["topic_id"], "query_id": query_meta["query_id"], "updated_at": created_utc or "",
+                    }, name, family, SOURCE_TYPE_BY_FAMILY.get(family, "community"),
+                )
+                if item:
+                    normalized_items.append(item)
+                    out.append(item)
+                    concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + 1
+            if normalized_items:
+                _cache_put_items(cache, key, normalized_items)
 
-    return SourceResult(name=name, family=family, status="OK" if out else "EMPTY", items=out)
+    return SourceResult(name=name, family=family, status="OK" if out else "EMPTY", items=out, evidence_role="user_community")
+
+
+def _collect_rss_atom(source: dict, max_items: int, timeout: float, retries: int) -> list[dict]:
+    if not source.get("allowlisted"):
+        raise RuntimeError("RSS/Atom source is not explicitly allowlisted")
+    out = []
+    for feed_url in source.get("urls", []):
+        raw = _fetch_url(str(feed_url), timeout, retries)
+        root = ET.fromstring(raw)
+        rows = root.findall(".//item") or root.findall(".//{http://www.w3.org/2005/Atom}entry")
+        for row in rows[: max_items - len(out)]:
+            def value(*names):
+                for tag in names:
+                    node = row.find(tag)
+                    if node is not None:
+                        return node.get("href", "") or (node.text or "")
+                return ""
+            title = value("title", "{http://www.w3.org/2005/Atom}title")
+            summary = value("description", "{http://www.w3.org/2005/Atom}summary", "{http://www.w3.org/2005/Atom}content")
+            link = value("link", "{http://www.w3.org/2005/Atom}link")
+            published = value("pubDate", "{http://www.w3.org/2005/Atom}published", "{http://www.w3.org/2005/Atom}updated")
+            item = _normalize_cached_item({"url": link, "text": f"{title}. {_extract_html_text(summary)}", "problem_statement": title,
+                "published_at": published, "evidence_role": source.get("evidence_role", "user_community"), "language": source.get("language", "")},
+                str(source.get("name")), str(source.get("family")), SOURCE_TYPE_BY_FAMILY.get(str(source.get("family")), "community"))
+            if item:
+                out.append(item)
+    return out[:max_items]
 
 
 def collect_from_source(
@@ -1000,17 +1317,25 @@ def collect_from_source(
     retries: int,
     cache: DiscoveryCache | None = None,
     cache_max_age_seconds: int = 21600,
+    query_packs: dict | None = None,
+    languages: list[str] | None = None,
+    lookback_days: int = 365,
+    github_token: str = "",
+    primary_languages: list[str] | None = None,
 ) -> SourceResult:
     name = str(source.get("name", "unknown"))
     family = str(source.get("family", "other_community"))
+    evidence_role = str(source.get("evidence_role") or _default_evidence_role(family))
+    if evidence_role not in EVIDENCE_ROLES:
+        return SourceResult(name=name, family=family, status="INVALID_EVIDENCE_ROLE", items=[], evidence_role=evidence_role)
     if family not in SOURCE_FAMILIES:
-        return SourceResult(name=name, family=family, status="INVALID_SOURCE_FAMILY", items=[])
+        return SourceResult(name=name, family=family, status="INVALID_SOURCE_FAMILY", items=[], evidence_role=evidence_role)
     if source.get("enabled") is False:
-        return SourceResult(name=name, family=family, status="DISABLED", items=[])
+        return SourceResult(name=name, family=family, status="DISABLED", items=[], evidence_role=evidence_role)
 
     fixture_items = _collect_fixture_items(source, max_items=max_items)
     if fixture_items:
-        return SourceResult(name=name, family=family, status="OK", items=fixture_items)
+        return SourceResult(name=name, family=family, status="OK", items=fixture_items, evidence_role=evidence_role)
 
     local_cache = cache or DiscoveryCache(DISCOVERY_CACHE_PATH)
 
@@ -1025,16 +1350,19 @@ def collect_from_source(
 
     try:
         if kind == "reddit_oauth":
-            return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
-        if kind == "github_issues":
-            items = _collect_github_issues(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
-            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items)
+            return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs, languages, lookback_days, primary_languages)
+        if kind in {"github_issues", "github_issue_search"}:
+            items = _collect_github_issue_search(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs or {"concepts": []}, languages or ["pl", "en"], lookback_days, github_token, primary_languages)
+            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
         if kind == "official_pages":
             items = _collect_official_pages(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
-            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items)
-        return SourceResult(name=name, family=family, status="INVALID_SOURCE_KIND", items=[])
+            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
+        if kind == "rss_atom":
+            items = _collect_rss_atom(source, max_items, timeout, retries)
+            return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
+        return SourceResult(name=name, family=family, status="INVALID_SOURCE_KIND", items=[], evidence_role=evidence_role)
     except Exception as exc:  # noqa: BLE001
-        return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=str(exc))
+        return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=str(exc), evidence_role=evidence_role)
 
 
 def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
@@ -1051,10 +1379,11 @@ def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
         exact_seen.add(exact_key)
 
         problem_text = str(item.get("problem_statement") or "")
-        fp = text_fingerprint(problem_text)
+        language = str(item.get("language") or "unknown")
+        fp = text_fingerprint(problem_text, language)
         item["problem_fingerprint"] = fp
-        item["canonical_problem_key"] = canonical_problem_key(problem_text)
-        item["canonical_problem_fingerprint"] = canonical_problem_fingerprint(problem_text)
+        item["canonical_problem_key"] = canonical_problem_key(problem_text, language)
+        item["canonical_problem_fingerprint"] = canonical_problem_fingerprint(problem_text, language)
         dup_key = (source_identity, fp)
         if dup_key in normalized_seen_in_source:
             stats["normalized_duplicates"] += 1
@@ -1094,7 +1423,7 @@ def _cluster_canonical_problem_key(items: list[dict]) -> str:
     token_counts: dict[str, int] = {}
     item_count = 0
     for item in items:
-        tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or "")))
+        tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or ""), str(item.get("language") or "unknown")))
         if not tokens:
             continue
         item_count += 1
@@ -1157,21 +1486,34 @@ def _reuse_existing_cluster_id(cluster: dict, existing_clusters: list[dict]) -> 
 
 def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters: list[dict] | None = None) -> list[dict]:
     clusters: list[dict] = []
-    for item in sorted(items, key=lambda i: (i.get("problem_fingerprint", ""), i.get("canonical_url", ""))):
-        tokens = set(tokenize(str(item.get("problem_statement") or "")))
+    eligible_items = [item for item in items if item.get("eligible_for_clustering", True)]
+    for item in sorted(eligible_items, key=lambda i: (i.get("concept_id", ""), i.get("problem_fingerprint", ""), i.get("canonical_url", ""))):
+        language = str(item.get("language") or "unknown")
+        tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or ""), language))
         placed = False
         for cluster in clusters:
-            best_sim = 0.0
+            matches_existing = False
             for existing in cluster["items"]:
-                existing_tokens = set(tokenize(str(existing.get("problem_statement") or "")))
-                best_sim = max(best_sim, jaccard_similarity(tokens, existing_tokens))
-            if best_sim >= threshold:
+                existing_language = str(existing.get("language") or "unknown")
+                existing_tokens = set(_canonical_problem_tokens(str(existing.get("problem_statement") or ""), existing_language))
+                similarity = jaccard_similarity(tokens, existing_tokens)
+                same_concept = item.get("concept_id") not in {None, "", "unclassified"} and item.get("concept_id") == existing.get("concept_id")
+                if language == existing_language:
+                    matches_existing = similarity >= threshold or (same_concept and similarity >= 0.10)
+                else:
+                    shared_facets = problem_intent_facets(str(item.get("problem_statement") or ""), language, str(item.get("concept_id") or "")) & problem_intent_facets(
+                        str(existing.get("problem_statement") or ""), existing_language, str(existing.get("concept_id") or "")
+                    )
+                    matches_existing = same_concept and (similarity >= max(threshold, CROSS_LANGUAGE_SIMILARITY_THRESHOLD) or bool(shared_facets))
+                if matches_existing:
+                    break
+            if matches_existing:
                 cluster["items"].append(item)
                 cluster["token_union"] = cluster["token_union"] | tokens
                 placed = True
                 break
         if not placed:
-            clusters.append({"items": [item], "token_union": tokens})
+            clusters.append({"items": [item], "token_union": tokens, "concept_id": item.get("concept_id"), "language": language})
 
     out = []
     for raw in clusters:
@@ -1199,6 +1541,8 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
 
         source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
         source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
+        languages = sorted(set(str(x.get("language") or "unknown") for x in c_items))
+        evidence_roles = sorted(set(str(x.get("evidence_role") or "user_community") for x in c_items))
         evidence = [
             _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
             for x in c_items
@@ -1217,6 +1561,22 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         normalized_problem = _truncate_text(str(representative.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH)
         cluster_problem_key = _cluster_canonical_problem_key(c_items) or canonical_problem_key(normalized_problem)
+        evidence_count = len(c_items)
+        identity_count = len(source_identities)
+        family_count = len(source_families)
+        language_count = len(languages)
+        if identity_count >= 3 and family_count >= 2 and (language_count >= 2 or evidence_count >= 5):
+            evidence_tier = "STRONG"
+        elif (identity_count >= 2 and family_count >= 2) or identity_count >= 3:
+            evidence_tier = "CORROBORATED"
+        elif identity_count >= 2 or evidence_count >= 3:
+            evidence_tier = "SUPPORTED"
+        else:
+            evidence_tier = "WEAK"
+        genuine_problem = any(x.get("user_facing", False) or x.get("problem_signal_quality", 2) >= 2 for x in c_items)
+        quality_gate = genuine_problem and not all(x.get("technical_only", False) for x in c_items) and not all(x.get("marketing_only", False) for x in c_items) and not all(x.get("evidence_role") == "official_reference" for x in c_items)
+        concepts = sorted(set(str(x.get("concept_id") or "unclassified") for x in c_items))
+        topics = sorted(set(str(x.get("topic_id") or "unclassified") for x in c_items))
 
         out.append(
             {
@@ -1230,7 +1590,17 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
                 "source_families": source_families,
                 "source_identities": source_identities,
                 "source_count": len(c_items),
-                "independent_source_family_count": len(source_identities),
+                "evidence_item_count": evidence_count,
+                "independent_source_identity_count": identity_count,
+                "independent_source_family_count": family_count,
+                "languages": languages,
+                "language_count": language_count,
+                "evidence_roles": evidence_roles,
+                "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
+                "topic_id": topics[0] if len(topics) == 1 else "mixed",
+                "evidence_tier": evidence_tier,
+                "quality_gate_passes": quality_gate,
+                "genuine_problem_signal": genuine_problem,
                 "fingerprints": problem_fps,
                 "raw_items": c_items,
             }
@@ -1387,6 +1757,12 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
                 "persona_candidate": c["persona_candidate"],
                 "module_candidate": c["module_candidate"],
                 "independent_source_family_count": c["independent_source_family_count"],
+                "independent_source_identity_count": c.get("independent_source_identity_count", 0),
+                "evidence_item_count": c.get("evidence_item_count", 0),
+                "languages": c.get("languages", []),
+                "evidence_tier": c.get("evidence_tier", "WEAK"),
+                "concept_id": c.get("concept_id", "unclassified"),
+                "topic_id": c.get("topic_id", "unclassified"),
                 "source_families": c["source_families"],
                 "source_identities": c.get("source_identities", []),
                 "evidence_items": c["evidence_items"][:6],
@@ -1407,6 +1783,7 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
                 "classification",
                 "persona",
                 "problem_statement",
+                "problem_statement_pl",
                 "evidence_summary",
                 "source_diversity_summary",
                 "current_librecare_match",
@@ -1449,6 +1826,8 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
             "Problem statement must describe problem, not solution.",
             "Exactly one classification per cluster.",
             "Do not accept requirements or start implementation.",
+            "Never recommend insulin dose, bolus, basal, insulin ratio, or therapy adjustment.",
+            "Return concise English problem_statement and concise Polish problem_statement_pl without long source reproduction.",
             "CRITICAL: Score fields (impact_score, frequency_score, evidence_score, solvability_score, novelty_score, effort_score) MUST be JSON integers in the range 0-5. Do NOT use decimals (e.g., 4.5), text (e.g., 'high'), fractions (e.g., '4/5'), or ranges (e.g., '3-4'). Each score must be exactly one of: 0, 1, 2, 3, 4, 5.",
         ],
         "clusters": compact,
@@ -1466,6 +1845,7 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
                 "normalized_problem": c["normalized_problem"],
                 "persona_candidate": c["persona_candidate"],
                 "module_candidate": c["module_candidate"],
+                "problem_statement_pl_required": True,
             }
         )
 
@@ -1493,6 +1873,7 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
             "Do NOT make new product decisions.",
             "Do NOT start implementation.",
             "Score fields MUST be JSON integers 0-5.",
+            "problem_statement_pl is required and must be concise Polish.",
         ],
         "clusters": compact,
     }
@@ -1638,6 +2019,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         "classification",
         "persona",
         "problem_statement",
+        "problem_statement_pl",
         "evidence_summary",
         "source_diversity_summary",
         "current_librecare_match",
@@ -1725,6 +2107,13 @@ def apply_governance(cluster: dict, ai_row: dict) -> dict:
     else:
         out["eligible_for_inbox"] = out.get("classification") in ELIGIBLE_CLASSIFICATIONS
 
+    if not cluster.get("quality_gate_passes", True):
+        out["eligible_for_inbox"] = False
+        out["exclusion_reason"] = "Deterministic problem-signal quality gate failed"
+    elif EVIDENCE_TIER_ORDER.get(str(cluster.get("evidence_tier") or "WEAK"), 0) < EVIDENCE_TIER_ORDER["CORROBORATED"]:
+        out["eligible_for_inbox"] = False
+        out["exclusion_reason"] = f"Evidence tier {cluster.get('evidence_tier', 'WEAK')} cannot enter Product Inbox"
+
     return out
 
 
@@ -1748,7 +2137,25 @@ def compute_score(cluster: dict, decision: dict) -> int:
         + strategic_fit * 3
         - effort * 5
     )
-    return max(0, min(100, int(raw)))
+    tier = str(cluster.get("evidence_tier") or "WEAK")
+    return max(0, min(EVIDENCE_SCORE_CAPS.get(tier, 49), int(raw)))
+
+
+def select_top10_and_watchlist(governed_rows: list[dict]) -> tuple[list[dict], list[dict]]:
+    ranked = sorted(governed_rows, key=lambda row: (-row["score"], row["cluster"]["cluster_id"]))
+    def governance_candidate(row: dict) -> bool:
+        governed = row["governed"]
+        cluster = row["cluster"]
+        return (
+            cluster.get("quality_gate_passes", True)
+            and not cluster.get("identity_ambiguous", False)
+            and governed.get("classification") in ELIGIBLE_CLASSIFICATIONS
+            and governed.get("solvability") not in {"ABBOTT_LIMITATION", "EXTERNAL_ONLY"}
+            and not governed.get("suppressed", False)
+        )
+    top10 = [row for row in ranked if governance_candidate(row) and row["cluster"].get("evidence_tier", "SUPPORTED") in {"SUPPORTED", "CORROBORATED", "STRONG"}][:10]
+    watchlist = [row for row in ranked if governance_candidate(row) and row["cluster"].get("evidence_tier") == "WEAK"][:10]
+    return top10, watchlist
 
 
 def next_observation_name(existing_names: set[str], date_stamp: str) -> tuple[str, str]:
@@ -1787,6 +2194,10 @@ def create_observations_from_clusters(clusters: list[dict], run_id: str) -> list
 
     for cluster in clusters:
         if cluster.get("identity_ambiguous"):
+            continue
+        if not cluster.get("quality_gate_passes", True):
+            continue
+        if EVIDENCE_TIER_ORDER.get(str(cluster.get("evidence_tier") or "WEAK"), 0) < EVIDENCE_TIER_ORDER["SUPPORTED"]:
             continue
         match = cluster.get("foundation_match", {})
         if match.get("best_capability_score", 0.0) >= 0.80:
@@ -1906,6 +2317,10 @@ def run_discovery(
     timeout: float,
     retries: int,
     cache_max_age_seconds: int,
+    query_packs_file: Path | None = None,
+    languages: list[str] | None = None,
+    primary_languages: list[str] | None = None,
+    lookback_days: int = 365,
 ) -> dict:
     started_at = utc_now()
     run_stamp = datetime.now(timezone.utc).strftime("%Y%m%d-%H%M")
@@ -1916,6 +2331,11 @@ def run_discovery(
     ai_calls = 0
 
     cache = DiscoveryCache(DISCOVERY_CACHE_PATH)
+    query_path = query_packs_file or QUERY_PACKS_DEFAULT
+    query_packs = load_query_packs(query_path) if query_path.exists() else {"version": 1, "languages": {}, "concepts": []}
+    configured_languages = [lang for lang in (languages or ["pl", "en", "de", "fr", "es"]) if lang in SUPPORTED_LANGUAGES]
+    requested_primary = ["pl", "en"] if primary_languages is None else primary_languages
+    configured_primary = [lang for lang in requested_primary if lang in configured_languages]
 
     sources_cfg = read_json(sources_file)
     sources = sources_cfg.get("sources", [])
@@ -1923,14 +2343,31 @@ def run_discovery(
     source_results = []
     all_items = []
     for source in sources:
+        remaining_budget = MAX_TOTAL_COLLECTED - len(all_items)
+        if remaining_budget <= 0:
+            break
         result = collect_from_source(
             source,
-            max_items=max_items_per_source,
+            max_items=min(max_items_per_source, 30, remaining_budget),
             timeout=timeout,
             retries=retries,
             cache=cache,
             cache_max_age_seconds=cache_max_age_seconds,
+            query_packs=query_packs,
+            languages=configured_languages,
+            primary_languages=configured_primary,
+            lookback_days=lookback_days,
+            github_token=github_token,
         )
+        accepted_count = sum(1 for item in result.items if item.get("eligible_for_clustering", True))
+        observed_languages = sorted(set(str(item.get("language") or "unknown") for item in result.items))
+        kind = str(source.get("kind") or "").strip().lower()
+        if kind in {"github_issues", "github_issue_search", "reddit_oauth"} or (not kind and result.family in {"github_community", "reddit"}):
+            requested_languages = list(configured_languages)
+        elif source.get("language") in SUPPORTED_LANGUAGES:
+            requested_languages = [str(source["language"])]
+        else:
+            requested_languages = []
         source_results.append(
             {
                 "name": result.name,
@@ -1938,6 +2375,12 @@ def run_discovery(
                 "status": result.status,
                 "detail": result.detail,
                 "count": len(result.items),
+                "collected": len(result.items),
+                "accepted": accepted_count,
+                "filtered": len(result.items) - accepted_count,
+                "evidence_role": result.evidence_role,
+                "requested_languages": requested_languages,
+                "observed_languages": observed_languages,
             }
         )
         all_items.extend(result.items)
@@ -1946,6 +2389,13 @@ def run_discovery(
                 status = "DEGRADED"
 
     deduped_items, dedupe_stats = dedupe_items(all_items)
+    filter_summary = {"duplicate": dedupe_stats["exact_duplicates"] + dedupe_stats["normalized_duplicates"]}
+    for item in all_items:
+        reason = str(item.get("filter_reason") or "accepted")
+        if reason != "accepted":
+            filter_summary[reason] = filter_summary.get(reason, 0) + 1
+        if item.get("privacy_redacted"):
+            filter_summary["privacy_redacted"] = filter_summary.get("privacy_redacted", 0) + 1
     # Build logical clusters without identity reuse first; stateful registry assigns final stable IDs.
     clusters = cluster_items(deduped_items)
     observation_clusters = _existing_cluster_matches()
@@ -1956,6 +2406,7 @@ def run_discovery(
         "matched_existing": 0,
         "new_entries": 0,
         "ambiguous_matches": [],
+        "excluded_weak_or_noise": 0,
         "changed": False,
     }
     proposed_registry = {"version": CLUSTER_REGISTRY_VERSION, "entries": []}
@@ -2016,8 +2467,9 @@ def run_discovery(
                     "classification": cls,
                     "persona": c["persona_candidate"],
                     "problem_statement": c["normalized_problem"],
+                    "problem_statement_pl": c["normalized_problem"] if "pl" in c.get("languages", []) else "Problem wymaga przeglądu Product Ownera.",
                     "evidence_summary": _safe_excerpt("; ".join(c["evidence_items"]), 160),
-                    "source_diversity_summary": f"{c['source_count']} items / {c['independent_source_family_count']} independent sources",
+                    "source_diversity_summary": f"{c.get('evidence_item_count', c['source_count'])} items / {c.get('independent_source_identity_count', 0)} identities / {c['independent_source_family_count']} families",
                     "current_librecare_match": _foundation_match_summary(c.get("foundation_match", {})),
                     "solvability": "APP",
                     "impact_score": 3,
@@ -2085,8 +2537,7 @@ def run_discovery(
         status = "FAILED"
         errors.append(f"AI call budget exceeded: {ai_calls} > 2")
 
-    governed_rows.sort(key=lambda r: (-r["score"], r["cluster"]["cluster_id"]))
-    top10 = governed_rows[:10]
+    top10, watchlist_rows = select_top10_and_watchlist(governed_rows)
 
     if status != "FAILED":
         created_observations = create_observations_from_clusters(clusters, run_id)
@@ -2110,9 +2561,20 @@ def run_discovery(
                 "score": row["score"],
                 "cluster_id": row["cluster"]["cluster_id"],
                 "problem": row["governed"].get("problem_statement"),
+                "problem_statement": row["governed"].get("problem_statement"),
+                "problem_statement_pl": row["governed"].get("problem_statement_pl"),
                 "persona": row["governed"].get("persona"),
                 "classification": row["governed"].get("classification"),
                 "evidence_count": len(row["cluster"].get("evidence_items", [])),
+                "evidence_item_count": row["cluster"].get("evidence_item_count", 0),
+                "independent_source_identity_count": row["cluster"].get("independent_source_identity_count", 0),
+                "independent_source_family_count": row["cluster"].get("independent_source_family_count", 0),
+                "languages": row["cluster"].get("languages", []),
+                "language_count": row["cluster"].get("language_count", 0),
+                "evidence_tier": row["cluster"].get("evidence_tier", "WEAK"),
+                "concept_id": row["cluster"].get("concept_id", "unclassified"),
+                "topic_id": row["cluster"].get("topic_id", "unclassified"),
+                "qualification_reason": "Quality gate passed and evidence tier is at least SUPPORTED",
                 "source_families": row["cluster"].get("source_families", []),
                 "source_identities": row["cluster"].get("source_identities", []),
                 "current_librecare_match": _foundation_match_summary(deterministic_match),
@@ -2129,6 +2591,21 @@ def run_discovery(
             }
         )
 
+    report_watchlist = []
+    for row in watchlist_rows:
+        cluster = row["cluster"]
+        report_watchlist.append({
+            "cluster_id": cluster["cluster_id"], "score": row["score"], "evidence_tier": "WEAK",
+            "concept_id": cluster.get("concept_id"), "topic_id": cluster.get("topic_id"),
+            "problem_statement": row["governed"].get("problem_statement"), "problem_statement_pl": row["governed"].get("problem_statement_pl"),
+            "languages": cluster.get("languages", []), "source_identities": cluster.get("source_identities", []),
+            "source_families": cluster.get("source_families", []), "evidence_item_count": cluster.get("evidence_item_count", 0),
+            "why_promising": "Deterministic user-facing problem signal passed quality filtering.",
+            "why_weak": "Only one independent source identity currently corroborates this signal.",
+            "corroboration_needed": "A second independent source identity or three independent evidence items are required.",
+            "eligible_for_inbox": False,
+        })
+
     report = {
         "run_id": run_id,
         "started_at": started_at,
@@ -2139,10 +2616,20 @@ def run_discovery(
             "AFTER_DEDUPE": len(deduped_items),
             "CLUSTERS": len(clusters),
             "AI_CALLS": ai_calls,
+            "FILTERED_NOISE": sum(value for key, value in filter_summary.items() if key != "privacy_redacted"),
+            "WATCHLIST": len(report_watchlist),
+            "TOP10": len(report_top10),
+            "OBSERVATIONS_CREATED": len(created_observations),
+            "PRODUCT_INBOX_ACTIONS": len(created_issues),
         },
         "source_status": source_results,
         "dedupe": dedupe_stats,
+        "configured_languages": configured_languages,
+        "primary_languages": configured_primary,
+        "lookback_days": lookback_days,
+        "filter_summary": filter_summary,
         "top10": report_top10,
+        "watchlist": report_watchlist,
         "created_observations": created_observations,
         "top3_issue_actions": created_issues,
         "errors": errors,
@@ -2151,6 +2638,7 @@ def run_discovery(
             "matched_existing": registry_summary.get("matched_existing", 0),
             "new_entries": registry_summary.get("new_entries", 0),
             "ambiguous_matches": registry_summary.get("ambiguous_matches", []),
+            "excluded_weak_or_noise": registry_summary.get("excluded_weak_or_noise", 0),
             "proposed_registry_path": "",
         },
         "safety_guards": {
@@ -2211,12 +2699,23 @@ def render_markdown_report(report: dict) -> str:
         f"- AFTER_DEDUPE: {report['counts']['AFTER_DEDUPE']}",
         f"- CLUSTERS: {report['counts']['CLUSTERS']}",
         f"- AI_CALLS: {report['counts']['AI_CALLS']}",
+        f"- Configured languages: {', '.join(report.get('configured_languages', []))}",
+        f"- Lookback days: {report.get('lookback_days', 365)}",
+        f"- FILTERED_NOISE: {report['counts'].get('FILTERED_NOISE', 0)}",
+        f"- TOP10: {report['counts'].get('TOP10', 0)}",
+        f"- WATCHLIST: {report['counts'].get('WATCHLIST', 0)}",
+        f"- OBSERVATIONS_CREATED: {report['counts'].get('OBSERVATIONS_CREATED', 0)}",
+        f"- PRODUCT_INBOX_ACTIONS: {report['counts'].get('PRODUCT_INBOX_ACTIONS', 0)}",
         "",
         "## Source Status",
         "",
     ]
     for src in report.get("source_status", []):
-        lines.append(f"- {src['name']}: {src['status']} ({src['count']})")
+        lines.append(f"- {src['name']}: {src['status']} | role={src.get('evidence_role')} | requested_languages={','.join(src.get('requested_languages', [])) or '-'} | observed_languages={','.join(src.get('observed_languages', [])) or '-'} | collected={src.get('collected', 0)} accepted={src.get('accepted', 0)} filtered={src.get('filtered', 0)}")
+
+    lines.extend(["", "## Filter Summary", ""])
+    for reason, count in sorted(report.get("filter_summary", {}).items()):
+        lines.append(f"- {reason}: {count}")
 
     reg = report.get("cluster_registry") or {}
     lines.extend(
@@ -2228,6 +2727,7 @@ def render_markdown_report(report: dict) -> str:
             f"- Matched existing: {reg.get('matched_existing', 0)}",
             f"- New entries: {reg.get('new_entries', 0)}",
             f"- Ambiguous matches: {len(reg.get('ambiguous_matches', []))}",
+            f"- Excluded weak/noise: {reg.get('excluded_weak_or_noise', 0)}",
         ]
     )
     if reg.get("proposed_registry_path"):
@@ -2258,6 +2758,9 @@ def render_markdown_report(report: dict) -> str:
             lines.append("")
             lines.append("Problem:")
             lines.append(str(item.get("problem", "")))
+            lines.append(f"Polish: {item.get('problem_statement_pl', '')}")
+            lines.append(f"Evidence tier: {item.get('evidence_tier', '')}")
+            lines.append(f"Concept/topic: {item.get('concept_id', '')} / {item.get('topic_id', '')}")
             lines.append("")
             lines.append("Persona:")
             lines.append(str(item.get("persona", "")))
@@ -2290,6 +2793,19 @@ def render_markdown_report(report: dict) -> str:
                 lines.append(f"- {url}")
             lines.append("")
 
+    lines.extend(["", "## WATCHLIST", ""])
+    if not report.get("watchlist"):
+        lines.append("Brak pozycji.")
+    for item in report.get("watchlist", []):
+        lines.extend([
+            f"- **{item.get('cluster_id')}** — {item.get('score')}/100 — WEAK",
+            f"  - EN: {item.get('problem_statement', '')}",
+            f"  - PL: {item.get('problem_statement_pl', '')}",
+            f"  - Promising: {item.get('why_promising', '')}",
+            f"  - Still weak: {item.get('why_weak', '')}",
+            f"  - Needed: {item.get('corroboration_needed', '')}",
+        ])
+
     if report.get("errors"):
         lines.extend(["## Errors", ""])
         for err in report["errors"]:
@@ -2299,9 +2815,13 @@ def render_markdown_report(report: dict) -> str:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="LibreCare Discovery Agent v1")
+    parser = argparse.ArgumentParser(description="LibreCare Discovery Agent v1.5")
     parser.add_argument("--sources-file", default=str(SOURCES_CONFIG_DEFAULT))
-    parser.add_argument("--max-items-per-source", type=int, default=20)
+    parser.add_argument("--query-packs-file", default=str(QUERY_PACKS_DEFAULT))
+    parser.add_argument("--languages", default="pl,en,de,fr,es")
+    parser.add_argument("--primary-languages", default="pl,en")
+    parser.add_argument("--lookback-days", type=int, default=365)
+    parser.add_argument("--max-items-per-source", type=int, default=30)
     parser.add_argument("--publish-top3", action="store_true")
     parser.add_argument("--repo-owner", default="")
     parser.add_argument("--repo-name", default="")
@@ -2321,8 +2841,16 @@ def main(argv: list[str] | None = None) -> int:
     sources_file = Path(args.sources_file)
     ai_response_file = Path(args.ai_response_file) if args.ai_response_file else None
 
-    if args.max_items_per_source < 1 or args.max_items_per_source > 200:
-        print("ERROR: --max-items-per-source must be 1..200", file=sys.stderr)
+    if args.max_items_per_source < 1 or args.max_items_per_source > 30:
+        print("ERROR: --max-items-per-source must be 1..30", file=sys.stderr)
+        return 2
+    languages = [x.strip().lower() for x in args.languages.split(",") if x.strip()]
+    primary_languages = [x.strip().lower() for x in args.primary_languages.split(",") if x.strip()]
+    if not languages or any(x not in SUPPORTED_LANGUAGES for x in languages) or any(x not in languages for x in primary_languages):
+        print("ERROR: invalid --languages/--primary-languages", file=sys.stderr)
+        return 2
+    if args.lookback_days < 1 or args.lookback_days > 1825:
+        print("ERROR: --lookback-days must be 1..1825", file=sys.stderr)
         return 2
 
     report = run_discovery(
@@ -2338,6 +2866,10 @@ def main(argv: list[str] | None = None) -> int:
         timeout=args.timeout,
         retries=args.retries,
         cache_max_age_seconds=max(1, int(args.cache_max_age_seconds)),
+        query_packs_file=Path(args.query_packs_file),
+        languages=languages,
+        primary_languages=primary_languages,
+        lookback_days=args.lookback_days,
     )
 
     if args.output_file:

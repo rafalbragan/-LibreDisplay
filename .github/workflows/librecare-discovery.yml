@@ -8,11 +8,26 @@ on:
         required: false
         type: boolean
         default: false
-      max_items_per_source:
-        description: "Max collected items per source (1..200)"
+      languages:
+        description: "Comma-separated languages (pl,en,de,fr,es)"
+        required: false
+        type: string
+        default: "pl,en,de,fr,es"
+      primary_languages:
+        description: "Primary full-budget languages"
+        required: false
+        type: string
+        default: "pl,en"
+      lookback_days:
+        description: "Evidence lookback in days (1..1825)"
         required: false
         type: number
-        default: 20
+        default: 365
+      max_items_per_source:
+        description: "Max accepted items per source (1..30)"
+        required: false
+        type: number
+        default: 30
 
 concurrency:
   group: product-foundation-discovery
@@ -65,6 +80,10 @@ jobs:
         run: |
           python scripts/product/discovery_cli.py \
             --sources-file product/discovery/sources.json \
+            --query-packs-file product/discovery/query-packs.json \
+            --languages "${{ inputs.languages }}" \
+            --primary-languages "${{ inputs.primary_languages }}" \
+            --lookback-days "${{ inputs.lookback_days }}" \
             --max-items-per-source "${{ inputs.max_items_per_source }}" \
             --ai-mode copilot \
             --ai-model gpt-5.4-mini \
