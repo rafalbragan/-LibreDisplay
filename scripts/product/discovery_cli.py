@@ -1129,7 +1129,7 @@ def _collect_reddit_oauth(
             if sub.lower() in {"polska", "poland"} and not re.search(r"\b(libre|dexcom|cgm|glukoz|glucose)\b", query, re.I):
                 continue
             limit = min(10, max_items - len(out))
-            params = urllib_parse.urlencode({"q": query, "restrict_sr": "on", "sort": "new", "t": "year", "limit": limit, "raw_json": 1})
+            params = urllib_parse.urlencode({"q": query, "restrict_sr": "on", "sort": "new", "t": "all", "limit": limit, "raw_json": 1})
             endpoint = f"https://oauth.reddit.com/r/{sub}/search?{params}"
             key = _cache_key(name, f"reddit-search:{sub}:{query_meta['query_id']}")
             cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
@@ -2236,6 +2236,12 @@ def run_discovery(
             github_token=github_token,
         )
         accepted_count = sum(1 for item in result.items if item.get("eligible_for_clustering", True))
+        observed_languages = sorted(set(str(item.get("language") or "unknown") for item in result.items))
+        if not observed_languages:
+            if source.get("language") in SUPPORTED_LANGUAGES:
+                observed_languages = [str(source["language"])]
+            elif source.get("kind") in {"github_issues", "github_issue_search", "reddit_oauth"}:
+                observed_languages = list(configured_languages)
         source_results.append(
             {
                 "name": result.name,
@@ -2247,7 +2253,7 @@ def run_discovery(
                 "accepted": accepted_count,
                 "filtered": len(result.items) - accepted_count,
                 "evidence_role": result.evidence_role,
-                "languages": sorted(set(str(item.get("language") or "unknown") for item in result.items)),
+                "languages": observed_languages,
             }
         )
         all_items.extend(result.items)
