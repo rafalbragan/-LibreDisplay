@@ -2232,6 +2232,15 @@ def test_v15_privacy_redaction(cli_env):
     for secret in ["a@b.com", "192.168.1.10", "2001:db8::1", "@person", "123 456 789", "ABCDEF123456", "abcdefghijklmnop", "secretvalue123", "session123456"]:
         assert secret not in cleaned
 
+    natural, natural_redacted = cli.sanitize_text("Sensor connection failed")
+    assert natural == "Sensor connection failed"
+    assert natural_redacted is False
+    identifiers, identifiers_redacted = cli.sanitize_text("Sensor ID ABCDEF123456, device 12345678, and order ABCDEFGHIJKL")
+    assert identifiers_redacted is True
+    assert "ABCDEF123456" not in identifiers
+    assert "12345678" not in identifiers
+    assert "ABCDEFGHIJKL" not in identifiers
+
 
 def test_v15_bounded_query_schedule_covers_all_concepts(cli_env):
     cli, _ = cli_env
@@ -2589,6 +2598,80 @@ def test_github_local_matching_assigns_one_best_concept_for_real_phrasing(cli_en
         assert match["concept_id"] == expected_concept
 
 
+def test_github_local_matching_recalls_real_discovery_run_5_issues(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en", "de", "fr", "es"], 48, ["pl", "en"])
+    cases = [
+        ("Crazy-Marvin/LibreLinkUpDesktop", "No Error message if connection to Sensor is lost", "signal_loss_disconnect"),
+        ("pachi81/GlucoDataAuto", "Blood glucose values aren't updating when listening to a song", "stale_or_missing_readings"),
+        ("pachi81/GlucoDataAuto", "Not receiving glucose values", "stale_or_missing_readings"),
+        ("creepymonster/GlucoseDirect", "Unsupported sensor - Libre 2", "sensor_activation_connection_failure"),
+    ]
+    for idx, (repo, title, expected_concept) in enumerate(cases, start=10):
+        candidate = cli._github_issue_candidate(
+            {"html_url": f"https://github.com/{repo}/issues/{idx}", "title": title, "body": "", "updated_at": cli.utc_now()},
+            repo,
+        )
+        match = cli._local_github_query_match(candidate, rows)
+        assert match is not None, title
+        assert match["concept_id"] == expected_concept, title
+        assert match["match_score"] >= cli.LOCAL_QUERY_MATCH_THRESHOLD
+        signal = cli.assess_problem_signal(candidate["excerpt"], candidate["problem_statement"], "developer_community")
+        assert signal["user_facing"] is True, title
+        assert signal["eligible_for_clustering"] is True, title
+
+
+def test_github_local_matching_requires_concept_context_for_generic_phrases(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en", "de", "fr", "es"], 48, ["pl", "en"])
+    unmatched = [
+        "not updating",
+        "missing data",
+        "connection",
+        "Android Auto display widget broken",
+    ]
+    for idx, title in enumerate(unmatched, start=40):
+        candidate = cli._github_issue_candidate(
+            {"html_url": f"https://github.com/o/r/issues/{idx}", "title": title, "body": "", "updated_at": cli.utc_now()},
+            "o/r",
+        )
+        assert cli._local_github_query_match(candidate, rows) is None, title
+
+    candidate = cli._github_issue_candidate(
+        {"html_url": "https://github.com/o/r/issues/50", "title": "Blood glucose values stopped updating", "body": "", "updated_at": cli.utc_now()},
+        "o/r",
+    )
+    match = cli._local_github_query_match(candidate, rows)
+    assert match is not None
+    assert match["concept_id"] == "stale_or_missing_readings"
+    assert match["concept_id"] != "glucose_sharing_delay_or_failure"
+
+
+def test_github_local_matching_keeps_technical_filter_and_ambiguity_guard(cli_env, monkeypatch):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en"], 48, ["pl", "en"])
+    for idx, title in enumerate(["Enhancement: Git Actions for Browser Build", "Refactor API deployment pipeline"], start=60):
+        candidate = cli._github_issue_candidate(
+            {"html_url": f"https://github.com/o/r/issues/{idx}", "title": title, "body": "", "updated_at": cli.utc_now()},
+            "o/r",
+        )
+        assert cli._local_github_query_match(candidate, rows) is None, title
+
+    monkeypatch.setattr(cli, "CONCEPT_INTENT_FACETS", {**cli.CONCEPT_INTENT_FACETS, "test_a": {"missing_data"}, "test_b": {"missing_data"}})
+    ambiguous_rows = [
+        {"concept_id": "test_a", "topic_id": "test", "query_id": "test-a:en:1", "query": "Libre missing readings", "language": "en"},
+        {"concept_id": "test_b", "topic_id": "test", "query_id": "test-b:en:1", "query": "Libre missing readings", "language": "en"},
+    ]
+    ambiguous = cli._github_issue_candidate(
+        {"html_url": "https://github.com/o/r/issues/70", "title": "Libre missing readings", "body": "", "updated_at": cli.utc_now()},
+        "o/r",
+    )
+    assert cli._local_github_query_match(ambiguous, ambiguous_rows) is None
+
+
 def test_github_local_matching_supports_required_problem_intent_variants(cli_env):
     cli, _ = cli_env
     packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
@@ -2596,11 +2679,29 @@ def test_github_local_matching_supports_required_problem_intent_variants(cli_env
     cases = [
         ("Libre is losing connection", "signal_loss_disconnect"),
         ("Libre is loosing connection", "signal_loss_disconnect"),
+        ("Libre lost connection", "signal_loss_disconnect"),
+        ("Libre connection to sensor is lost", "signal_loss_disconnect"),
         ("Libre connection drops", "signal_loss_disconnect"),
         ("Libre disconnects", "signal_loss_disconnect"),
         ("Libre missing readings", "stale_or_missing_readings"),
         ("Libre no readings", "stale_or_missing_readings"),
         ("Libre delayed readings", "stale_or_missing_readings"),
+        ("Libre glucose values not updating", "stale_or_missing_readings"),
+        ("Libre glucose values isn't updating", "stale_or_missing_readings"),
+        ("Libre readings aren't updating", "stale_or_missing_readings"),
+        ("Libre readings stop updating", "stale_or_missing_readings"),
+        ("Libre readings stopped updating", "stale_or_missing_readings"),
+        ("Libre not receiving glucose values", "stale_or_missing_readings"),
+        ("Libre no new value", "stale_or_missing_readings"),
+        ("Libre no new reading", "stale_or_missing_readings"),
+        ("Libre frozen reading", "stale_or_missing_readings"),
+        ("Libre last received value remains", "stale_or_missing_readings"),
+        ("Unsupported sensor Libre 2", "sensor_activation_connection_failure"),
+        ("Sensor not recognized", "sensor_activation_connection_failure"),
+        ("Unrecognized sensor", "sensor_activation_connection_failure"),
+        ("Sensor connection failed", "sensor_activation_connection_failure"),
+        ("Sensor cannot connect", "sensor_activation_connection_failure"),
+        ("Unable to connect sensor", "sensor_activation_connection_failure"),
         ("Libre alarm stopped working", "alerts_not_firing"),
         ("Libre false alarm", "false_or_repeated_alerts"),
     ]
@@ -2698,5 +2799,8 @@ def test_discovery_safety_defaults_remain_bounded(cli_env):
     args = cli.build_parser().parse_args([])
     assert args.publish_top3 is False
     assert args.ai_model == "gpt-5.4-mini"
+    assert cli.CROSS_LANGUAGE_SIMILARITY_THRESHOLD == 0.60
+    assert cli.LOCAL_QUERY_MATCH_THRESHOLD == 0.60
+    assert cli.LOCAL_QUERY_AMBIGUITY_DELTA == 0.05
     assert cli.MAX_GITHUB_REPO_PAGES == 2
     assert cli.EVIDENCE_SCORE_CAPS == {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}
