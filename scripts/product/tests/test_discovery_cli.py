@@ -520,6 +520,7 @@ def test_cache_sanitizes_raw_upstream_payloads_and_bounded_observations(cli_env,
                     "html_url": "https://github.com/example/repo/issues/77",
                     "title": "GitHub issue exposes stale readings",
                     "body": long_github_body,
+                    "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
                     "user": {"login": "should_not_be_saved", "avatar_url": "https://example/avatar.png"},
                 }
             ]
@@ -595,7 +596,10 @@ def test_cache_sanitizes_raw_upstream_payloads_and_bounded_observations(cli_env,
 
     cache_json = json.loads(cache_path.read_text(encoding="utf-8"))
     _assert_cache_minimized(cache_json)
-    cached_items = [item for entry in cache_json["entries"].values() for item in entry["value"]]
+    cached_items = []
+    for entry in cache_json["entries"].values():
+        value = entry["value"]
+        cached_items.extend(value.get("items", []) if isinstance(value, dict) else value)
     assert all(len(item.get("excerpt", "")) <= cli.MAX_CACHED_EXCERPT_LENGTH for item in cached_items)
 
     obs_files = list((root / "product" / "research" / "observations").glob("OBS-*.json"))
@@ -2261,18 +2265,21 @@ def test_v15_github_search_bounds_and_no_pull_requests(cli_env, monkeypatch):
     urls = []
     def fake_fetch(url, timeout, retries, headers=None):
         urls.append(url)
-        return {"items": [{"html_url": "https://github.com/o/r/pull/1", "title": "Libre no readings", "body": "user missing data", "pull_request": {}}]}
+        return [{"html_url": f"https://github.com/o/r/pull/{idx}", "title": "Libre no readings", "body": "user missing data",
+                 "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "pull_request": {}} for idx in range(100)]
     monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
-    packs = {"concepts": [{"concept_id": "stale_or_missing_readings", "topic_id": "data_freshness", "queries": {"en": ["Libre no readings"]}}]}
-    items = cli._collect_github_issue_search({"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 1, "max_pages": 9, "max_results_per_query": 50}, 30, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
-    assert len(urls) <= 2
+    packs = {"concepts": [{"concept_id": f"concept_{idx}", "topic_id": "topic", "queries": {"en": [f"query {idx}"]}} for idx in range(40)]}
+    items = cli._collect_github_issue_search({"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 48, "max_pages": 9}, 30, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
+    assert len(urls) == 2
+    assert all("/repos/o/r/issues?" in url and "/search/issues" not in url for url in urls)
     assert items == []
 
 
 def test_v15_github_per_concept_and_source_limits(cli_env, monkeypatch):
     cli, _ = cli_env
     def fake_fetch(url, timeout, retries, headers=None):
-        return {"items": [{"html_url": f"https://github.com/o/r/issues/{idx}", "title": f"Libre missing readings {idx}", "body": "Users have missing glucose data"} for idx in range(20)]}
+        return [{"html_url": f"https://github.com/o/r/issues/{idx}", "title": f"Libre missing readings {idx}", "body": "Users have missing glucose data",
+                 "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")} for idx in range(20)]
     monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
     packs = {"languages": {"en": {"priority": 1.0}}, "concepts": [{"concept_id": "stale_or_missing_readings", "topic_id": "data_freshness", "queries": {"en": ["Libre no readings"]}}]}
     items = cli._collect_github_issue_search({"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 1, "max_pages": 2, "max_results_per_query": 10}, 7, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
@@ -2399,7 +2406,7 @@ def test_v15_github_cache_is_window_aware_and_rechecks_cached_timestamp(cli_env,
     stale_at = (datetime.now(timezone.utc) - timedelta(days=120)).isoformat().replace("+00:00", "Z")
     fresh_at = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat().replace("+00:00", "Z")
     response_time = [stale_at]
-    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"items": [{"html_url": "https://github.com/o/r/issues/1", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": response_time[0]}]})
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: [{"html_url": "https://github.com/o/r/issues/1", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": response_time[0]}])
     source = {"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 1, "max_pages": 1}
     old_window = cli._collect_github_issue_search(source, 5, 1, 1, cache, 21600, _single_query_pack(), ["en"], 365, primary_languages=["en"])
     assert len(old_window) == 1
@@ -2412,7 +2419,7 @@ def test_v15_github_cache_is_window_aware_and_rechecks_cached_timestamp(cli_env,
 
     response_time[0] = fresh_at
     fresh_cache = cli.DiscoveryCache(tmp_path / "github-fresh-cache.json")
-    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: {"items": [{"html_url": "https://github.com/o/r/issues/2", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": fresh_at}]})
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: [{"html_url": "https://github.com/o/r/issues/2", "title": "Libre missing readings", "body": "Caregiver has no current data", "updated_at": fresh_at}])
     assert len(cli._collect_github_issue_search(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, primary_languages=["en"])) == 1
     monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: pytest.fail("fresh cached hit must not fetch"))
     assert len(cli._collect_github_issue_search(source, 5, 1, 1, fresh_cache, 21600, _single_query_pack(), ["en"], 30, primary_languages=["en"])) == 1
@@ -2483,3 +2490,154 @@ def test_v15_source_reporting_separates_requested_and_observed_languages(cli_env
     markdown = (root / report["md_report_path"]).read_text(encoding="utf-8")
     assert "requested_languages=pl,en,de" in markdown
     assert "observed_languages=-" in markdown
+
+
+def test_github_public_collection_never_attaches_workflow_token(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    seen_headers = []
+
+    def fake_fetch(url, timeout, retries, headers=None):
+        seen_headers.append(dict(headers or {}))
+        return []
+
+    monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
+    result = cli.collect_from_source(
+        {"name": "external_github", "family": "github_community", "kind": "github_issue_search", "repos": ["other/public"]},
+        10, 1, 1, cache=cli.DiscoveryCache(tmp_path / "cache.json"), query_packs=_single_query_pack(), languages=["en"],
+        lookback_days=30, github_token="workflow-secret-token", primary_languages=["en"],
+    )
+    assert result.status == "EMPTY"
+    assert seen_headers
+    assert all("Authorization" not in headers for headers in seen_headers)
+    assert "workflow-secret-token" not in json.dumps(seen_headers)
+
+
+def test_github_local_matching_assigns_one_best_concept_for_real_phrasing(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en", "de", "fr", "es"], 48, ["pl", "en"])
+    cases = [
+        ("LibreLinkUp readings missing for caregiver", "glucose_sharing_delay_or_failure"),
+        ("Fsl2 PL Motorola is loosing connection with sensor", "signal_loss_disconnect"),
+    ]
+    for idx, (title, expected_concept) in enumerate(cases, start=1):
+        candidate = cli._github_issue_candidate(
+            {"html_url": f"https://github.com/o/r/issues/{idx}", "title": title, "body": "The problem repeats for users.", "updated_at": cli.utc_now()},
+            "o/r",
+        )
+        match = cli._local_github_query_match(candidate, rows)
+        assert match is not None
+        assert match["concept_id"] == expected_concept
+
+
+def test_github_local_matching_supports_required_problem_intent_variants(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en"], 48, ["pl", "en"])
+    cases = [
+        ("Libre is losing connection", "signal_loss_disconnect"),
+        ("Libre is loosing connection", "signal_loss_disconnect"),
+        ("Libre connection drops", "signal_loss_disconnect"),
+        ("Libre disconnects", "signal_loss_disconnect"),
+        ("Libre missing readings", "stale_or_missing_readings"),
+        ("Libre no readings", "stale_or_missing_readings"),
+        ("Libre delayed readings", "stale_or_missing_readings"),
+        ("Libre alarm stopped working", "alerts_not_firing"),
+        ("Libre false alarm", "false_or_repeated_alerts"),
+    ]
+    for idx, (title, expected_concept) in enumerate(cases, start=20):
+        candidate = cli._github_issue_candidate(
+            {"html_url": f"https://github.com/o/r/issues/{idx}", "title": title, "body": "User-facing problem.", "updated_at": cli.utc_now()},
+            "o/r",
+        )
+        match = cli._local_github_query_match(candidate, rows)
+        assert match is not None, title
+        assert match["concept_id"] == expected_concept, title
+
+
+def test_github_local_matching_skips_technical_and_ambiguous_noise(cli_env):
+    cli, _ = cli_env
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    rows = cli.bounded_query_rows(packs, ["pl", "en"], 48, ["pl", "en"])
+    candidate = cli._github_issue_candidate(
+        {"html_url": "https://github.com/o/r/issues/9", "title": "Update Gradle plugin and CI manifest", "body": "Refactor build dependencies.", "updated_at": cli.utc_now()},
+        "o/r",
+    )
+    assert cli._local_github_query_match(candidate, rows) is None
+
+
+def test_github_issue_is_emitted_once_with_bounded_redacted_body(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    updated_at = (datetime.now(timezone.utc) - timedelta(days=5)).isoformat().replace("+00:00", "Z")
+    long_body = "Caregiver has no readings. Email user@example.com IPv6 2001:db8::1 Cookie: private-cookie. " + ("Impact continues. " * 80)
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: [{
+        "html_url": "https://github.com/o/r/issues/10", "title": "LibreLinkUp readings missing for caregiver",
+        "body": long_body, "updated_at": updated_at, "user": {"login": "never-persist"},
+    }])
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    items = cli._collect_github_issue_search(
+        {"name": "gh", "family": "github_community", "repos": ["o/r"], "max_pages": 1}, 30, 1, 1,
+        cli.DiscoveryCache(tmp_path / "cache.json"), 21600, packs, ["pl", "en", "de", "fr", "es"], 365, ["pl", "en"],
+    )
+    assert len(items) == 1
+    item = items[0]
+    assert item["concept_id"] == "glucose_sharing_delay_or_failure"
+    assert item["source_identity"] == "o/r"
+    assert item["problem_statement"] == "LibreLinkUp readings missing for caregiver"
+    assert len(item["excerpt"]) <= cli.MAX_CACHED_EXCERPT_LENGTH
+    assert "user@example.com" not in item["excerpt"]
+    assert "2001:db8::1" not in item["excerpt"]
+    assert "private-cookie" not in item["excerpt"]
+    assert "never-persist" not in json.dumps(items)
+
+
+def test_github_403_degrades_only_failed_source_with_sanitized_detail(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+
+    def forbidden(*args, **kwargs):
+        raise cli.urllib_error.HTTPError("https://api.github.com/repos/o/r/issues", 403, "Forbidden secret-value", {}, None)
+
+    monkeypatch.setattr(cli, "_fetch_json", forbidden)
+    sources = {"sources": [
+        {"name": "external_github", "family": "github_community", "kind": "github_issue_search", "enabled": True,
+         "evidence_role": "developer_community", "repos": ["o/r"]},
+        {"name": "safe_fixture", "family": "reddit", "enabled": True, "evidence_role": "user_community", "fixture_items": [
+            {"url": "https://example.com/1", "text": "Caregiver has missing glucose readings", "problem_statement": "Caregiver has missing glucose readings", "language": "en"}
+        ]},
+    ]}
+    path = tmp_path / "sources.json"
+    path.write_text(json.dumps(sources), encoding="utf-8")
+    report = cli.run_discovery(path, 10, False, "", "", "workflow-token", "heuristic", "gpt-5.4-mini", None, 1, 3, 21600)
+    by_name = {row["name"]: row for row in report["source_status"]}
+    assert report["status"] == "DEGRADED"
+    assert by_name["external_github"]["status"] == "EXTERNAL_GITHUB_DEGRADED"
+    assert by_name["external_github"]["detail"] == "HTTP 403: authorization/access problem"
+    assert "secret-value" not in by_name["external_github"]["detail"]
+    assert by_name["safe_fixture"]["status"] == "OK"
+    assert report["counts"]["COLLECTED"] == 1
+
+
+def test_github_http_diagnostics_are_sanitized_and_403_is_not_retried(cli_env, monkeypatch):
+    cli, _ = cli_env
+    assert cli._sanitized_failure_detail(cli.urllib_error.HTTPError("https://example", 401, "secret", {}, None)) == "HTTP 401: authorization/access problem"
+    assert cli._sanitized_failure_detail(cli.urllib_error.HTTPError("https://example", 403, "secret", {}, None)) == "HTTP 403: authorization/access problem"
+    assert cli._sanitized_failure_detail(cli.urllib_error.HTTPError("https://example", 429, "secret", {}, None)) == "HTTP 429: rate limit"
+    assert cli._sanitized_failure_detail(cli.urllib_error.HTTPError("https://example", 500, "secret", {}, None)) == "HTTP 500: upstream request failed"
+
+    attempts = []
+    def forbidden(*args, **kwargs):
+        attempts.append(1)
+        raise cli.urllib_error.HTTPError("https://example", 403, "secret", {}, None)
+    monkeypatch.setattr(cli.urllib_request, "urlopen", forbidden)
+    with pytest.raises(cli.urllib_error.HTTPError):
+        cli._request_bytes("https://example", "GET", timeout=1, retries=3)
+    assert len(attempts) == 1
+
+
+def test_discovery_safety_defaults_remain_bounded(cli_env):
+    cli, _ = cli_env
+    args = cli.build_parser().parse_args([])
+    assert args.publish_top3 is False
+    assert args.ai_model == "gpt-5.4-mini"
+    assert cli.MAX_GITHUB_REPO_PAGES == 2
+    assert cli.EVIDENCE_SCORE_CAPS == {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}

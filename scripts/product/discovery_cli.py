@@ -70,6 +70,10 @@ MAX_CACHED_TEXT_LENGTH = 500
 SUPPORTED_LANGUAGES = {"pl", "en", "de", "fr", "es"}
 PRIMARY_LANGUAGES = {"pl", "en"}
 CROSS_LANGUAGE_SIMILARITY_THRESHOLD = 0.60
+LOCAL_QUERY_MATCH_THRESHOLD = 0.60
+LOCAL_QUERY_AMBIGUITY_DELTA = 0.05
+MAX_GITHUB_REPO_PAGES = 2
+GITHUB_REPO_PAGE_SIZE = 100
 EVIDENCE_ROLES = {"user_community", "developer_community", "official_reference"}
 EVIDENCE_TIER_ORDER = {"WEAK": 0, "SUPPORTED": 1, "CORROBORATED": 2, "STRONG": 3}
 EVIDENCE_SCORE_CAPS = {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}
@@ -157,7 +161,7 @@ PROBLEM_INTENT_ALIASES = {
         "stale_data": (r"\bstale\s+(?:data|readings?)\b",),
         "delay": (r"\bdelay(?:ed|s)?\b",),
         "signal_loss": (r"\bsignal\s+loss\b", r"\blost\s+signal\b"),
-        "disconnect": (r"\bdisconnect(?:ed|s|ing)?\b",),
+        "disconnect": (r"\bdisconnect(?:ed|s|ing)?\b", r"\b(?:losing|loosing)\s+(?:the\s+)?connection\b", r"\bconnection\s+drops?\b"),
         "alert_not_firing": (r"\b(?:alerts?|alarms?|notifications?)\b.{0,32}\b(?:not|stop(?:ped)?)\s+(?:firing|working)\b",),
         "false_alert": (r"\bfalse\s+(?:alert|alarm)\b",),
         "repeated_alert": (r"\b(?:repeated|duplicate)\s+(?:alert|alarm|notification)\b",),
@@ -212,6 +216,32 @@ PROBLEM_INTENT_ALIASES = {
         "caregiver_visibility": (r"\b(?:datos|lecturas)\b.{0,32}\b(?:faltan|retras\w*)\b.{0,32}\bcuidador\w*\b",),
         "history_missing": (r"\bhistorial\s+(?:faltante|perdido)\b",), "watch_visibility": (r"\breloj\b.{0,24}\b(?:no visible|vacío)\b",),
     },
+}
+
+CONCEPT_INTENT_FACETS = {
+    "stale_or_missing_readings": {"missing_data", "stale_data", "delay"},
+    "alerts_not_firing": {"alert_not_firing"},
+    "false_or_repeated_alerts": {"false_alert", "repeated_alert"},
+    "signal_loss_disconnect": {"signal_loss", "disconnect", "connection_failure"},
+    "caregiver_remote_monitoring": {"sharing_failure", "caregiver_visibility"},
+    "glucose_sharing_delay_or_failure": {"missing_data", "stale_data", "delay", "sharing_failure", "caregiver_visibility"},
+    "sensor_activation_connection_failure": {"activation_failure", "connection_failure"},
+    "sensor_expiry_notification": {"expiry_notification"},
+    "phone_os_compatibility": {"os_update_breakage"},
+    "watch_widget_glanceability": {"watch_visibility"},
+    "history_reports_statistics": {"history_missing"},
+    "notification_customization": {"notification_customization"},
+}
+
+CONCEPT_CONTEXT_PATTERNS = {
+    "caregiver_remote_monitoring": r"\b(?:caregiver|family|share|opiekun\w*|rodzin\w*|udostępn\w*)\b",
+    "glucose_sharing_delay_or_failure": r"\b(?:librelinkup|caregiver|opiekun\w*)\b",
+    "sensor_activation_connection_failure": r"\b(?:sensor|capteur)\b",
+    "sensor_expiry_notification": r"\b(?:sensor|capteur)\b",
+    "phone_os_compatibility": r"\b(?:android|ios|phone|telefon|os)\b",
+    "watch_widget_glanceability": r"\b(?:watch|smartwatch|zegarek|widget|widżet)\b",
+    "history_reports_statistics": r"\b(?:history|historii|historique|historial|verlauf|report\w*|raport\w*)\b",
+    "notification_customization": r"\b(?:notification\w*|powiadomieni\w*|benachrichtigung\w*|alarms?|alert\w*)\b",
 }
 
 PII_PATTERNS = [
@@ -318,7 +348,7 @@ def detect_language(text: str, configured: str = "") -> str:
     words = set(normalized.split())
     markers = {
         "pl": {"brak", "odczytu", "sygnału", "działa", "alarmy", "opiekun", "danych", "aktualizacji", "łączy"},
-        "en": {"readings", "signal", "working", "caregiver", "missing", "delayed", "alerts", "connection"},
+        "en": {"readings", "signal", "working", "caregiver", "missing", "delayed", "alert", "alerts", "connection", "disconnects", "losing", "loosing", "drops", "stopped", "false"},
         "de": {"keine", "messwerte", "signalverlust", "alarm", "verbindung", "betreuer"},
         "fr": {"lectures", "manquantes", "alarme", "connexion", "retard", "aidant"},
         "es": {"lecturas", "faltan", "alarma", "conexión", "retraso", "cuidador"},
@@ -914,6 +944,16 @@ def _source_status_for_failure(name: str) -> str:
     return f"{upper}_DEGRADED"
 
 
+def _sanitized_failure_detail(exc: Exception) -> str:
+    if isinstance(exc, urllib_error.HTTPError):
+        if exc.code in {401, 403}:
+            return f"HTTP {exc.code}: authorization/access problem"
+        if exc.code == 429:
+            return "HTTP 429: rate limit"
+        return f"HTTP {exc.code}: upstream request failed"
+    return _truncate_text(str(exc), 300)
+
+
 def _bounded_retry_after(resp_headers) -> float:
     value = ""
     if resp_headers:
@@ -1017,6 +1057,69 @@ def problem_intent_facets(text: str, language: str, concept_id: str) -> set[str]
     }
 
 
+def _github_issue_candidate(issue: dict, repo_full: str) -> dict | None:
+    if not isinstance(issue, dict) or "pull_request" in issue:
+        return None
+    title, title_redacted = sanitize_text(str(issue.get("title") or ""))
+    body, body_redacted = sanitize_text(str(issue.get("body") or ""))
+    url = canonicalize_url(str(issue.get("html_url") or ""))
+    updated_at = str(issue.get("updated_at") or "").strip()
+    if not title or not url or not updated_at:
+        return None
+    body_excerpt = _safe_excerpt(body, MAX_CACHED_TEXT_LENGTH)
+    context = _truncate_text(f"{title}. {body_excerpt}" if body_excerpt else title, MAX_CACHED_EXCERPT_LENGTH)
+    return {
+        "canonical_url": url,
+        "problem_statement": _truncate_text(title, MAX_CACHED_PROBLEM_LENGTH),
+        "excerpt": context,
+        "source_identity": repo_full,
+        "updated_at": updated_at,
+        "privacy_redacted": bool(title_redacted or body_redacted),
+    }
+
+
+def _local_github_query_match(candidate: dict, query_rows: list[dict]) -> dict | None:
+    text = str(candidate.get("excerpt") or candidate.get("problem_statement") or "")
+    detected_language = detect_language(text)
+    applicable_languages = {detected_language} if detected_language in SUPPORTED_LANGUAGES else {
+        str(row.get("language")) for row in query_rows if row.get("language") in SUPPORTED_LANGUAGES
+    }
+    inferred_concept, _ = infer_concept(text)
+    best_by_concept: dict[str, tuple[float, dict]] = {}
+    for row in query_rows:
+        language = str(row.get("language") or "")
+        if language not in applicable_languages:
+            continue
+        concept_id = str(row.get("concept_id") or "")
+        query = str(row.get("query") or "")
+        context_pattern = CONCEPT_CONTEXT_PATTERNS.get(concept_id)
+        if context_pattern and not re.search(context_pattern, normalize_text(text), flags=re.IGNORECASE):
+            continue
+        issue_facets = problem_intent_facets(text, language, concept_id)
+        compatible_facets = issue_facets & CONCEPT_INTENT_FACETS.get(concept_id, set())
+        if not compatible_facets:
+            continue
+        issue_tokens = set(_canonical_problem_tokens(text, language))
+        query_tokens = set(_canonical_problem_tokens(query, language))
+        similarity = jaccard_similarity(issue_tokens, query_tokens)
+        score = 0.60 + (0.30 * similarity)
+        if inferred_concept == concept_id:
+            score += 0.10
+        topic_id = str(row.get("topic_id") or "")
+        if topic_id and topic_id in normalize_text(text):
+            score += 0.05
+        current = best_by_concept.get(concept_id)
+        ranked = (round(score, 6), {**row, "language": language})
+        if current is None or ranked[0] > current[0] or (ranked[0] == current[0] and str(row.get("query_id")) < str(current[1].get("query_id"))):
+            best_by_concept[concept_id] = ranked
+    ranked_concepts = sorted(best_by_concept.values(), key=lambda value: (-value[0], str(value[1].get("query_id"))))
+    if not ranked_concepts or ranked_concepts[0][0] < LOCAL_QUERY_MATCH_THRESHOLD:
+        return None
+    if len(ranked_concepts) > 1 and ranked_concepts[0][0] - ranked_concepts[1][0] <= LOCAL_QUERY_AMBIGUITY_DELTA:
+        return None
+    return {**ranked_concepts[0][1], "match_score": ranked_concepts[0][0]}
+
+
 def _normalize_item_fields(item: dict, source_name: str, source_family: str, source_type: str) -> dict | None:
     url = canonicalize_url(str(item.get("url") or item.get("canonical_url") or "").strip())
     raw_text = str(item.get("text") or "").strip()
@@ -1056,7 +1159,7 @@ def _normalize_item_fields(item: dict, source_name: str, source_family: str, sou
         "topic_id": str(item.get("topic_id") or inferred_topic),
         "query_id": str(item.get("query_id") or "fixture"),
         "evidence_role": evidence_role,
-        "privacy_redacted": bool(redacted or problem_redacted),
+        "privacy_redacted": bool(item.get("privacy_redacted") or redacted or problem_redacted),
         "updated_at": str(item.get("updated_at") or item.get("published_at") or ""),
         **quality,
     }
@@ -1128,69 +1231,70 @@ def _collect_official_pages(source: dict, max_items: int, timeout: float, retrie
 def _collect_github_issue_search(
     source: dict, max_items: int, timeout: float, retries: int, cache: DiscoveryCache,
     cache_max_age_seconds: int, query_packs: dict, languages: list[str], lookback_days: int,
-    github_token: str = "", primary_languages: list[str] | None = None,
+    primary_languages: list[str] | None = None,
 ) -> list[dict]:
     out: list[dict] = []
     source_name = str(source.get("name", "unknown"))
     source_family = str(source.get("family", "github_community"))
     source_type = SOURCE_TYPE_BY_FAMILY.get(source_family, "community")
     repos = [str(repo).strip().strip("/") for repo in source.get("repos", []) if "/" in str(repo)]
-    since = (datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))).date().isoformat()
     cutoff = datetime.now(timezone.utc) - timedelta(days=max(1, min(lookback_days, 1825)))
-    max_queries = max(1, min(int(source.get("max_queries", 24)), 48))
-    max_pages = max(1, min(int(source.get("max_pages", 2)), 2))
-    per_query = max(1, min(int(source.get("max_results_per_query", 10)), 10))
-    headers = {"Accept": "application/vnd.github+json"}
-    if github_token:
-        headers["Authorization"] = f"Bearer {github_token}"
+    since = cutoff.replace(microsecond=0).isoformat().replace("+00:00", "Z")
+    max_pages = max(1, min(int(source.get("max_pages", MAX_GITHUB_REPO_PAGES)), MAX_GITHUB_REPO_PAGES))
+    query_rows = bounded_query_rows(query_packs, languages, max_queries=48, primary_languages=primary_languages)
+    headers = {"Accept": "application/vnd.github+json", "X-GitHub-Api-Version": "2022-11-28"}
     concept_counts: dict[str, int] = {}
+    seen_urls: set[str] = set()
     for repo_full in repos:
-        for query_meta in bounded_query_rows(query_packs, languages, max_queries=max_queries, primary_languages=primary_languages):
+        for page in range(1, max_pages + 1):
             if len(out) >= max_items:
                 break
-            search = f'repo:{repo_full} is:issue updated:>={since} "{query_meta["query"]}"'
-            for page in range(1, max_pages + 1):
+            encoded = urllib_parse.urlencode({
+                "state": "all", "since": since, "sort": "updated", "direction": "desc",
+                "per_page": GITHUB_REPO_PAGE_SIZE, "page": page,
+            })
+            api_url = f"https://api.github.com/repos/{repo_full}/issues?{encoded}"
+            key = _cache_key(source_name, f"gh-repo-issues:{_lookback_window_key(lookback_days)}:{repo_full}:{page}")
+            cached_page = cache.get(key, cache_max_age_seconds)
+            if isinstance(cached_page, dict) and isinstance(cached_page.get("items"), list):
+                candidates = [row for row in cached_page["items"] if isinstance(row, dict)]
+                page_size = int(cached_page.get("page_size") or 0)
+            else:
+                data = _fetch_json(api_url, timeout=timeout, retries=retries, headers=headers)
+                if not isinstance(data, list):
+                    raise RuntimeError("GitHub repository issues response is not a JSON array")
+                page_size = len(data)
+                candidates = []
+                for issue in data[:GITHUB_REPO_PAGE_SIZE]:
+                    candidate = _github_issue_candidate(issue, repo_full)
+                    if candidate:
+                        candidates.append(candidate)
+                cache.put(key, {"page_size": page_size, "items": candidates})
+            for candidate in _items_within_lookback(candidates, cutoff):
                 if len(out) >= max_items:
                     break
-                encoded = urllib_parse.urlencode({"q": search, "sort": "updated", "order": "desc", "per_page": per_query, "page": page})
-                api_url = f"https://api.github.com/search/issues?{encoded}"
-                key = _cache_key(source_name, f"gh-search:{_lookback_window_key(lookback_days)}:{repo_full}:{query_meta['query_id']}:{page}")
-                cached_items = _cache_get_items(cache, key, cache_max_age_seconds)
-                if cached_items is not None:
-                    cached_items = _items_within_lookback(cached_items, cutoff)
-                    remaining_concept = max(0, 10 - concept_counts.get(query_meta["concept_id"], 0))
-                    selected = cached_items[: min(max_items - len(out), remaining_concept)]
-                    out.extend(selected)
-                    concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + len(selected)
+                url = str(candidate.get("canonical_url") or "")
+                if not url or url in seen_urls:
                     continue
-                data = _fetch_json(api_url, timeout=timeout, retries=retries, headers=headers)
-                issues = data.get("items", []) if isinstance(data, dict) else []
-                normalized_items = []
-                for issue in issues[:per_query]:
-                    if len(out) >= max_items or not isinstance(issue, dict) or "pull_request" in issue:
-                        continue
-                    if concept_counts.get(query_meta["concept_id"], 0) >= 10:
-                        continue
-                    title = str(issue.get("title") or "").strip()
-                    body = str(issue.get("body") or "").strip()
-                    if not _timestamp_at_or_after(issue.get("updated_at"), cutoff):
-                        continue
-                    labels = " ".join(str(x.get("name", "")) for x in issue.get("labels", []) if isinstance(x, dict))
-                    item = _normalize_cached_item(
-                        {
-                            "url": issue.get("html_url", ""), "text": f"{title}. {_safe_excerpt(body, 260)} Labels: {_safe_excerpt(labels, 80)}",
-                            "problem_statement": title, "persona": "caregiver", "module": "Home / Monitoring", "type": "usability",
-                            "severity": "medium", "frequency": "unknown", "confidence": "medium", "evidence_role": source.get("evidence_role", "developer_community"),
-                            "language": query_meta["language"], "concept_id": query_meta["concept_id"], "topic_id": query_meta["topic_id"],
-                            "query_id": query_meta["query_id"], "updated_at": issue.get("updated_at", ""),
-                        }, source_name, source_family, source_type,
-                    )
-                    if item:
-                        normalized_items.append(item)
-                        out.append(item)
-                        concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + 1
-                if normalized_items:
-                    _cache_put_items(cache, key, normalized_items)
+                query_meta = _local_github_query_match(candidate, query_rows)
+                if not query_meta or concept_counts.get(query_meta["concept_id"], 0) >= 10:
+                    continue
+                item = _normalize_cached_item(
+                    {
+                        "url": url, "text": candidate.get("excerpt", ""), "problem_statement": candidate.get("problem_statement", ""),
+                        "source_identity": candidate.get("source_identity", repo_full), "persona": "caregiver", "module": "Home / Monitoring",
+                        "type": "usability", "severity": "medium", "frequency": "unknown", "confidence": "medium",
+                        "evidence_role": source.get("evidence_role", "developer_community"), "language": query_meta["language"],
+                        "concept_id": query_meta["concept_id"], "topic_id": query_meta["topic_id"], "query_id": query_meta["query_id"],
+                        "updated_at": candidate.get("updated_at", ""), "privacy_redacted": candidate.get("privacy_redacted", False),
+                    }, source_name, source_family, source_type,
+                )
+                if item:
+                    out.append(item)
+                    seen_urls.add(url)
+                    concept_counts[query_meta["concept_id"]] = concept_counts.get(query_meta["concept_id"], 0) + 1
+            if page_size < GITHUB_REPO_PAGE_SIZE:
+                break
     return out
 
 
@@ -1352,7 +1456,7 @@ def collect_from_source(
         if kind == "reddit_oauth":
             return _collect_reddit_oauth(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs, languages, lookback_days, primary_languages)
         if kind in {"github_issues", "github_issue_search"}:
-            items = _collect_github_issue_search(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs or {"concepts": []}, languages or ["pl", "en"], lookback_days, github_token, primary_languages)
+            items = _collect_github_issue_search(source, max_items, timeout, retries, local_cache, cache_max_age_seconds, query_packs or {"concepts": []}, languages or ["pl", "en"], lookback_days, primary_languages)
             return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
         if kind == "official_pages":
             items = _collect_official_pages(source, max_items, timeout, retries, local_cache, cache_max_age_seconds)
@@ -1362,7 +1466,7 @@ def collect_from_source(
             return SourceResult(name=name, family=family, status="OK" if items else "EMPTY", items=items, evidence_role=evidence_role)
         return SourceResult(name=name, family=family, status="INVALID_SOURCE_KIND", items=[], evidence_role=evidence_role)
     except Exception as exc:  # noqa: BLE001
-        return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=str(exc), evidence_role=evidence_role)
+        return SourceResult(name=name, family=family, status=_source_status_for_failure(name), items=[], detail=_sanitized_failure_detail(exc), evidence_role=evidence_role)
 
 
 def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
