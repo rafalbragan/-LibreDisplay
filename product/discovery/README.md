@@ -1,17 +1,21 @@
-# LibreCare Discovery Agent v1
+# LibreCare Discovery Agent v1.5 — Multilingual Evidence Engine
 
-LibreCare Discovery Agent v1 zbiera publiczne sygnały produktowe i tworzy
-**deterministyczny** raport TOP 10 dla Product Ownera.
+LibreCare Discovery Agent v1.5 zbiera publiczne sygnały produktowe przez
+deterministyczne, problemowe zapytania. Priorytetem jest jakość, więc TOP10
+może zawierać od 0 do 10 pozycji i nigdy nie jest sztucznie uzupełniany.
 
 ## Co robi
 
-- Pobiera dane ze skonfigurowanych źródeł publicznych (`product/discovery/sources.json`).
+- Pobiera dane z jawnie dozwolonych źródeł (`product/discovery/sources.json`) według wersjonowanych zapytań (`query-packs.json`).
+- Traktuje polski i angielski jako języki główne; niemiecki, francuski i hiszpański mają mniejsze budżety.
 - Normalizuje URL/tekst, wykonuje deduplikację i klastrowanie problemów.
 - Porównuje klastry z Product Foundation (`requirements`, `decisions`, `observations`, validated capabilities).
 - Uruchamia ograniczoną analizę AI (docelowo `gpt-5.4-mini`, max 2 wywołania/run).
-- Stosuje deterministyczne reguły governance i ranking 0-100.
+- Stosuje deterministyczne filtry marketingu, technicznych detali i prywatności przed AI.
+- Stosuje tiering `WEAK`, `SUPPORTED`, `CORROBORATED`, `STRONG` oraz score caps 49/74/89/100.
 - Tworzy raporty w `product/generated/discovery/`.
-- Opcjonalnie publikuje maks. TOP 3 kandydatów do Product Inbox (`publish_top3=true`).
+- `WEAK` trafia wyłącznie na WATCHLIST. TOP10 zawiera tylko jakościowe sygnały co najmniej `SUPPORTED`.
+- Opcjonalnie publikuje maks. TOP 3 kandydatów co najmniej `CORROBORATED` (`publish_top3=true`).
 - W workflow CI zapisuje wynik jako artifact GitHub Actions (bez automatycznego commita do repozytorium).
 
 ## Czego nie robi
@@ -45,7 +49,24 @@ Agent zapisuje tylko:
 - znormalizowany problem,
 - metadane do dedupe/rankingu.
 
-Agent nie zapisuje pełnych postów/wątków ani nazw użytkowników Reddit.
+Agent nie zapisuje pełnych postów/wątków, komentarzy, logów ani nazw użytkowników.
+Przed cache/report/observation redaguje e-mail, IP, uchwyty `@`, numery telefonów,
+seryjne/długie identyfikatory, tokeny, nagłówki autoryzacji i cookies.
+
+## Role źródeł i jakość dowodów
+
+- `user_community` — bezpośredni sygnał użytkownika.
+- `developer_community` — sygnał techniczny, dopuszczony tylko z jawnym wpływem na użytkownika.
+- `official_reference` — kontekst/ograniczenie/udokumentowane zachowanie; nigdy samodzielny popyt ani kandydat.
+
+Najnowsze losowe issue i `/new` Reddita zostały zastąpione wyszukiwaniem według
+konceptów. `concept_id` stanowi deterministyczny most PL/EN/de/fr/es; podobieństwo
+tekstu nadal zapobiega łączeniu różnych problemów.
+
+`WEAK` nie tworzy obserwacji, wpisu proponowanego rejestru ani Product Inbox.
+`SUPPORTED` może utworzyć obserwację i propozycję rejestru, ale nie Inbox.
+Inbox wymaga `CORROBORATED` lub `STRONG`, zgodności governance i możliwości
+rozwiązania po stronie aplikacji.
 
 ## Idempotencja
 
@@ -72,12 +93,27 @@ Bez credentials (`REDDIT_CLIENT_ID`, `REDDIT_CLIENT_SECRET`) status źródła:
 
 Run trwa dalej (status może być `DEGRADED`).
 
+OAuth służy tylko do bounded query search. Token i dane konta nie są zapisywane.
+
+## RSS/Atom i źródła wyłączone
+
+Adapter RSS 2.0/Atom istnieje jako infrastruktura, lecz każde źródło musi mieć
+`allowlisted=true` w `sources.json`. Ten release nie włącza niezweryfikowanych feedów.
+
+`mojacukrzyca.org`, Facebook, grupy społecznościowe/prywatne oraz wyniki HTML
+Google/Bing nie są automatycznie zbierane. Wymagają osobnego review praw,
+regulaminu i prywatności.
+
 ## Uruchomienie ręczne
 
 ```bash
 python scripts/product/discovery_cli.py \
   --sources-file product/discovery/sources.json \
-  --max-items-per-source 20 \
+  --query-packs-file product/discovery/query-packs.json \
+  --languages pl,en,de,fr,es \
+  --primary-languages pl,en \
+  --lookback-days 365 \
+  --max-items-per-source 30 \
   --ai-mode copilot \
   --ai-model gpt-5.4-mini
 ```
@@ -90,7 +126,7 @@ Pierwszy realny run:
 
 ## Persistence w repozytorium
 
-Discovery v1 nie wykonuje `git commit/push` w workflow. Jeśli po review artifactu
+Discovery v1.5 nie wykonuje `git commit/push` w workflow. Jeśli po review artifactu
 chcesz utrwalić wynik w repo, zrób osobny commit na branchu i osobny PR z review człowieka.
 
 W praktyce: run Discovery zapisuje tylko propozycję rejestru do artifactu
@@ -100,5 +136,7 @@ w oddzielnym, reviewowanym commicie/PR.
 
 ## Human decision gate
 
-Discovery tworzy tylko kandydatów. Decyzje `ACCEPT/HOLD/REJECT` pozostają po stronie człowieka w istniejącym workflow Product Inbox.
+Discovery tworzy tylko materiał doradczy. Product Owner pozostaje jedynym
+autorytetem `ACCEPT/HOLD/REJECT`. AI nie uruchamia implementacji, nie przypisuje
+agentów, nie merguje i nie rekomenduje dawek, bolusa, bazy, proporcji insuliny ani zmian terapii.
 

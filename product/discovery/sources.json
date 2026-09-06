@@ -1,31 +1,38 @@
 {
   "version": 1,
-  "notes": "Discovery v1 source config. Keep per-source limits bounded and public-only.",
+  "notes": "Discovery v1.5 allowlist. Query-driven, bounded, public-only, privacy-minimized.",
   "sources": [
     {
       "name": "abbott_official",
       "family": "official_vendor",
       "kind": "official_pages",
+      "evidence_role": "official_reference",
+      "language": "pl",
       "enabled": true,
       "urls": [
-        "https://www.freestyle.abbott/",
-        "https://www.freestyle.abbott/us-en/support.html"
+        "https://www.freestyle.abbott/pl-pl/pomoc.html",
+        "https://www.freestyle.abbott/pl-pl/pomoc/faq.html"
       ]
     },
     {
       "name": "dexcom_official",
-      "family": "competitor",
+      "family": "official_vendor",
       "kind": "official_pages",
+      "evidence_role": "official_reference",
+      "language": "en",
       "enabled": true,
       "urls": [
-        "https://www.dexcom.com/",
         "https://www.dexcom.com/en-us/faqs"
       ]
     },
     {
       "name": "nightscout_github",
       "family": "github_community",
-      "kind": "github_issues",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
       "enabled": true,
       "repos": [
         "nightscout/cgm-remote-monitor"
@@ -37,7 +44,11 @@
     {
       "name": "xdrip_github",
       "family": "github_community",
-      "kind": "github_issues",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
       "enabled": true,
       "repos": [
         "NightscoutFoundation/xDrip"
@@ -47,22 +58,51 @@
       ]
     },
     {
-      "name": "sugarmate_official",
-      "family": "competitor",
-      "kind": "official_pages",
+      "name": "juggluco_github",
+      "family": "github_community",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
       "enabled": true,
+      "repos": [
+        "j-kaltes/Juggluco"
+      ],
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
       "urls": [
-        "https://sugarmate.io/"
+        "https://github.com/j-kaltes/Juggluco/issues"
       ]
     },
     {
-      "name": "reddit_diabetes",
+      "name": "librelinkup_github",
+      "family": "github_community",
+      "kind": "github_issue_search",
+      "evidence_role": "developer_community",
+      "enabled": true,
+      "repos": [
+        "timoschlueter/nightscout-librelink-up"
+      ],
+      "max_queries": 24,
+      "max_pages": 2,
+      "max_results_per_query": 10,
+      "urls": [
+        "https://github.com/timoschlueter/nightscout-librelink-up/issues"
+      ]
+    },
+    {
+      "name": "reddit_cgm_communities",
       "family": "reddit",
       "kind": "reddit_oauth",
+      "evidence_role": "user_community",
       "enabled": true,
+      "max_queries": 24,
       "subreddits": [
         "diabetes",
-        "Type1Diabetes"
+        "Type1Diabetes",
+        "Freestylelibre",
+        "dexcom",
+        "Polska",
+        "poland"
       ],
       "urls": []
     }

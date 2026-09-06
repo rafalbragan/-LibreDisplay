@@ -1,0 +1,157 @@
+{
+  "version": 1,
+  "languages": {
+    "pl": {"enabled": true, "priority": 1.0},
+    "en": {"enabled": true, "priority": 1.0},
+    "de": {"enabled": true, "priority": 0.5},
+    "fr": {"enabled": true, "priority": 0.5},
+    "es": {"enabled": true, "priority": 0.5}
+  },
+  "concepts": [
+    {
+      "concept_id": "stale_or_missing_readings",
+      "topic_id": "data_freshness",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["libre brak odczytu", "alarm brak danych glukozy", "stary odczyt glukozy alarm"],
+        "en": ["Libre no readings", "missing readings alert", "stale glucose alert"],
+        "de": ["Libre keine Messwerte", "veraltete Glukosedaten Alarm"],
+        "fr": ["Libre lectures manquantes", "alerte glucose périmé"],
+        "es": ["Libre sin lecturas", "alerta datos glucosa antiguos"]
+      },
+      "include_terms": ["libre", "glucose", "glukoza", "reading", "odczyt"]
+    },
+    {
+      "concept_id": "alerts_not_firing",
+      "topic_id": "alert_reliability",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["libre alarm nie działa", "libre alarmy nie działają", "libre alarm w nocy"],
+        "en": ["Libre alarm not working", "Libre alerts not working", "Libre night alerts"],
+        "de": ["Libre Alarm funktioniert nicht"],
+        "fr": ["alarme Libre ne fonctionne pas"],
+        "es": ["alarma Libre no funciona"]
+      }
+    },
+    {
+      "concept_id": "false_or_repeated_alerts",
+      "topic_id": "alert_reliability",
+      "priority": 0.9,
+      "queries": {
+        "pl": ["libre fałszywy alarm", "libre powtarzający się alarm"],
+        "en": ["Libre false low alarm", "Libre repeated alarm"],
+        "de": ["Libre falscher Alarm"],
+        "fr": ["fausse alarme Libre"],
+        "es": ["falsa alarma Libre"]
+      }
+    },
+    {
+      "concept_id": "signal_loss_disconnect",
+      "topic_id": "connectivity",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["libre utrata sygnału", "libre brak połączenia"],
+        "en": ["Libre signal loss", "Libre disconnect Android"],
+        "de": ["Libre Signalverlust Verbindung"],
+        "fr": ["Libre perte de signal connexion"],
+        "es": ["Libre pérdida de señal conexión"]
+      }
+    },
+    {
+      "concept_id": "caregiver_remote_monitoring",
+      "topic_id": "caregiver",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["zdalny podgląd glukozy opiekun", "udostępnianie glukozy rodzinie"],
+        "en": ["caregiver remote glucose monitoring", "share glucose with family"],
+        "de": ["Glukose Fernüberwachung Betreuer"],
+        "fr": ["surveillance glycémie à distance aidant"],
+        "es": ["monitorización remota glucosa cuidador"]
+      }
+    },
+    {
+      "concept_id": "glucose_sharing_delay_or_failure",
+      "topic_id": "caregiver",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["librelinkup opóźnienie", "librelinkup brak danych", "librelinkup nie działa"],
+        "en": ["LibreLinkUp delayed readings", "LibreLinkUp missing data", "LibreLinkUp not updating"],
+        "de": ["LibreLinkUp Daten verzögert"],
+        "fr": ["LibreLinkUp données retardées"],
+        "es": ["LibreLinkUp datos retrasados"]
+      }
+    },
+    {
+      "concept_id": "sensor_activation_connection_failure",
+      "topic_id": "sensor_lifecycle",
+      "priority": 1.0,
+      "queries": {
+        "pl": ["libre sensor nie łączy się", "libre sensor nie działa"],
+        "en": ["Libre sensor connection failed", "Libre sensor activation failed"],
+        "de": ["Libre Sensor verbindet nicht"],
+        "fr": ["capteur Libre connexion impossible"],
+        "es": ["sensor Libre no conecta"]
+      }
+    },
+    {
+      "concept_id": "sensor_expiry_notification",
+      "topic_id": "sensor_lifecycle",
+      "priority": 0.8,
+      "queries": {
+        "pl": ["powiadomienie koniec sensora", "libre koniec sensora brak powiadomienia"],
+        "en": ["sensor expiry notification", "Libre sensor end notification"],
+        "de": ["Libre Sensor Ablauf Benachrichtigung"],
+        "fr": ["notification expiration capteur Libre"],
+        "es": ["notificación caducidad sensor Libre"]
+      }
+    },
+    {
+      "concept_id": "phone_os_compatibility",
+      "topic_id": "compatibility",
+      "priority": 0.9,
+      "queries": {
+        "pl": ["libre android problem", "libre po aktualizacji androida"],
+        "en": ["Libre Android problem", "Libre after Android update"],
+        "de": ["Libre nach Android Update Problem"],
+        "fr": ["Libre problème après mise à jour Android"],
+        "es": ["Libre problema después actualización Android"]
+      }
+    },
+    {
+      "concept_id": "watch_widget_glanceability",
+      "topic_id": "glanceability",
+      "priority": 0.7,
+      "queries": {
+        "pl": ["widżet glukozy zegarek", "glukoza smartwatch libre"],
+        "en": ["glucose watch widget", "CGM glanceable watch"],
+        "de": ["Glukose Uhr Widget Libre"],
+        "fr": ["widget montre glucose Libre"],
+        "es": ["widget reloj glucosa Libre"]
+      }
+    },
+    {
+      "concept_id": "history_reports_statistics",
+      "topic_id": "history",
+      "priority": 0.7,
+      "queries": {
+        "pl": ["libre historia brak danych", "libre raport statystyki problem"],
+        "en": ["Libre history missing data", "Libre reports statistics problem"],
+        "de": ["Libre Verlauf Daten fehlen"],
+        "fr": ["Libre historique données manquantes"],
+        "es": ["Libre historial datos faltantes"]
+      }
+    },
+    {
+      "concept_id": "notification_customization",
+      "topic_id": "notifications",
+      "priority": 0.7,
+      "queries": {
+        "pl": ["libre ustawienia powiadomień", "libre brak dostosowania alarmów"],
+        "en": ["Libre notification customization", "Libre alert settings problem"],
+        "de": ["Libre Benachrichtigung Einstellungen"],
+        "fr": ["Libre personnalisation notifications"],
+        "es": ["Libre personalizar notificaciones"]
+      }
+    }
+  ]
+}
