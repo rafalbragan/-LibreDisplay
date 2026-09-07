@@ -2007,9 +2007,9 @@ def _ai_output_contract() -> dict:
     }
 
 
-def _ai_cluster_row_template() -> dict:
+def _ai_cluster_row_template(cluster_id: str) -> dict:
     text_placeholders = {
-        "cluster_id": "<one exact repair_cluster_id>",
+        "cluster_id": cluster_id,
         "classification": "<allowed classification_enum value>",
         "persona": "<exact persona_candidate>",
         "problem_statement": "<concise English problem>",
@@ -2114,13 +2114,13 @@ def build_ai_repair_prompt(
         "repair_cluster_ids": repair_cluster_ids,
         "preserved_cluster_ids": preserved_cluster_ids,
         "required_output": _ai_output_contract(),
-        "repair_row_template": _ai_cluster_row_template(),
+        "repair_rows_template": [_ai_cluster_row_template(cluster_id) for cluster_id in repair_cluster_ids],
         "constraints": [
             "Return JSON object with 'clusters' array only.",
             "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
             "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
             "Previous AI cluster_id values are untrusted and must not define repair identity.",
-            "In repair_row_template, replace the cluster_id placeholder with one exact repair_cluster_id.",
+            "Use repair_rows_template as the one-to-one output skeleton: return every listed object, keep each exact cluster_id, and replace every other placeholder with grounded analysis.",
             "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
             "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
