@@ -2061,12 +2061,12 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "run_id": run_id,
         "model": model,
         "required_output": _ai_output_contract(),
-        "output_rows_template": [
-            _ai_cluster_row_template(str(cluster["cluster_id"])) for cluster in clusters
-        ],
+        "required_response_skeleton": {
+            "clusters": [_ai_cluster_row_template(str(cluster["cluster_id"])) for cluster in clusters],
+        },
         "constraints": [
             "Return JSON only.",
-            "Use output_rows_template as the one-to-one output skeleton: return every listed object exactly once, keep each exact cluster_id, and replace every other placeholder with grounded analysis.",
+            "Copy required_response_skeleton as the response shape: do not add, remove, duplicate, or reorder rows; never modify cluster_id; replace only the other placeholders with grounded analysis.",
             "Problem statement must describe problem, not solution.",
             "The output persona MUST exactly equal persona_candidate. If persona_candidate is unknown, persona MUST be unknown.",
             "For a cluster with multiple structured_evidence_items, problem_statement MUST state only the common denominator supported by every evidence item.",
@@ -2118,13 +2118,15 @@ def build_ai_repair_prompt(
         "repair_cluster_ids": repair_cluster_ids,
         "preserved_cluster_ids": preserved_cluster_ids,
         "required_output": _ai_output_contract(),
-        "repair_rows_template": [_ai_cluster_row_template(cluster_id) for cluster_id in repair_cluster_ids],
+        "required_response_skeleton": {
+            "clusters": [_ai_cluster_row_template(cluster_id) for cluster_id in repair_cluster_ids],
+        },
         "constraints": [
             "Return JSON object with 'clusters' array only.",
             "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
             "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
             "Previous AI cluster_id values are untrusted and must not define repair identity.",
-            "Use repair_rows_template as the one-to-one output skeleton: return every listed object, keep each exact cluster_id, and replace every other placeholder with grounded analysis.",
+            "Copy required_response_skeleton as the response shape: do not add, remove, duplicate, or reorder rows; never modify cluster_id; replace only the other placeholders with grounded analysis.",
             "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
             "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",

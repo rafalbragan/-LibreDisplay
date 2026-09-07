@@ -2017,12 +2017,14 @@ def test_initial_repair_and_validator_share_authoritative_contract(cli_env, fixt
     assert initial_contract["solvability_enum"] == repair_contract["solvability_enum"] == sorted(cli.SOLVABILITY_VALUES)
     assert initial_contract["confidence_enum"] == repair_contract["confidence_enum"] == sorted(cli.CONFIDENCE_VALUES)
     assert list(initial_contract["score_fields"]) == list(repair_contract["score_fields"]) == list(cli.AI_SCORE_FIELDS)
-    assert [row["cluster_id"] for row in initial["output_rows_template"]] == [
+    initial_templates = initial["required_response_skeleton"]["clusters"]
+    assert [row["cluster_id"] for row in initial_templates] == [
         cluster["cluster_id"] for cluster in clusters
     ]
-    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in initial["output_rows_template"])
-    assert len(repair["repair_rows_template"]) == 1
-    row_template = repair["repair_rows_template"][0]
+    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in initial_templates)
+    repair_templates = repair["required_response_skeleton"]["clusters"]
+    assert len(repair_templates) == 1
+    row_template = repair_templates[0]
     assert list(row_template) == authoritative_fields
     assert row_template["cluster_id"] == clusters[0]["cluster_id"]
     assert all(row_template[field] == 0 for field in cli.AI_SCORE_FIELDS)
@@ -2178,8 +2180,9 @@ def test_run10_style_complete_repair_succeeds(cli_env, tmp_path, monkeypatch):
     assert report["counts"]["AI_CALLS"] == 2
     assert prompts[1]["repair_cluster_ids"] == expected_ids[:2]
     assert set(prompts[1]["required_output"]["clusters_item_required"]) == set(cli.AI_CLUSTER_REQUIRED_FIELDS)
-    assert [row["cluster_id"] for row in prompts[1]["repair_rows_template"]] == expected_ids[:2]
-    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in prompts[1]["repair_rows_template"])
+    repair_templates = prompts[1]["required_response_skeleton"]["clusters"]
+    assert [row["cluster_id"] for row in repair_templates] == expected_ids[:2]
+    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in repair_templates)
 
 
 def test_partial_repair_replaces_only_invalid_field_row(cli_env, tmp_path, monkeypatch):
