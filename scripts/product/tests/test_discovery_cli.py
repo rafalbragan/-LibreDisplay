@@ -2804,3 +2804,165 @@ def test_discovery_safety_defaults_remain_bounded(cli_env):
     assert cli.LOCAL_QUERY_AMBIGUITY_DELTA == 0.05
     assert cli.MAX_GITHUB_REPO_PAGES == 2
     assert cli.EVIDENCE_SCORE_CAPS == {"WEAK": 49, "SUPPORTED": 74, "CORROBORATED": 89, "STRONG": 100}
+
+
+@pytest.mark.parametrize(
+    "title",
+    [
+        "Not receiving glucose values",
+        "Blood glucose values aren't updating when listening to a song",
+    ],
+)
+def test_generic_github_evidence_uses_neutral_metadata(cli_env, tmp_path, monkeypatch, title):
+    cli, _ = cli_env
+    monkeypatch.setattr(cli, "_fetch_json", lambda *a, **k: [{
+        "html_url": "https://github.com/pachi81/GlucoDataAuto/issues/1",
+        "title": title,
+        "body": "No new values arrive.",
+        "updated_at": cli.utc_now(),
+    }])
+    packs = cli.load_query_packs(WORKSPACE_ROOT / "product" / "discovery" / "query-packs.json")
+    items = cli._collect_github_issue_search(
+        {"name": "glucodataauto_github", "family": "github_community", "repos": ["pachi81/GlucoDataAuto"], "max_pages": 1},
+        10, 1, 1, cli.DiscoveryCache(tmp_path / "cache.json"), 3600, packs, ["en"], 365, ["en"],
+    )
+    assert len(items) == 1
+    assert items[0]["persona"] == "unknown"
+    assert items[0]["mode"] == "unknown"
+    assert items[0]["module"] == "unknown"
+    assert items[0]["persona"] not in {"caregiver", "senior", "clinician"}
+
+
+def _run6_grounding_cluster(cli):
+    evidence_a = cli._normalize_item_fields(
+        {
+            "url": "https://github.com/Crazy-Marvin/LibreLinkUpDesktop/issues/529",
+            "text": "No Error message if connection to Sensor is lost. The last received value stays visible and no disconnect warning appears.",
+            "problem_statement": "No Error message if connection to Sensor is lost",
+            "source_identity": "Crazy-Marvin/LibreLinkUpDesktop",
+            "language": "en", "concept_id": "signal_loss_disconnect", "topic_id": "connectivity",
+            "query_id": "signal_loss_disconnect:en:1", "evidence_role": "developer_community",
+            "persona": "unknown", "mode": "unknown", "module": "unknown",
+        },
+        "librelinkup_desktop_github", "github_community", "community",
+    )
+    evidence_b = cli._normalize_item_fields(
+        {
+            "url": "https://github.com/j-kaltes/Juggluco/issues/441",
+            "text": "Fsl2 PL motorola edge 50 neo loosing connection with sensor. Bluetooth reconnects unreliably after Android 16.",
+            "problem_statement": "Fsl2 PL motorola edge 50 neo loosing connection with sensor",
+            "source_identity": "j-kaltes/Juggluco",
+            "language": "en", "concept_id": "signal_loss_disconnect", "topic_id": "connectivity",
+            "query_id": "signal_loss_disconnect:en:2", "evidence_role": "developer_community",
+            "persona": "unknown", "mode": "unknown", "module": "unknown",
+        },
+        "juggluco_github", "github_community", "community",
+    )
+    clusters = cli.cluster_items([evidence_a, evidence_b])
+    assert len(clusters) == 1
+    return clusters[0]
+
+
+def test_unknown_github_cluster_preserves_unknown_persona(cli_env):
+    cli, _ = cli_env
+    cluster = _run6_grounding_cluster(cli)
+    assert cluster["persona_candidate"] == "unknown"
+    assert cluster["module_candidate"] == "unknown"
+
+
+def test_ai_persona_cannot_override_unknown_evidence(cli_env):
+    cli, _ = cli_env
+    cluster = _run6_grounding_cluster(cli)
+    payload = build_ai_payload_for_clusters([cluster])
+    payload["clusters"][0]["persona"] = "caregiver"
+    valid, errors = cli.validate_ai_output(payload, [cluster])
+    assert valid is False
+    assert any("persona must equal persona_candidate" in error for error in errors)
+
+
+def test_ai_persona_override_uses_bounded_repair(cli_env, tmp_path, monkeypatch):
+    cli, root = cli_env
+    sources = {"sources": [{
+        "name": "github_fixture", "family": "github_community", "evidence_role": "developer_community",
+        "fixture_items": [
+            {"url": "https://example.com/a", "text": "Glucose readings are missing", "problem_statement": "Glucose readings are missing",
+             "source_identity": "repo/a", "persona": "unknown", "mode": "unknown", "module": "unknown"},
+            {"url": "https://example.com/b", "text": "No glucose readings arrive", "problem_statement": "No glucose readings arrive",
+             "source_identity": "repo/b", "persona": "unknown", "mode": "unknown", "module": "unknown"},
+        ],
+    }]}
+    source_path = tmp_path / "sources.json"
+    source_path.write_text(json.dumps(sources), encoding="utf-8")
+    clusters = _prepare_clusters(cli, source_path)
+    invalid = build_ai_payload_for_clusters(clusters)
+    invalid["clusters"][0]["persona"] = "caregiver"
+    repaired = build_ai_payload_for_clusters(clusters)
+    responses = iter([json.dumps(invalid), json.dumps(repaired)])
+    prompts = []
+
+    def fake_copilot(prompt, model):
+        prompts.append(json.loads(prompt))
+        return next(responses)
+
+    monkeypatch.setattr(cli, "run_copilot_json", fake_copilot)
+    report = cli.run_discovery(
+        source_path, 20, False, "", "", "", "copilot", "gpt-5.4-mini", None, 2.0, 1, 3600,
+    )
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+    assert report["counts"]["AI_CALLS"] == 2
+    assert any("persona must equal persona_candidate" in error for error in prompts[1]["validation_errors"])
+    assert prompts[1]["clusters"][0]["persona_candidate"] == "unknown"
+
+
+def test_run6_context_separates_sources_and_exposes_shared_disconnect(cli_env):
+    cli, _ = cli_env
+    cluster = _run6_grounding_cluster(cli)
+    assert cluster["shared_intent_facets"] == ["disconnect"]
+
+    prompt = json.loads(cli.build_ai_prompt("RUN-6-REGRESSION", [cluster], "gpt-5.4-mini"))
+    context = prompt["clusters"][0]
+    evidence = context["structured_evidence_items"]
+    assert len(evidence) == 2
+    assert {item["source_identity"] for item in evidence} == {
+        "Crazy-Marvin/LibreLinkUpDesktop", "j-kaltes/Juggluco",
+    }
+    assert all(set(item) == {"source_identity", "source_family", "problem_statement", "excerpt"} for item in evidence)
+    assert "last received value" in evidence[0]["excerpt"]
+    assert "Android 16" in evidence[1]["excerpt"]
+    assert "last received value" not in evidence[1]["excerpt"]
+    assert "Android 16" not in evidence[0]["excerpt"]
+    assert context["shared_intent_facets"] == ["disconnect"]
+
+    constraints = " ".join(prompt["constraints"])
+    assert "common denominator supported by every evidence item" in constraints
+    assert "source in evidence_summary" in constraints
+    assert "persona MUST exactly equal persona_candidate" in constraints
+    assert "problem_statement_pl MUST express exactly the same grounded meaning" in constraints
+
+
+def test_unknown_cluster_rejects_unsupported_caregiver_statement(cli_env):
+    cli, _ = cli_env
+    item = cli._normalize_item_fields(
+        {
+            "url": "https://github.com/pachi81/GlucoDataAuto/issues/2",
+            "text": "Not receiving glucose values. No new readings arrive.",
+            "problem_statement": "Not receiving glucose values",
+            "source_identity": "pachi81/GlucoDataAuto", "language": "en",
+            "concept_id": "stale_or_missing_readings", "topic_id": "data_freshness",
+            "query_id": "stale_or_missing_readings:en:1", "evidence_role": "developer_community",
+            "persona": "unknown", "mode": "unknown", "module": "unknown",
+        },
+        "glucodataauto_github", "github_community", "community",
+    )
+    cluster = cli.cluster_items([item])[0]
+    payload = build_ai_payload_for_clusters([cluster])
+    payload["clusters"][0].update({
+        "persona": "unknown",
+        "problem_statement": "Caregiver does not receive current glucose values",
+        "problem_statement_pl": "Opiekun nie otrzymuje aktualnych wartości glukozy",
+    })
+    valid, errors = cli.validate_ai_output(payload, [cluster])
+    assert valid is False
+    assert any("unsupported caregiver claim" in error for error in errors)
+
+# End of evidence-grounding regressions.
