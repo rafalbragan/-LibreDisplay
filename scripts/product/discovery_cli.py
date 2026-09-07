@@ -1312,7 +1312,7 @@ def _collect_github_issue_search(
                 item = _normalize_cached_item(
                     {
                         "url": url, "text": candidate.get("excerpt", ""), "problem_statement": candidate.get("problem_statement", ""),
-                        "source_identity": candidate.get("source_identity", repo_full), "persona": "caregiver", "module": "Home / Monitoring",
+                        "source_identity": candidate.get("source_identity", repo_full), "persona": "unknown", "mode": "unknown", "module": "unknown",
                         "type": "usability", "severity": "medium", "frequency": "unknown", "confidence": "medium",
                         "evidence_role": source.get("evidence_role", "developer_community"), "language": query_meta["language"],
                         "concept_id": query_meta["concept_id"], "topic_id": query_meta["topic_id"], "query_id": query_meta["query_id"],
@@ -1572,6 +1572,30 @@ def _cluster_canonical_problem_key(items: list[dict]) -> str:
     return " ".join(anchors)
 
 
+def _shared_intent_facets(items: list[dict]) -> list[str]:
+    """Return only existing intent facets supported by every evidence item."""
+    facets_by_item = []
+    for item in items:
+        concept_id = str(item.get("concept_id") or "unclassified")
+        language = str(item.get("language") or "unknown")
+        evidence_text = f"{item.get('problem_statement') or ''}. {item.get('excerpt') or ''}"
+        facets_by_item.append(problem_intent_facets(evidence_text, language, concept_id))
+    return sorted(set.intersection(*facets_by_item)) if facets_by_item else []
+
+
+def _structured_evidence_items(cluster: dict) -> list[dict]:
+    """Build bounded, sanitized source facts without account/user metadata."""
+    return [
+        {
+            "source_identity": str(item.get("source_identity") or item.get("source_name") or "unknown"),
+            "source_family": str(item.get("source_family") or "unknown"),
+            "problem_statement": _truncate_text(str(item.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH),
+            "excerpt": _truncate_text(str(item.get("excerpt") or ""), MAX_CACHED_EXCERPT_LENGTH),
+        }
+        for item in (cluster.get("raw_items") or [])[:6]
+    ]
+
+
 def _existing_cluster_matches() -> list[dict]:
     matches: list[dict] = []
     for path in iter_record_files(OBSERVATIONS_DIR) or []:
@@ -1732,6 +1756,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
                 "evidence_roles": evidence_roles,
                 "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
                 "topic_id": topics[0] if len(topics) == 1 else "mixed",
+                "shared_intent_facets": _shared_intent_facets(c_items),
                 "evidence_tier": evidence_tier,
                 "quality_gate_passes": quality_gate,
                 "genuine_problem_signal": genuine_problem,
@@ -1897,9 +1922,10 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
                 "evidence_tier": c.get("evidence_tier", "WEAK"),
                 "concept_id": c.get("concept_id", "unclassified"),
                 "topic_id": c.get("topic_id", "unclassified"),
+                "shared_intent_facets": c.get("shared_intent_facets", []),
                 "source_families": c["source_families"],
                 "source_identities": c.get("source_identities", []),
-                "evidence_items": c["evidence_items"][:6],
+                "structured_evidence_items": _structured_evidence_items(c),
                 "source_urls": c["source_urls"][:12],
                 "foundation_match": c.get("foundation_match", {}),
             }
@@ -1958,6 +1984,12 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "constraints": [
             "Return JSON only.",
             "Problem statement must describe problem, not solution.",
+            "The output persona MUST exactly equal persona_candidate. If persona_candidate is unknown, persona MUST be unknown.",
+            "For a cluster with multiple structured_evidence_items, problem_statement MUST state only the common denominator supported by every evidence item.",
+            "Keep details supported by only one source in evidence_summary; do not present them as shared facts in problem_statement.",
+            "Use shared_intent_facets and concept_id as deterministic grounding hints; do not add causes, conditions, devices, operating systems, or warning behavior not shared by every evidence item.",
+            "problem_statement_pl MUST express exactly the same grounded meaning as problem_statement and MUST NOT add claims.",
+            "Do not infer caregiver, senior, or clinician from generic CGM evidence.",
             "Exactly one classification per cluster.",
             "Do not accept requirements or start implementation.",
             "Never recommend insulin dose, bolus, basal, insulin ratio, or therapy adjustment.",
@@ -1970,7 +2002,7 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
 
 
 def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors: list[str], original_payload: dict, model: str) -> str:
-    """Build a repair prompt for schema validation failures. Only for correcting schema, not analytical content."""
+    """Build a bounded repair prompt for schema and evidence-grounding failures."""
     compact = []
     for c in clusters:
         compact.append(
@@ -1979,15 +2011,18 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
                 "normalized_problem": c["normalized_problem"],
                 "persona_candidate": c["persona_candidate"],
                 "module_candidate": c["module_candidate"],
+                "concept_id": c.get("concept_id", "unclassified"),
+                "shared_intent_facets": c.get("shared_intent_facets", []),
+                "structured_evidence_items": _structured_evidence_items(c),
                 "problem_statement_pl_required": True,
             }
         )
 
     payload = {
-        "task": "Repair LibreCare AI cluster analysis. SCHEMA REPAIR ONLY.",
+        "task": "Repair LibreCare AI cluster analysis. SCHEMA AND EVIDENCE-GROUNDING REPAIR ONLY.",
         "run_id": run_id,
         "model": model,
-        "instruction": "Your previous analysis had schema errors below. Return the COMPLETE corrected clusters array using the exact same cluster_ids and analytical content, but with valid schema values. Do NOT add/remove clusters or change analytical intent.",
+        "instruction": "Your previous analysis had schema or evidence-grounding errors below. Return the COMPLETE corrected clusters array using the exact same cluster_ids. Correct invalid fields from the bounded evidence context without adding claims. Do NOT add/remove clusters or change valid analytical intent.",
         "validation_errors": validation_errors[:10],  # Show first 10 errors
         "original_payload": original_payload,
         "score_requirements": {
@@ -2001,8 +2036,11 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
         "constraints": [
             "Return JSON object with 'clusters' array only.",
             "Preserve all cluster_ids from original analysis.",
-            "Preserve analytical intent (problem_statement, classification, etc).",
-            "Fix ONLY the schema violations listed in validation_errors.",
+            "Preserve valid analytical intent (classification, scores, etc.).",
+            "Fix ONLY the schema or evidence-grounding violations listed in validation_errors.",
+            "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
+            "For multiple evidence items, problem_statement must contain only their common denominator; source-specific details belong only in evidence_summary.",
+            "problem_statement_pl must express exactly the same grounded meaning without additional claims.",
             "Do NOT change cluster membership or add/remove clusters.",
             "Do NOT make new product decisions.",
             "Do NOT start implementation.",
@@ -2146,6 +2184,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         return False, ["AI payload missing 'clusters' array"]
 
     expected_ids = {c["cluster_id"] for c in clusters}
+    clusters_by_id = {c["cluster_id"]: c for c in clusters}
     got_ids = set()
     seen_ids: dict[str, int] = {}
     required = {
@@ -2187,6 +2226,26 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         got_ids.add(cid)
         if cid not in expected_ids:
             errors.append(f"clusters[{idx}] unknown cluster_id: {cid}")
+        else:
+            cluster = clusters_by_id[cid]
+            persona_candidate = str(cluster.get("persona_candidate") or "unknown")
+            if row["persona"] != persona_candidate:
+                errors.append(
+                    f"clusters[{idx}] persona must equal persona_candidate: expected {persona_candidate}, got {row['persona']}"
+                )
+            evidence_text = " ".join(
+                f"{item.get('problem_statement') or ''} {item.get('excerpt') or ''}"
+                for item in (cluster.get("raw_items") or [])
+            ).lower()
+            output_statements = f"{row.get('problem_statement') or ''} {row.get('problem_statement_pl') or ''}".lower()
+            persona_terms = {
+                "caregiver": ("caregiver", "opiekun", "aidant", "betreuer", "cuidador"),
+                "senior": ("senior", "elderly", "starsz"),
+                "clinician": ("clinician", "doctor", "physician", "lekarz", "klinicyst"),
+            }
+            for persona_name, terms in persona_terms.items():
+                if any(term in output_statements for term in terms) and not any(term in evidence_text for term in terms):
+                    errors.append(f"clusters[{idx}] unsupported {persona_name} claim in problem statement")
         if row["classification"] not in CLASSIFICATIONS:
             errors.append(f"clusters[{idx}] invalid classification: {row['classification']}")
         if row["solvability"] not in SOLVABILITY_VALUES:
