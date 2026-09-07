@@ -1295,12 +1295,12 @@ def test_top3_eligible_selection_filters_before_limit(cli_env, fixture_sources, 
     assert len(created_or_skipped) <= 3
 
 
-def test_requirement_and_hold_reject_match_suppresses_reproposal(cli_env, fixture_sources):
+def test_canonical_hold_reject_match_suppresses_reproposal(cli_env, fixture_sources):
     cli, root = cli_env
     decision = {
         "id": "DEC-9999",
         "date": "2026-09-05",
-        "subject": "Caregiver finds stale data hard to interpret quickly",
+        "subject": "Shared glucose readings can be delayed, missing, or unavailable.",
         "status": "REJECTED",
         "decision": "Not now",
         "reason": "Already covered",
@@ -2872,6 +2872,180 @@ def _run6_grounding_cluster(cli):
     return clusters[0]
 
 
+def _foundation_fixture(*, requirement="", capability="", decision="", decision_status="HOLD"):
+    return {
+        "requirements": ([{
+            "id": "REQ-TEST", "text": requirement, "status": "ACCEPTED", "path": "product/requirements/REQ-TEST.yaml",
+        }] if requirement else []),
+        "capabilities": [capability] if capability else [],
+        "decisions": ([{
+            "id": "DEC-TEST", "subject": decision, "decision": "", "status": decision_status,
+            "path": "product/decisions/DEC-TEST.yaml",
+        }] if decision else []),
+        "observations": [],
+    }
+
+
+def _product_problem_ai_row():
+    return {"classification": "PRODUCT_PROBLEM", "solvability": "APP"}
+
+
+def test_foundation_match_is_independent_of_raw_source_noise(cli_env):
+    cli, _ = cli_env
+    canonical = "The sensor/app connection can be lost or become unstable."
+    generic = {
+        "canonical_problem_statement": canonical,
+        "canonical_grounding_safe": True,
+        "identity_ambiguous": False,
+        "raw_items": [{"problem_statement": "Generic connection-loss evidence"}],
+    }
+    noisy = {
+        **generic,
+        "raw_items": [{
+            "problem_statement": (
+                "Missing disconnect notification and notification customization on "
+                "Motorola Edge 50 Neo after Android 16"
+            ),
+            "excerpt": "Source-specific warning behavior and device context",
+        }],
+    }
+    foundation = _foundation_fixture(
+        requirement="Missing disconnect notification and notification customization",
+        capability="Motorola Edge 50 Neo notification customization after Android 16",
+        decision="Source-specific warning behavior and device context",
+    )
+
+    generic_match = cli.match_cluster_to_foundation(generic, foundation)
+    noisy_match = cli.match_cluster_to_foundation(noisy, foundation)
+
+    for key in (
+        "best_requirement_score", "best_capability_score", "linked",
+        "suppress_reproposal", "suppress_reason",
+    ):
+        assert generic_match[key] == noisy_match[key]
+
+
+def test_raw_evidence_cannot_cause_requirement_suppression(cli_env):
+    cli, _ = cli_env
+    cluster = {
+        "canonical_problem_statement": "The sensor/app connection can be lost or become unstable.",
+        "canonical_grounding_safe": True,
+        "raw_items": [{"problem_statement": "Missing disconnect notification customization"}],
+        "foundation_match": {},
+    }
+    match = cli.match_cluster_to_foundation(
+        cluster,
+        _foundation_fixture(requirement="Missing disconnect notification customization"),
+    )
+    cluster["foundation_match"] = match
+
+    assert match["best_requirement_score"] < 0.75
+    assert not any(row["type"] == "requirement" for row in match["linked"])
+    assert cli.apply_governance(cluster, _product_problem_ai_row()).get("suppressed", False) is False
+
+
+def test_raw_evidence_cannot_cause_validated_capability_match(cli_env):
+    cli, _ = cli_env
+    cluster = {
+        "canonical_problem_statement": "The sensor/app connection can be lost or become unstable.",
+        "canonical_grounding_safe": True,
+        "raw_items": [{"problem_statement": "Custom disconnect notifications are available"}],
+        "foundation_match": {},
+    }
+    match = cli.match_cluster_to_foundation(
+        cluster,
+        _foundation_fixture(capability="Custom disconnect notifications are available"),
+    )
+    cluster["foundation_match"] = match
+
+    assert match["best_capability_score"] < 0.68
+    assert cli.apply_governance(cluster, _product_problem_ai_row())["classification"] == "PRODUCT_PROBLEM"
+
+
+def test_raw_evidence_cannot_cause_decision_suppression(cli_env):
+    cli, _ = cli_env
+    cluster = {
+        "canonical_problem_statement": "The sensor/app connection can be lost or become unstable.",
+        "canonical_grounding_safe": True,
+        "raw_items": [{"problem_statement": "Hold notification customization for Android 16"}],
+        "foundation_match": {},
+    }
+    match = cli.match_cluster_to_foundation(
+        cluster,
+        _foundation_fixture(decision="Hold notification customization for Android 16"),
+    )
+    cluster["foundation_match"] = match
+
+    assert match["suppress_reproposal"] is False
+    assert not any(row["type"] == "decision" for row in match["linked"])
+    assert cli.apply_governance(cluster, _product_problem_ai_row()).get("suppressed", False) is False
+
+
+@pytest.mark.parametrize(
+    "cluster",
+    [
+        {"canonical_grounding_safe": False, "normalized_problem": "Source-specific notification requirement"},
+        {"identity_ambiguous": True, "normalized_problem": "Source-specific notification requirement"},
+        {"raw_items": [{"problem_statement": "Source-specific notification requirement"}]},
+    ],
+)
+def test_foundation_match_fails_closed_without_safe_cluster_problem(cli_env, cluster):
+    cli, _ = cli_env
+    cluster["raw_items"] = [{"problem_statement": "Source-specific notification requirement"}]
+    match = cli.match_cluster_to_foundation(
+        cluster,
+        _foundation_fixture(
+            requirement="Source-specific notification requirement",
+            capability="Source-specific notification requirement",
+            decision="Source-specific notification requirement",
+        ),
+    )
+
+    assert match == {
+        "linked": [],
+        "suppress_reproposal": False,
+        "suppress_reason": "",
+        "best_requirement_score": 0.0,
+        "best_capability_score": 0.0,
+    }
+
+
+def test_normalized_problem_is_compatible_foundation_fallback(cli_env):
+    cli, _ = cli_env
+    problem = "Caregivers cannot distinguish stale glucose readings."
+    match = cli.match_cluster_to_foundation(
+        {"normalized_problem": problem, "raw_items": []},
+        _foundation_fixture(requirement=problem),
+    )
+
+    assert match["best_requirement_score"] == 1.0
+    assert [row["type"] for row in match["linked"]] == ["requirement"]
+
+
+def test_positive_canonical_foundation_matching_remains_intact(cli_env):
+    cli, _ = cli_env
+    problem = "The sensor/app connection can be lost or become unstable."
+    cluster = {
+        "canonical_problem_statement": problem,
+        "canonical_grounding_safe": True,
+        "raw_items": [],
+        "foundation_match": {},
+    }
+    match = cli.match_cluster_to_foundation(
+        cluster,
+        _foundation_fixture(requirement=problem, capability=problem, decision=problem),
+    )
+    cluster["foundation_match"] = match
+    governed = cli.apply_governance(cluster, _product_problem_ai_row())
+
+    assert match["best_requirement_score"] == 1.0
+    assert match["best_capability_score"] == 1.0
+    assert {row["type"] for row in match["linked"]} == {"requirement", "validated_capability", "decision"}
+    assert match["suppress_reproposal"] is True
+    assert governed["classification"] == "VALIDATED_CAPABILITY"
+    assert governed["suppressed"] is True
+
+
 def test_unknown_github_cluster_preserves_unknown_persona(cli_env):
     cli, _ = cli_env
     cluster = _run6_grounding_cluster(cli)
@@ -3008,8 +3182,33 @@ def test_run7_canonical_grounding_is_order_and_source_noise_independent(cli_env)
     noisy_items[1]["excerpt"] += " Motorola Edge 50 Neo Android 16 Windows 11 missing disconnect warning."
     noisy_cluster = cli.cluster_items(noisy_items)[0]
 
+    generic_raw_cluster = dict(baseline)
+    generic_raw_cluster["raw_items"] = [
+        {**baseline["raw_items"][0], "problem_statement": "The sensor connection is lost"},
+        {**baseline["raw_items"][1], "problem_statement": "The sensor connection becomes unstable"},
+    ]
+    source_noisy_cluster = dict(baseline)
+    source_noisy_cluster["raw_items"] = [
+        {
+            **baseline["raw_items"][0],
+            "problem_statement": "Missing disconnect notification warning and notification customization",
+        },
+        {
+            **baseline["raw_items"][1],
+            "problem_statement": "Motorola Edge 50 Neo reconnect behavior after Android 16",
+        },
+    ]
+    source_specific_foundation = _foundation_fixture(
+        requirement="Missing disconnect notification warning and notification customization",
+        capability="Motorola Edge 50 Neo reconnect behavior after Android 16",
+        decision="Motorola Edge 50 Neo reconnect behavior after Android 16",
+    )
+
     assert _canonical_identity(baseline) == _canonical_identity(reversed_cluster)
     assert _canonical_identity(baseline) == _canonical_identity(noisy_cluster)
+    assert cli.match_cluster_to_foundation(
+        generic_raw_cluster, source_specific_foundation,
+    ) == cli.match_cluster_to_foundation(source_noisy_cluster, source_specific_foundation)
     assert baseline["canonical_problem_statement"] == "The sensor/app connection can be lost or become unstable."
     assert baseline["canonical_problem_statement_pl"] == "Połączenie sensora z aplikacją może zostać utracone lub stać się niestabilne."
     assert baseline["canonical_problem_key"] == "concept:signal_loss_disconnect|topic:connectivity|facets:disconnect"

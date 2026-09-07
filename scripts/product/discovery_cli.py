@@ -1890,14 +1890,18 @@ def load_foundation_index() -> dict:
 
 
 def match_cluster_to_foundation(cluster: dict, foundation: dict) -> dict:
-    problem_candidates = {
-        str(cluster.get("canonical_problem_statement") or cluster.get("normalized_problem") or "").strip(),
-        *(str(item.get("problem_statement") or "").strip() for item in (cluster.get("raw_items") or [])),
-    }
-    problem_candidates.discard("")
+    grounding_safe = (
+        not cluster.get("identity_ambiguous", False)
+        and cluster.get("canonical_grounding_safe") is not False
+    )
+    cluster_problem = (
+        str(cluster.get("canonical_problem_statement") or cluster.get("normalized_problem") or "").strip()
+        if grounding_safe
+        else ""
+    )
 
     def best_similarity(text: str) -> float:
-        return max((_text_similarity(problem, text) for problem in sorted(problem_candidates)), default=0.0)
+        return _text_similarity(cluster_problem, text) if cluster_problem else 0.0
 
     best_req = (0.0, None)
     for req in foundation["requirements"]:
