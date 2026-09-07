@@ -10,15 +10,15 @@
     "status": "ASSIGNMENT_FAILED",
     "error": "Copilot assignee was not confirmed after GraphQL mutation; mutation_assignees=['Copilot'], issue_assignees=['Copilot']"
   },
-  "branch": null,
-  "pull_request_number": null,
-  "pull_request_url": null,
-  "status": "QUEUED",
-  "created_at": "2026-09-02",
+  "branch": "fix/librecare-product-foundation-pr-tracking-safety",
+  "pull_request_number": 21,
+  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/21",
+  "status": "READY_FOR_HUMAN_REVIEW",
+  "created_at": "2026-09-07T12:42:07Z",
   "attempt_count": 0,
   "last_ci_result": "UNKNOWN",
   "validation_state": "PENDING",
   "acceptance_test_ids": [],
   "ci_failures": [],
-  "updated_at": "2026-09-02T22:55:57Z"
+  "updated_at": "2026-09-07T12:42:07Z"
 }
