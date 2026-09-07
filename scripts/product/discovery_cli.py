@@ -2061,8 +2061,12 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "run_id": run_id,
         "model": model,
         "required_output": _ai_output_contract(),
+        "output_rows_template": [
+            _ai_cluster_row_template(str(cluster["cluster_id"])) for cluster in clusters
+        ],
         "constraints": [
             "Return JSON only.",
+            "Use output_rows_template as the one-to-one output skeleton: return every listed object exactly once, keep each exact cluster_id, and replace every other placeholder with grounded analysis.",
             "Problem statement must describe problem, not solution.",
             "The output persona MUST exactly equal persona_candidate. If persona_candidate is unknown, persona MUST be unknown.",
             "For a cluster with multiple structured_evidence_items, problem_statement MUST state only the common denominator supported by every evidence item.",

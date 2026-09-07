@@ -2017,6 +2017,10 @@ def test_initial_repair_and_validator_share_authoritative_contract(cli_env, fixt
     assert initial_contract["solvability_enum"] == repair_contract["solvability_enum"] == sorted(cli.SOLVABILITY_VALUES)
     assert initial_contract["confidence_enum"] == repair_contract["confidence_enum"] == sorted(cli.CONFIDENCE_VALUES)
     assert list(initial_contract["score_fields"]) == list(repair_contract["score_fields"]) == list(cli.AI_SCORE_FIELDS)
+    assert [row["cluster_id"] for row in initial["output_rows_template"]] == [
+        cluster["cluster_id"] for cluster in clusters
+    ]
+    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in initial["output_rows_template"])
     assert len(repair["repair_rows_template"]) == 1
     row_template = repair["repair_rows_template"][0]
     assert list(row_template) == authoritative_fields
