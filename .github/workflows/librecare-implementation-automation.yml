@@ -167,33 +167,62 @@ jobs:
           fi
 
   track-work-pr:
-    if: github.event_name == 'pull_request'
+    if: github.event_name == 'pull_request' && github.event.action != 'closed'
     runs-on: ubuntu-latest
     permissions:
       contents: write
       issues: write
       pull-requests: write
     steps:
-      - name: Checkout
+      - name: Resolve safe implementation PR target
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const pr = context.payload.pull_request || {};
+            const text = `${pr.title || ''}\n${pr.body || ''}`;
+            const ids = [...new Set(text.match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [])];
+            const sameRepo = pr.head?.repo?.full_name === context.payload.repository?.full_name;
+            const headRef = pr.head?.ref || '';
+            const baseRef = pr.base?.ref || '';
+            const safe = sameRepo && ids.length === 1 && headRef && headRef !== 'master' && headRef !== baseRef;
+            core.setOutput('safe', safe ? 'true' : 'false');
+            core.setOutput('head_ref', safe ? headRef : '');
+            core.setOutput('head_sha', safe ? (pr.head?.sha || '') : '');
+            core.info(safe
+              ? `Tracking ${ids[0]} on safe head ${headRef}.`
+              : 'SKIP: PR is unrelated, forked, closed, or targets an unsafe branch.');
+
+      - name: Checkout exact PR head
+        if: steps.target.outputs.safe == 'true'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.target.outputs.head_sha }}
 
       - name: Setup Python
+        if: steps.target.outputs.safe == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install deps
+        if: steps.target.outputs.safe == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml
 
       - name: Track requirement/bug PR
+        if: steps.target.outputs.safe == 'true'
         run: |
           python scripts/product/automation_cli.py track-work-pr \
             --event-file "$GITHUB_EVENT_PATH" \
-            --output-file pr-track.json || true
+            --output-file pr-track.json
 
       - name: Persist automation records
+        if: steps.target.outputs.safe == 'true'
+        env:
+          HEAD_REF: ${{ steps.target.outputs.head_ref }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -202,8 +231,7 @@ jobs:
             echo "No Product Foundation changes to commit."
           else
             git commit -m "product: track automation pr #${{ github.event.pull_request.number }}"
-            git pull --rebase origin "${{ github.event.pull_request.base.ref }}"
-            git push origin "HEAD:${{ github.event.pull_request.base.ref }}"
+            git push origin "HEAD:$HEAD_REF"
           fi
 
   ci-repair-loop:
@@ -217,26 +245,66 @@ jobs:
       pull-requests: write
     # actionlint enable rule:unknown-permission
     steps:
-      - name: Checkout
+      - name: Resolve safe CI repair PR target
+        id: target
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const wr = context.payload.workflow_run || {};
+            const linked = wr.pull_requests || [];
+            if (!linked.length) {
+              core.setOutput('safe', 'false');
+              core.info('SKIP: workflow run has no linked pull request.');
+              return;
+            }
+            const { data: pr } = await github.rest.pulls.get({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: Number(linked[0].number),
+            });
+            const text = `${pr.title || ''}\n${pr.body || ''}`;
+            const ids = [...new Set(text.match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [])];
+            const sameRepo = pr.head?.repo?.full_name === context.payload.repository?.full_name;
+            const safe = pr.state === 'open' && sameRepo && ids.length === 1 && pr.head.ref !== 'master' && pr.head.ref !== pr.base.ref;
+            core.setOutput('safe', safe ? 'true' : 'false');
+            core.setOutput('head_ref', safe ? pr.head.ref : '');
+            core.setOutput('head_sha', safe ? pr.head.sha : '');
+            core.setOutput('pr_number', safe ? String(pr.number) : '');
+            if (!safe) {
+              core.info('SKIP: CI repair target is unrelated, closed, forked, or uses an unsafe branch.');
+              return;
+            }
+
+      - name: Checkout exact PR head
+        if: steps.target.outputs.safe == 'true'
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          ref: ${{ steps.target.outputs.head_sha }}
 
       - name: Setup Python
+        if: steps.target.outputs.safe == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
 
       - name: Install deps
+        if: steps.target.outputs.safe == 'true'
         run: |
           python -m pip install --upgrade pip
           pip install pyyaml
 
       - name: Record CI result and bounded repair
+        if: steps.target.outputs.safe == 'true'
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python -c "import json, os, subprocess, sys; from pathlib import Path; payload=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')); wr=payload.get('workflow_run') or {}; prs=wr.get('pull_requests') or []; pr_number=(prs[0].get('number') if prs else None); print('No pull request linked to workflow run.') if pr_number is None else None; sys.exit(0) if pr_number is None else None; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number',str(pr_number),'--workflow-name',str(wr.get('name','Android CI')),'--conclusion',str(wr.get('conclusion','unknown')),'--run-id',str(wr.get('id','unknown')),'--run-url',str(wr.get('html_url','')),'--repo-owner','${{ github.repository_owner }}','--repo-name','${{ github.event.repository.name }}','--github-token','${{ secrets.GITHUB_TOKEN }}','--output-file','ci-result.json']; subprocess.check_call(cmd)"
+          python -c "import json, os, subprocess; from pathlib import Path; wr=json.loads(Path(os.environ['GITHUB_EVENT_PATH']).read_text(encoding='utf-8')).get('workflow_run') or {}; repo_name='${{ github.event.repository.name }}'; cmd=['python','scripts/product/automation_cli.py','record-ci-result','--pr-number=${{ steps.target.outputs.pr_number }}','--workflow-name='+str(wr.get('name','Android CI')),'--conclusion='+str(wr.get('conclusion','unknown')),'--run-id='+str(wr.get('id','unknown')),'--run-url='+str(wr.get('html_url','')),'--repo-owner=${{ github.repository_owner }}',f'--repo-name={repo_name}','--github-token=${{ secrets.GITHUB_TOKEN }}','--output-file=ci-result.json']; subprocess.check_call(cmd)"
 
       - name: Persist automation records
+        if: steps.target.outputs.safe == 'true'
+        env:
+          HEAD_REF: ${{ steps.target.outputs.head_ref }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
@@ -245,8 +313,7 @@ jobs:
             echo "No Product Foundation changes to commit."
           else
             git commit -m "product: ci repair loop run #${{ github.event.workflow_run.id }}"
-            git pull --rebase origin "${{ github.event.workflow_run.head_branch }}"
-            git push origin "HEAD:${{ github.event.workflow_run.head_branch }}"
+            git push origin "HEAD:$HEAD_REF"
           fi
 
   close-validated-bug-issues:

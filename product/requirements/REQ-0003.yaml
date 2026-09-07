@@ -104,7 +104,7 @@ implementation:
   source_inbox_id: INBOX-GH-000006
   source_inbox_issue_number: 6
   source_inbox_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/6
-  implementation_status: PR_READY
+  implementation_status: QUEUED
   validation_state: PENDING
   implementation_issue:
     number: 7
@@ -116,11 +116,5 @@ implementation:
       error: Copilot assignee was not confirmed after GraphQL mutation; mutation_assignees=['Copilot'],
         issue_assignees=['Copilot']
     updated_at: '2026-09-02T22:55:57Z'
-  implementation_pr:
-    number: 20
-    url: https://github.com/rafalbragan/-LibreDisplay/pull/20
-    title: 'product: canonicalize Discovery cluster grounding'
-    head_ref: fix/librecare-discovery-canonical-grounding
-    state: open
-    updated_at: '2026-09-07T10:47:45Z'
+  implementation_pr: {}
   copilot_handoff_allowed: true

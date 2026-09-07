@@ -1260,13 +1260,9 @@ def sync_requirement_handoff(
 
 def find_requirement_for_pr(pr: dict) -> tuple[Path | None, dict | None]:
     text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_match = re.search(r"REQ-[0-9A-Za-z._-]+", text)
-    if req_match:
-        return load_requirement_by_id(req_match.group(0))
-    for issue_ref in re.findall(r"#(\d+)", text):
-        path, record = find_requirement_by_implementation_issue(int(issue_ref))
-        if path is not None:
-            return path, record
+    req_ids = sorted(set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", text)))
+    if len(req_ids) == 1:
+        return load_requirement_by_id(req_ids[0])
     return None, None
 
 
@@ -1963,6 +1959,9 @@ def cmd_track_implementation_pr(event_file: str, output_file: str | None = None)
     if not isinstance(pr, dict):
         print("SKIP: not a pull_request payload")
         return 0
+    if event.get("action") == "closed" or pr.get("state") == "closed" or pr.get("merged"):
+        print("SKIP: closed pull request state is advisory only")
+        return 0
     req_path, requirement = find_requirement_for_pr(pr)
     if req_path is None or requirement is None:
         print("SKIP: pull request is not linked to a canonical requirement")
@@ -1970,21 +1969,47 @@ def cmd_track_implementation_pr(event_file: str, output_file: str | None = None)
 
     implementation = ensure_requirement_implementation_block(requirement)
     pr_info = implementation.get("implementation_pr") or {}
-    pr_info.update({
+    tracked_pr = {
         "number": int(pr["number"]),
         "url": pr.get("html_url"),
         "title": pr.get("title"),
         "head_ref": (pr.get("head") or {}).get("ref"),
         "state": pr.get("state"),
-        "updated_at": now_iso(),
-    })
+    }
+    canonical_status = "IN_PROGRESS" if pr.get("draft") else "PR_READY"
+    impl_record = load_implementation_record(str(implementation.get("implementation_id") or f"IMP-{requirement['id']}")) or {}
+    unchanged = (
+        all(pr_info.get(key) == value for key, value in tracked_pr.items())
+        and implementation.get("implementation_status") == canonical_status
+        and impl_record.get("pull_request_number") == tracked_pr["number"]
+        and impl_record.get("pull_request_url") == tracked_pr["url"]
+        and impl_record.get("branch") == tracked_pr["head_ref"]
+        and impl_record.get("status") == canonical_status
+    )
+    if unchanged:
+        summary = {
+            "req_id": requirement["id"],
+            "implementation_id": implementation.get("implementation_id"),
+            "status": canonical_status,
+            "pr_number": tracked_pr["number"],
+            "pr_url": tracked_pr["url"],
+            "branch": tracked_pr["head_ref"],
+            "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+            "comment_markdown": build_implementation_status_comment({"req_id": requirement["id"], "status": canonical_status, "pr_number": tracked_pr["number"]}),
+            "changed": False,
+        }
+        if output_file:
+            write_json(Path(output_file), summary)
+        else:
+            print(json.dumps(summary, ensure_ascii=False))
+        return 0
+
+    pr_info.update(tracked_pr)
+    pr_info["updated_at"] = now_iso()
     implementation["implementation_pr"] = pr_info
-    implementation["implementation_status"] = "MERGED" if pr.get("merged") else ("IN_PROGRESS" if pr.get("draft") else "PR_READY")
-    if pr.get("merged"):
-        implementation["validation_state"] = "VALIDATION_PENDING"
+    implementation["implementation_status"] = canonical_status
     save_record(req_path, requirement)
     impl_record = ensure_requirement_implementation_record(requirement, req_path)
-    canonical_status = "MERGED" if pr.get("merged") else ("IN_PROGRESS" if pr.get("draft") else "PR_READY")
     impl_record = upsert_implementation_record({
         "implementation_id": implementation.get("implementation_id"),
         "requirement_id": requirement["id"],
@@ -2016,6 +2041,7 @@ def cmd_track_implementation_pr(event_file: str, output_file: str | None = None)
         "pr_url": pr.get("html_url"),
         "branch": (pr.get("head") or {}).get("ref"),
         "originating_inbox_issue_number": implementation.get("source_inbox_issue_number") or requirement.get("source_github_issue_number"),
+        "changed": True,
         "comment_markdown": build_implementation_status_comment({
             "req_id": requirement["id"],
             "status": impl_record["status"],
