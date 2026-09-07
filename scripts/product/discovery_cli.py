@@ -92,6 +92,30 @@ SOLVABILITY_VALUES = {"APP", "ABBOTT_LIMITATION", "EXTERNAL_ONLY", "MIXED"}
 CONFIDENCE_VALUES = {"low", "medium", "high"}
 ELIGIBLE_CLASSIFICATIONS = {"PRODUCT_PROBLEM", "PRODUCT_OPPORTUNITY", "SAFETY_GAP"}
 
+AI_SCORE_FIELDS = (
+    "impact_score",
+    "frequency_score",
+    "evidence_score",
+    "solvability_score",
+    "novelty_score",
+    "effort_score",
+)
+AI_CLUSTER_REQUIRED_FIELDS = (
+    "cluster_id",
+    "classification",
+    "persona",
+    "problem_statement",
+    "problem_statement_pl",
+    "evidence_summary",
+    "source_diversity_summary",
+    "current_librecare_match",
+    "solvability",
+    *AI_SCORE_FIELDS,
+    "confidence",
+    "counterargument",
+    "candidate_recommendation",
+)
+
 SOURCE_FAMILIES = {"official_vendor", "github_community", "reddit", "other_community", "competitor"}
 SOURCE_TYPE_BY_FAMILY = {
     "official_vendor": "community",
@@ -1970,6 +1994,40 @@ def _foundation_match_summary(match: dict) -> str:
     return "; ".join(parts)
 
 
+def _ai_output_contract() -> dict:
+    score_rule = "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)"
+    return {
+        "type": "object",
+        "required": ["clusters"],
+        "clusters_item_required": list(AI_CLUSTER_REQUIRED_FIELDS),
+        "classification_enum": sorted(CLASSIFICATIONS),
+        "solvability_enum": sorted(SOLVABILITY_VALUES),
+        "confidence_enum": sorted(CONFIDENCE_VALUES),
+        "score_fields": {field: score_rule for field in AI_SCORE_FIELDS},
+    }
+
+
+def _ai_cluster_row_template() -> dict:
+    text_placeholders = {
+        "cluster_id": "<one exact repair_cluster_id>",
+        "classification": "<allowed classification_enum value>",
+        "persona": "<exact persona_candidate>",
+        "problem_statement": "<concise English problem>",
+        "problem_statement_pl": "<concise Polish problem>",
+        "evidence_summary": "<bounded evidence summary>",
+        "source_diversity_summary": "<bounded source diversity summary>",
+        "current_librecare_match": "<analysis>",
+        "solvability": "<allowed solvability_enum value>",
+        "confidence": "<allowed confidence_enum value>",
+        "counterargument": "<bounded counterargument>",
+        "candidate_recommendation": "<advisory recommendation>",
+    }
+    return {
+        field: 0 if field in AI_SCORE_FIELDS else text_placeholders[field]
+        for field in AI_CLUSTER_REQUIRED_FIELDS
+    }
+
+
 def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
     compact = []
     for c in clusters:
@@ -2002,52 +2060,7 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "task": "Classify LibreCare discovery clusters. Advisory only.",
         "run_id": run_id,
         "model": model,
-        "required_output": {
-            "type": "object",
-            "required": ["clusters"],
-            "clusters_item_required": [
-                "cluster_id",
-                "classification",
-                "persona",
-                "problem_statement",
-                "problem_statement_pl",
-                "evidence_summary",
-                "source_diversity_summary",
-                "current_librecare_match",
-                "solvability",
-                "impact_score",
-                "frequency_score",
-                "evidence_score",
-                "solvability_score",
-                "novelty_score",
-                "effort_score",
-                "confidence",
-                "counterargument",
-                "candidate_recommendation",
-            ],
-            "classification_enum": sorted(CLASSIFICATIONS),
-            "solvability_enum": sorted(SOLVABILITY_VALUES),
-            "confidence_enum": sorted(CONFIDENCE_VALUES),
-            "score_fields": {
-                "impact_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "frequency_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "evidence_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "solvability_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "novelty_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "effort_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-            },
-            "score_example": {
-                "example_entry": {
-                    "cluster_id": "DISC-ABC123",
-                    "impact_score": 4,
-                    "frequency_score": 3,
-                    "evidence_score": 4,
-                    "solvability_score": 4,
-                    "novelty_score": 2,
-                    "effort_score": 2,
-                }
-            },
-        },
+        "required_output": _ai_output_contract(),
         "constraints": [
             "Return JSON only.",
             "Problem statement must describe problem, not solution.",
@@ -2100,19 +2113,14 @@ def build_ai_repair_prompt(
         "instruction": "Use ONLY repair_cluster_ids from the deterministic repair cluster context. Return exactly one row for every repair ID and no other IDs. Do not return preserved cluster rows. Previous AI cluster_id values are untrusted and must be ignored. Regenerate each required analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
         "repair_cluster_ids": repair_cluster_ids,
         "preserved_cluster_ids": preserved_cluster_ids,
-        "score_requirements": {
-            "impact_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "frequency_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "evidence_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "solvability_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "novelty_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "effort_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-        },
+        "required_output": _ai_output_contract(),
+        "repair_row_template": _ai_cluster_row_template(),
         "constraints": [
             "Return JSON object with 'clusters' array only.",
             "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
             "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
             "Previous AI cluster_id values are untrusted and must not define repair identity.",
+            "In repair_row_template, replace the cluster_id placeholder with one exact repair_cluster_id.",
             "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
             "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
@@ -2229,19 +2237,10 @@ def normalize_ai_output(payload: dict) -> dict:
     if not isinstance(entries, list):
         return payload
 
-    score_keys = [
-        "impact_score",
-        "frequency_score",
-        "evidence_score",
-        "solvability_score",
-        "novelty_score",
-        "effort_score",
-    ]
-
     for entry in entries:
         if not isinstance(entry, dict):
             continue
-        for key in score_keys:
+        for key in AI_SCORE_FIELDS:
             if key in entry:
                 normalized = normalize_ai_score(entry[key])
                 if normalized is not None:
@@ -2264,26 +2263,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     clusters_by_id = {c["cluster_id"]: c for c in clusters}
     got_ids = set()
     seen_ids: dict[str, int] = {}
-    required = {
-        "cluster_id",
-        "classification",
-        "persona",
-        "problem_statement",
-        "problem_statement_pl",
-        "evidence_summary",
-        "source_diversity_summary",
-        "current_librecare_match",
-        "solvability",
-        "impact_score",
-        "frequency_score",
-        "evidence_score",
-        "solvability_score",
-        "novelty_score",
-        "effort_score",
-        "confidence",
-        "counterargument",
-        "candidate_recommendation",
-    }
+    required = set(AI_CLUSTER_REQUIRED_FIELDS)
 
     if len(entries) != len(clusters):
         errors.append(f"AI payload cluster count mismatch: expected {len(clusters)}, got {len(entries)}")
@@ -2329,14 +2309,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             errors.append(f"clusters[{idx}] invalid solvability: {row['solvability']}")
         if row["confidence"] not in CONFIDENCE_VALUES:
             errors.append(f"clusters[{idx}] invalid confidence: {row['confidence']}")
-        for score_key in [
-            "impact_score",
-            "frequency_score",
-            "evidence_score",
-            "solvability_score",
-            "novelty_score",
-            "effort_score",
-        ]:
+        for score_key in AI_SCORE_FIELDS:
             val = row.get(score_key)
             if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 5:
                 errors.append(f"clusters[{idx}] {score_key} must be int 0..5")

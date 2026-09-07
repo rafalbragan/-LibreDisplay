@@ -1835,6 +1835,19 @@ def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixt
     assert any("impact_score must be int 0..5" in err for err in errors)
 
 
+def test_validator_rejects_each_authoritative_required_field_when_missing(cli_env, fixture_sources):
+    cli, _ = cli_env
+    cluster = _prepare_clusters(cli, fixture_sources)[0]
+    complete_row = build_ai_payload_for_clusters([cluster])["clusters"][0]
+
+    for field in cli.AI_CLUSTER_REQUIRED_FIELDS:
+        candidate = dict(complete_row)
+        del candidate[field]
+        valid, errors = cli.validate_ai_output({"clusters": [candidate]}, [cluster])
+        assert valid is False, field
+        assert any("missing fields" in error and field in error for error in errors), field
+
+
 def _run_discovery_with_two_ai_payloads(
     cli, fixture_sources, monkeypatch, first_payload: dict, second_payload: dict, prompt_sink: list | None = None,
 ):
@@ -1986,6 +1999,29 @@ def test_ai_repair_prompt_uses_only_authoritative_deterministic_cluster_ids(cli_
     assert "previous_valid_rows_advisory" not in prompt
 
 
+def test_initial_repair_and_validator_share_authoritative_contract(cli_env, fixture_sources):
+    cli, _ = cli_env
+    clusters = _prepare_clusters(cli, fixture_sources)
+    initial = json.loads(cli.build_ai_prompt("CONTRACT-PARITY", clusters, "gpt-5.4-mini"))
+    repair = json.loads(cli.build_ai_repair_prompt(
+        "CONTRACT-PARITY", [clusters[0]], [], "gpt-5.4-mini",
+    ))
+    authoritative_fields = list(cli.AI_CLUSTER_REQUIRED_FIELDS)
+    initial_contract = initial["required_output"]
+    repair_contract = repair["required_output"]
+
+    assert initial_contract["clusters_item_required"] == authoritative_fields
+    assert repair_contract["clusters_item_required"] == authoritative_fields
+    assert initial_contract == repair_contract == cli._ai_output_contract()
+    assert initial_contract["classification_enum"] == repair_contract["classification_enum"] == sorted(cli.CLASSIFICATIONS)
+    assert initial_contract["solvability_enum"] == repair_contract["solvability_enum"] == sorted(cli.SOLVABILITY_VALUES)
+    assert initial_contract["confidence_enum"] == repair_contract["confidence_enum"] == sorted(cli.CONFIDENCE_VALUES)
+    assert list(initial_contract["score_fields"]) == list(repair_contract["score_fields"]) == list(cli.AI_SCORE_FIELDS)
+    assert list(repair["repair_row_template"]) == authoritative_fields
+    assert repair["repair_row_template"]["cluster_id"] == "<one exact repair_cluster_id>"
+    assert all(repair["repair_row_template"][field] == 0 for field in cli.AI_SCORE_FIELDS)
+
+
 def test_ai_repair_recovers_unknown_first_response_from_authoritative_ids(cli_env, tmp_path, monkeypatch):
     cli, _ = cli_env
     sources = _multi_cluster_repair_sources(tmp_path)
@@ -2085,6 +2121,58 @@ def test_run9_shape_repairs_only_missing_sixth_row_in_authoritative_order(cli_en
     assert prompts[1]["preserved_cluster_ids"] == expected_ids[:5]
     assert [cluster["cluster_id"] for cluster in prompts[1]["clusters"]] == [expected_ids[5]]
     assert governed_ids == expected_ids
+
+
+def test_run10_style_missing_fields_in_repair_fails_closed(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    sources = _six_cluster_repair_sources(tmp_path)
+    clusters = _prepare_clusters(cli, sources)
+    first = build_ai_payload_for_clusters(clusters)
+    first["clusters"][0]["impact_score"] = 4.5
+    first["clusters"][1]["impact_score"] = 4.5
+    repair_ids = [clusters[0]["cluster_id"], clusters[1]["cluster_id"]]
+    incomplete_repair = _payload_for_cluster_ids(clusters, repair_ids)
+    missing_fields = {
+        "candidate_recommendation", "classification", "confidence", "counterargument",
+        "current_librecare_match", "solvability", "source_diversity_summary",
+    }
+    for row in incomplete_repair["clusters"]:
+        for field in missing_fields:
+            del row[field]
+
+    report = _run_discovery_with_two_ai_payloads(
+        cli, sources, monkeypatch, first, incomplete_repair,
+    )
+
+    assert report["status"] == "FAILED"
+    assert report["counts"]["AI_CALLS"] == 2
+    assert report["top10"] == []
+    assert report["counts"]["OBSERVATIONS_CREATED"] == 0
+    assert report["counts"]["PRODUCT_INBOX_ACTIONS"] == 0
+    assert sum("missing fields" in error for error in report["errors"]) == 2
+    assert all(any(field in error for error in report["errors"]) for field in missing_fields)
+
+
+def test_run10_style_complete_repair_succeeds(cli_env, tmp_path, monkeypatch):
+    cli, _ = cli_env
+    sources = _six_cluster_repair_sources(tmp_path)
+    clusters = _prepare_clusters(cli, sources)
+    expected_ids = [cluster["cluster_id"] for cluster in clusters]
+    first = build_ai_payload_for_clusters(clusters)
+    first["clusters"][0]["impact_score"] = 4.5
+    first["clusters"][1]["impact_score"] = 4.5
+    prompts = []
+
+    report = _run_discovery_with_two_ai_payloads(
+        cli, sources, monkeypatch, first,
+        _payload_for_cluster_ids(clusters, expected_ids[:2]), prompts,
+    )
+
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+    assert report["counts"]["AI_CALLS"] == 2
+    assert prompts[1]["repair_cluster_ids"] == expected_ids[:2]
+    assert set(prompts[1]["required_output"]["clusters_item_required"]) == set(cli.AI_CLUSTER_REQUIRED_FIELDS)
+    assert set(prompts[1]["repair_row_template"]) == set(cli.AI_CLUSTER_REQUIRED_FIELDS)
 
 
 def test_partial_repair_replaces_only_invalid_field_row(cli_env, tmp_path, monkeypatch):
@@ -2442,6 +2530,17 @@ def test_workflow_preserves_bounded_paths_only():
     # Should not upload raw payloads, secrets, etc
     assert "REDDIT_CLIENT" not in text or "secrets.REDDIT_CLIENT" in text
     assert "raw" not in text.lower() or "raw_deploy" not in text.lower()
+
+
+def test_workflow_dispatch_uses_selected_ref_and_blocks_branch_publication():
+    workflow_path = WORKSPACE_ROOT / ".github" / "workflows" / "librecare-discovery.yml"
+    text = workflow_path.read_text(encoding="utf-8")
+
+    assert "ref: ${{ github.sha }}" in text
+    assert not any(line.strip() == "ref: master" for line in text.splitlines())
+    assert "github.ref_name != 'master' && inputs.publish_top3" in text
+    assert "publish_top3=true is forbidden for non-master" in text
+    assert "github.ref_name == 'master' && inputs.publish_top3" in text
 
 
 def _v15_item(cli, text, source, family="github_community", language="en", concept="stale_or_missing_readings", role="developer_community"):
