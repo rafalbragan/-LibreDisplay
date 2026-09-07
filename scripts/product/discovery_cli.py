@@ -2068,51 +2068,15 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
-def _prepare_ai_repair_context(clusters: list[dict], original_payload: dict) -> dict:
-    authoritative_cluster_ids = [str(cluster["cluster_id"]) for cluster in clusters]
-    authoritative_id_set = set(authoritative_cluster_ids)
-    previous_rows = original_payload.get("clusters") if isinstance(original_payload, dict) else None
-    previous_rows = previous_rows if isinstance(previous_rows, list) else []
-    id_counts: dict[str, int] = {}
-    for row in previous_rows:
-        if isinstance(row, dict):
-            cluster_id = str(row.get("cluster_id") or "")
-            id_counts[cluster_id] = id_counts.get(cluster_id, 0) + 1
-
-    allowed_fields = (
-        "cluster_id", "classification", "persona", "problem_statement", "problem_statement_pl",
-        "evidence_summary", "source_diversity_summary", "current_librecare_match", "solvability",
-        "impact_score", "frequency_score", "evidence_score", "solvability_score", "novelty_score",
-        "effort_score", "confidence", "counterargument", "candidate_recommendation",
-    )
-    previous_valid_rows_advisory = []
-    for row in previous_rows:
-        if not isinstance(row, dict):
-            continue
-        cluster_id = str(row.get("cluster_id") or "")
-        if cluster_id not in authoritative_id_set or id_counts.get(cluster_id) != 1:
-            continue
-        bounded_row = {}
-        for key in allowed_fields:
-            if key not in row:
-                continue
-            value = row[key]
-            if isinstance(value, str):
-                bounded_row[key] = _truncate_text(value, MAX_CACHED_EXCERPT_LENGTH)
-            elif value is None or isinstance(value, (bool, int, float)):
-                bounded_row[key] = value
-        previous_valid_rows_advisory.append(bounded_row)
-
-    return {
-        "authoritative_cluster_ids": authoritative_cluster_ids,
-        "previous_valid_rows_advisory": previous_valid_rows_advisory,
-    }
-
-
-def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors: list[str], original_payload: dict, model: str) -> str:
+def build_ai_repair_prompt(
+    run_id: str,
+    repair_clusters: list[dict],
+    preserved_cluster_ids: list[str],
+    model: str,
+) -> str:
     """Build a bounded repair prompt for schema and evidence-grounding failures."""
     compact = []
-    for c in clusters:
+    for c in repair_clusters:
         compact.append(
             {
                 "cluster_id": c["cluster_id"],
@@ -2128,14 +2092,14 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
             }
         )
 
-    repair_context = _prepare_ai_repair_context(clusters, original_payload)
+    repair_cluster_ids = [str(cluster["cluster_id"]) for cluster in repair_clusters]
     payload = {
         "task": "Repair LibreCare AI cluster analysis. SCHEMA AND EVIDENCE-GROUNDING REPAIR ONLY.",
         "run_id": run_id,
         "model": model,
-        "instruction": "Use ONLY authoritative_cluster_ids from the deterministic cluster context. Return exactly one row for every authoritative ID and no other IDs. Previous AI cluster_id values are untrusted and must be ignored. Regenerate missing analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
-        "validation_errors": validation_errors[:10],  # Show first 10 errors
-        **repair_context,
+        "instruction": "Use ONLY repair_cluster_ids from the deterministic repair cluster context. Return exactly one row for every repair ID and no other IDs. Do not return preserved cluster rows. Previous AI cluster_id values are untrusted and must be ignored. Regenerate each required analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
+        "repair_cluster_ids": repair_cluster_ids,
+        "preserved_cluster_ids": preserved_cluster_ids,
         "score_requirements": {
             "impact_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
             "frequency_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
@@ -2146,13 +2110,11 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
         },
         "constraints": [
             "Return JSON object with 'clusters' array only.",
-            "The deterministic clusters and authoritative_cluster_ids are the only authoritative identity source.",
-            "Return exactly one row per authoritative_cluster_id: no unknown IDs, duplicates, or omissions.",
-            "Previous AI cluster_id values are untrusted; do not copy them unless they identify a unique previous_valid_rows_advisory row and belong to authoritative_cluster_ids.",
-            "If previous AI identity conflicts with authoritative_cluster_ids, authoritative_cluster_ids always win.",
+            "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
+            "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
+            "Previous AI cluster_id values are untrusted and must not define repair identity.",
             "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
-            "Preserve valid analytical intent from previous_valid_rows_advisory when useful; regenerate every missing row from deterministic cluster context.",
-            "Fix ONLY the schema or evidence-grounding violations listed in validation_errors.",
+            "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
             "For multiple evidence items, problem_statement must contain only their common denominator; source-specific details belong only in evidence_summary.",
             "problem_statement_pl must express exactly the same grounded meaning without additional claims.",
@@ -2383,6 +2345,39 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     if missing_cluster_ids:
         errors.append(f"AI output missing clusters: {sorted(missing_cluster_ids)}")
     return not errors, errors
+
+
+def _partition_reusable_ai_rows(payload: dict, clusters: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+    """Partition normalized untrusted rows using authoritative IDs and singleton validation."""
+    entries = payload.get("clusters") if isinstance(payload, dict) else None
+    entries = entries if isinstance(entries, list) else []
+    id_counts: dict[str, int] = {}
+    candidates_by_id: dict[str, dict] = {}
+    for row in entries:
+        if not isinstance(row, dict):
+            continue
+        cluster_id = str(row.get("cluster_id") or "")
+        id_counts[cluster_id] = id_counts.get(cluster_id, 0) + 1
+        candidates_by_id[cluster_id] = row
+
+    reusable_rows_by_id: dict[str, dict] = {}
+    repair_clusters = []
+    for cluster in clusters:
+        cluster_id = str(cluster["cluster_id"])
+        candidate = candidates_by_id.get(cluster_id)
+        reusable = False
+        if candidate is not None and id_counts.get(cluster_id) == 1:
+            reusable, _ = validate_ai_output({"clusters": [candidate]}, [cluster])
+        if reusable:
+            reusable_rows_by_id[cluster_id] = candidate
+        else:
+            repair_clusters.append(cluster)
+    return reusable_rows_by_id, repair_clusters
+
+
+def _compose_ai_payload(clusters: list[dict], rows_by_id: dict[str, dict]) -> dict:
+    """Compose rows in deterministic authoritative cluster order."""
+    return {"clusters": [rows_by_id[str(cluster["cluster_id"])] for cluster in clusters]}
 
 
 def apply_governance(cluster: dict, ai_row: dict) -> dict:
@@ -2815,23 +2810,42 @@ def run_discovery(
     governed_rows = []
     if clusters and ai_payload:
         valid, ai_errors = validate_ai_output(ai_payload, clusters)
-        if not valid and ai_mode == "copilot" and ai_calls < 2:
-            # First validation failed; attempt one schema repair
-            try:
-                repair_prompt = build_ai_repair_prompt(run_id, clusters, ai_errors, ai_payload, model=ai_model)
-                repair_raw = run_copilot_json(repair_prompt, model=ai_model)
-                ai_calls += 1
-                # Parse repaired output
+        if not valid:
+            reusable_rows_by_id, repair_clusters = _partition_reusable_ai_rows(ai_payload, clusters)
+            if not repair_clusters:
+                ai_payload = _compose_ai_payload(clusters, reusable_rows_by_id)
+                valid, ai_errors = validate_ai_output(ai_payload, clusters)
+            elif ai_mode == "copilot" and ai_calls < 2:
+                # Repair only missing, invalid, or ambiguous authoritative rows.
                 try:
-                    ai_payload = extract_json_object(repair_raw)
-                    ai_payload = normalize_ai_output(ai_payload)
-                    valid, ai_errors = validate_ai_output(ai_payload, clusters)
+                    preserved_cluster_ids = [
+                        str(cluster["cluster_id"])
+                        for cluster in clusters
+                        if str(cluster["cluster_id"]) in reusable_rows_by_id
+                    ]
+                    repair_prompt = build_ai_repair_prompt(
+                        run_id, repair_clusters, preserved_cluster_ids, model=ai_model,
+                    )
+                    repair_raw = run_copilot_json(repair_prompt, model=ai_model)
+                    ai_calls += 1
+                    try:
+                        repair_payload = normalize_ai_output(extract_json_object(repair_raw))
+                        repair_valid, ai_errors = validate_ai_output(repair_payload, repair_clusters)
+                        if repair_valid:
+                            repaired_rows_by_id = {
+                                str(row["cluster_id"]): row for row in repair_payload["clusters"]
+                            }
+                            merged_rows_by_id = {**reusable_rows_by_id, **repaired_rows_by_id}
+                            ai_payload = _compose_ai_payload(clusters, merged_rows_by_id)
+                            valid, ai_errors = validate_ai_output(ai_payload, clusters)
+                        else:
+                            valid = False
+                    except Exception as exc:  # noqa: BLE001
+                        ai_errors = [f"AI repair output parse failed: {exc}"]
+                        valid = False
                 except Exception as exc:  # noqa: BLE001
-                    errors.append(f"AI repair output parse failed: {exc}")
+                    ai_errors = [f"AI repair call failed: {exc}"]
                     valid = False
-            except Exception as exc:  # noqa: BLE001
-                errors.append(f"AI repair call failed: {exc}")
-                valid = False
 
         if not valid:
             status = "FAILED"
