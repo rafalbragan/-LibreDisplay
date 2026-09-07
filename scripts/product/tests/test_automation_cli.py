@@ -1071,6 +1071,13 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertEqual(first, second)
 		self.assertFalse(self.read_json(output_file)["changed"])
 
+	def test_narrative_requirement_reference_without_marker_is_unrelated(self):
+		pr = {
+			"title": "product: harden implementation PR tracking safety",
+			"body": "Bot incorrectly linked PR #20 to REQ-0003; this hotfix restores IMP-REQ-0003.",
+		}
+		self.assertEqual((None, None, None), self.cli.resolve_explicit_pr_target(pr))
+
 	def test_fork_pr_with_explicit_req_fails_closed_with_zero_mutation(self):
 		event = {
 			"action": "opened",

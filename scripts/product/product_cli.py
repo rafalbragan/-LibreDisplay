@@ -1259,8 +1259,11 @@ def sync_requirement_handoff(
 
 
 def find_requirement_for_pr(pr: dict) -> tuple[Path | None, dict | None]:
-    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_ids = sorted(set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", text)))
+    title = str(pr.get("title", ""))
+    body = str(pr.get("body", ""))
+    req_ids = set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", title))
+    req_ids.update(re.findall(r"<!--\s*LIBRECARE_REQUIREMENT_ID:\s*(REQ-\d{4})\s*-->", body))
+    req_ids = sorted(req_ids)
     if len(req_ids) == 1:
         return load_requirement_by_id(req_ids[0])
     return None, None

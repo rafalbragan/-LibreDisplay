@@ -180,8 +180,9 @@ jobs:
         with:
           script: |
             const pr = context.payload.pull_request || {};
-            const text = `${pr.title || ''}\n${pr.body || ''}`;
-            const ids = [...new Set(text.match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [])];
+            const titleIds = (pr.title || '').match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [];
+            const markerIds = [...(pr.body || '').matchAll(/<!--\s*LIBRECARE_(?:REQUIREMENT|BUG)_ID:\s*((?:REQ|BUG)-\d{4})\s*-->/g)].map(m => m[1]);
+            const ids = [...new Set([...titleIds, ...markerIds])];
             const sameRepo = pr.head?.repo?.full_name === context.payload.repository?.full_name;
             const headRef = pr.head?.ref || '';
             const baseRef = pr.base?.ref || '';
@@ -262,8 +263,9 @@ jobs:
               repo: context.repo.repo,
               pull_number: Number(linked[0].number),
             });
-            const text = `${pr.title || ''}\n${pr.body || ''}`;
-            const ids = [...new Set(text.match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [])];
+            const titleIds = (pr.title || '').match(/(?<![0-9A-Za-z_-])(?:REQ|BUG)-\d{4}(?![0-9A-Za-z_-])/g) || [];
+            const markerIds = [...(pr.body || '').matchAll(/<!--\s*LIBRECARE_(?:REQUIREMENT|BUG)_ID:\s*((?:REQ|BUG)-\d{4})\s*-->/g)].map(m => m[1]);
+            const ids = [...new Set([...titleIds, ...markerIds])];
             const sameRepo = pr.head?.repo?.full_name === context.payload.repository?.full_name;
             const safe = pr.state === 'open' && sameRepo && ids.length === 1 && pr.head.ref !== 'master' && pr.head.ref !== pr.base.ref;
             core.setOutput('safe', safe ? 'true' : 'false');

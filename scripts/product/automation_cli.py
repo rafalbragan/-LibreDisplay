@@ -570,9 +570,14 @@ GITHUB_CLIENT_FACTORY = GitHubClient
 
 def resolve_explicit_pr_target(pr: dict) -> tuple[str | None, Path | None, dict | None]:
     """Resolve only one explicit canonical REQ/BUG identifier from PR text."""
-    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_ids = sorted(set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", text)))
-    bug_ids = sorted(set(re.findall(r"(?<![0-9A-Za-z_-])BUG-\d{4}(?![0-9A-Za-z_-])", text)))
+    title = str(pr.get("title", ""))
+    body = str(pr.get("body", ""))
+    req_ids = set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", title))
+    req_ids.update(re.findall(r"<!--\s*LIBRECARE_REQUIREMENT_ID:\s*(REQ-\d{4})\s*-->", body))
+    bug_ids = set(re.findall(r"(?<![0-9A-Za-z_-])BUG-\d{4}(?![0-9A-Za-z_-])", title))
+    bug_ids.update(re.findall(r"<!--\s*LIBRECARE_BUG_ID:\s*(BUG-\d{4})\s*-->", body))
+    req_ids = sorted(req_ids)
+    bug_ids = sorted(bug_ids)
     if len(req_ids) + len(bug_ids) != 1:
         return None, None, None
     if req_ids:
