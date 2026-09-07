@@ -259,6 +259,36 @@ CONCEPT_INTENT_FACETS = {
     "notification_customization": {"notification_customization"},
 }
 
+CANONICAL_CONCEPT_STATEMENTS = {
+    "stale_or_missing_readings": ("Glucose readings can be missing, delayed, or stale.", "Odczyty glukozy mogą być niedostępne, opóźnione lub nieaktualne."),
+    "alerts_not_firing": ("Glucose alerts may fail to activate.", "Alerty glukozy mogą się nie uruchamiać."),
+    "false_or_repeated_alerts": ("Glucose alerts can be false or repeat unnecessarily.", "Alerty glukozy mogą być fałszywe lub niepotrzebnie się powtarzać."),
+    "signal_loss_disconnect": ("The sensor/app connection can be lost or become unstable.", "Połączenie sensora z aplikacją może zostać utracone lub stać się niestabilne."),
+    "caregiver_remote_monitoring": ("Remote glucose monitoring for caregivers can be unavailable or unreliable.", "Zdalne monitorowanie glukozy przez opiekunów może być niedostępne lub zawodne."),
+    "glucose_sharing_delay_or_failure": ("Shared glucose readings can be delayed, missing, or unavailable.", "Udostępniane odczyty glukozy mogą być opóźnione, niedostępne lub nie docierać."),
+    "sensor_activation_connection_failure": ("A sensor may fail to activate or connect.", "Aktywacja lub połączenie sensora może się nie powieść."),
+    "sensor_expiry_notification": ("Sensor expiry notifications may be missing or inadequate.", "Powiadomienia o wygaśnięciu sensora mogą być niedostępne lub niewystarczające."),
+    "phone_os_compatibility": ("Phone or operating-system compatibility can disrupt glucose monitoring.", "Problemy ze zgodnością telefonu lub systemu operacyjnego mogą zakłócać monitorowanie glukozy."),
+    "watch_widget_glanceability": ("Current glucose information may not be visible at a glance on a watch.", "Aktualna informacja o glukozie może nie być widoczna na pierwszy rzut oka na zegarku."),
+    "history_reports_statistics": ("Glucose history, reports, or statistics can be missing or incomplete.", "Historia, raporty lub statystyki glukozy mogą być niedostępne lub niepełne."),
+    "notification_customization": ("Glucose notifications may not offer sufficient customization.", "Powiadomienia dotyczące glukozy mogą nie zapewniać wystarczających możliwości dostosowania."),
+}
+
+CANONICAL_FACET_STATEMENTS = {
+    ("stale_or_missing_readings", "missing_data"): ("Glucose readings may be missing or fail to arrive.", "Odczyty glukozy mogą być niedostępne lub nie docierać."),
+    ("stale_or_missing_readings", "stale_data"): ("Glucose readings can stop updating or remain stale.", "Odczyty glukozy mogą przestać się aktualizować lub pozostać nieaktualne."),
+    ("stale_or_missing_readings", "delay"): ("Glucose readings can arrive late.", "Odczyty glukozy mogą docierać z opóźnieniem."),
+    ("false_or_repeated_alerts", "false_alert"): ("Glucose alerts can be false.", "Alerty glukozy mogą być fałszywe."),
+    ("false_or_repeated_alerts", "repeated_alert"): ("Glucose alerts can repeat unnecessarily.", "Alerty glukozy mogą niepotrzebnie się powtarzać."),
+    ("signal_loss_disconnect", "signal_loss"): ("The sensor signal can be lost.", "Sygnał sensora może zostać utracony."),
+    ("signal_loss_disconnect", "disconnect"): ("The sensor/app connection can be lost or become unstable.", "Połączenie sensora z aplikacją może zostać utracone lub stać się niestabilne."),
+    ("signal_loss_disconnect", "connection_failure"): ("The sensor/app connection can fail.", "Połączenie sensora z aplikacją może się nie powieść."),
+    ("glucose_sharing_delay_or_failure", "delay"): ("Shared glucose readings can arrive late.", "Udostępniane odczyty glukozy mogą docierać z opóźnieniem."),
+    ("glucose_sharing_delay_or_failure", "sharing_failure"): ("Glucose sharing can fail.", "Udostępnianie danych o glukozie może nie działać."),
+    ("sensor_activation_connection_failure", "activation_failure"): ("A sensor may fail to activate.", "Aktywacja sensora może się nie powieść."),
+    ("sensor_activation_connection_failure", "sensor_connection_failure"): ("A sensor may fail to connect.", "Połączenie sensora może się nie powieść."),
+}
+
 CONCEPT_CONTEXT_PATTERNS = {
     "stale_or_missing_readings": r"\b(?:glucose|cgm|libre|dexcom|readings?|odczyt\w*|glukoz\w*|cukr\w*|messwert\w*|lectures?|lecturas?)\b",
     "caregiver_remote_monitoring": r"\b(?:caregiver|family|share|opiekun\w*|rodzin\w*|udostępn\w*)\b",
@@ -740,10 +770,20 @@ def resolve_cluster_ids_with_registry(
     excluded_weak_or_noise = 0
 
     for cluster in clusters:
-        cluster_key = str(cluster.get("canonical_problem_key") or canonical_problem_key(str(cluster.get("normalized_problem") or "")))
+        cluster_key = str(cluster.get("canonical_problem_key") or "")
         cluster["canonical_problem_key"] = cluster_key
         persona = str(cluster.get("persona_candidate") or "unknown")
         module = str(cluster.get("module_candidate") or "unknown")
+        canonical_fp = str(cluster.get("canonical_problem_fingerprint") or "")
+        if not canonical_fp and cluster_key:
+            canonical_fp = hashlib.sha256(cluster_key.encode("utf-8")).hexdigest()[:16]
+            cluster["canonical_problem_fingerprint"] = canonical_fp
+
+        if not cluster.get("canonical_grounding_safe", True) or not cluster_key or not canonical_fp:
+            cluster["identity_ambiguous"] = True
+            cluster["identity_ambiguous_candidates"] = []
+            excluded_weak_or_noise += 1
+            continue
 
         scored = []
         for entry in entries:
@@ -792,7 +832,7 @@ def resolve_cluster_ids_with_registry(
         entry = {
             "cluster_id": cluster_id,
             "canonical_problem_key": _truncate_text(cluster_key, 220),
-            "problem_fingerprint": str((cluster.get("fingerprints") or [""])[0]),
+            "problem_fingerprint": canonical_fp,
             "persona": _truncate_text(persona, 80),
             "module": _truncate_text(module, 120),
             "created_at": now_iso,
@@ -1527,60 +1567,69 @@ def dedupe_items(items: list[dict]) -> tuple[list[dict], dict]:
     return out, stats
 
 
-def _cluster_representative_item(items: list[dict]) -> dict:
-    return sorted(
-        items,
-        key=lambda item: (
-            str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or ""),
-            str(item.get("canonical_url") or ""),
-            str(item.get("problem_statement") or ""),
-        ),
-    )[0]
-
-
 def _stable_cluster_id_from_items(items: list[dict]) -> str:
-    material = _cluster_canonical_problem_key(items)
+    material = str(_canonical_cluster_grounding(items).get("canonical_problem_key") or "")
     if not material:
-        representative = _cluster_representative_item(items)
-        material = "|".join(
-            [
-                str(representative.get("canonical_problem_key") or canonical_problem_key(str(representative.get("problem_statement") or ""))),
-                str(representative.get("canonical_url") or ""),
-                str(representative.get("source_family") or ""),
-            ]
-        )
+        signatures = []
+        for item in items:
+            concept_id = str(item.get("concept_id") or "unclassified")
+            language = str(item.get("language") or "unknown")
+            text = f"{item.get('problem_statement') or ''}. {item.get('excerpt') or ''}"
+            facets = problem_intent_facets(text, language, concept_id) & CONCEPT_INTENT_FACETS.get(concept_id, set())
+            signatures.append(f"{concept_id}:{','.join(sorted(facets)) or 'none'}")
+        material = "unsafe|" + "|".join(sorted(set(signatures)))
     digest = hashlib.sha1(material.encode("utf-8")).hexdigest()[:12].upper()
     return f"DISC-{digest}"
 
 
-def _cluster_canonical_problem_key(items: list[dict]) -> str:
-    token_counts: dict[str, int] = {}
-    item_count = 0
-    for item in items:
-        tokens = set(_canonical_problem_tokens(str(item.get("problem_statement") or ""), str(item.get("language") or "unknown")))
-        if not tokens:
-            continue
-        item_count += 1
-        for token in tokens:
-            token_counts[token] = token_counts.get(token, 0) + 1
-    if not token_counts:
-        return ""
-    threshold = max(1, (item_count + 1) // 2)
-    anchors = sorted([token for token, count in token_counts.items() if count >= threshold])
-    if not anchors:
-        anchors = sorted(token_counts.keys())
-    return " ".join(anchors)
+def _canonical_cluster_grounding(items: list[dict]) -> dict:
+    """Derive bounded cluster meaning only from the existing concept/facet taxonomy."""
+    concepts = sorted(set(str(item.get("concept_id") or "unclassified") for item in items))
+    topics = sorted(set(str(item.get("topic_id") or "unclassified") for item in items))
+    if len(concepts) != 1 or concepts[0] not in CANONICAL_CONCEPT_STATEMENTS:
+        return {
+            "canonical_grounding_safe": False,
+            "canonical_grounding_reason": "No single supported Discovery concept",
+            "canonical_problem_statement": "",
+            "canonical_problem_statement_pl": "",
+            "canonical_problem_key": "",
+            "canonical_problem_fingerprint": "",
+            "shared_intent_facets": [],
+        }
 
-
-def _shared_intent_facets(items: list[dict]) -> list[str]:
-    """Return only existing intent facets supported by every evidence item."""
-    facets_by_item = []
+    concept_id = concepts[0]
+    facet_sets = []
     for item in items:
-        concept_id = str(item.get("concept_id") or "unclassified")
         language = str(item.get("language") or "unknown")
         evidence_text = f"{item.get('problem_statement') or ''}. {item.get('excerpt') or ''}"
-        facets_by_item.append(problem_intent_facets(evidence_text, language, concept_id))
-    return sorted(set.intersection(*facets_by_item)) if facets_by_item else []
+        facet_sets.append(problem_intent_facets(evidence_text, language, concept_id) & CONCEPT_INTENT_FACETS[concept_id])
+    shared_facets = sorted(set.intersection(*facet_sets)) if facet_sets else []
+    if len(items) > 1 and facet_sets and all(facet_sets) and not shared_facets:
+        return {
+            "canonical_grounding_safe": False,
+            "canonical_grounding_reason": "Evidence has distinct intent facets without a shared facet",
+            "canonical_problem_statement": "",
+            "canonical_problem_statement_pl": "",
+            "canonical_problem_key": "",
+            "canonical_problem_fingerprint": "",
+            "shared_intent_facets": [],
+        }
+
+    statements = CANONICAL_CONCEPT_STATEMENTS[concept_id]
+    if len(shared_facets) == 1:
+        statements = CANONICAL_FACET_STATEMENTS.get((concept_id, shared_facets[0]), statements)
+    topic_id = topics[0] if len(topics) == 1 else "mixed"
+    facet_material = ",".join(shared_facets) if shared_facets else "concept"
+    canonical_key = f"concept:{concept_id}|topic:{topic_id}|facets:{facet_material}"
+    return {
+        "canonical_grounding_safe": True,
+        "canonical_grounding_reason": "Shared Discovery concept and intent facets",
+        "canonical_problem_statement": statements[0],
+        "canonical_problem_statement_pl": statements[1],
+        "canonical_problem_key": canonical_key,
+        "canonical_problem_fingerprint": hashlib.sha256(canonical_key.encode("utf-8")).hexdigest()[:16],
+        "shared_intent_facets": shared_facets,
+    }
 
 
 def _structured_evidence_items(cluster: dict) -> list[dict]:
@@ -1592,7 +1641,7 @@ def _structured_evidence_items(cluster: dict) -> list[dict]:
             "problem_statement": _truncate_text(str(item.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH),
             "excerpt": _truncate_text(str(item.get("excerpt") or ""), MAX_CACHED_EXCERPT_LENGTH),
         }
-        for item in (cluster.get("raw_items") or [])[:6]
+        for item in sorted(cluster.get("raw_items") or [], key=lambda row: (str(row.get("source_identity") or row.get("source_name") or "unknown"), str(row.get("canonical_url") or "")))[:6]
     ]
 
 
@@ -1676,7 +1725,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
     out = []
     for raw in clusters:
         c_items = raw["items"]
-        representative = _cluster_representative_item(c_items)
+        grounding = _canonical_cluster_grounding(c_items)
         problem_fps = sorted(
             set(
                 str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
@@ -1688,9 +1737,9 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         if existing_clusters:
             reused_cluster_id = _reuse_existing_cluster_id(
                 {
-                    "normalized_problem": representative.get("problem_statement", ""),
-                    "persona_candidate": representative.get("persona", ""),
-                    "module_candidate": representative.get("module", ""),
+                    "normalized_problem": grounding.get("canonical_problem_statement", ""),
+                    "persona_candidate": "unknown",
+                    "module_candidate": "unknown",
                 },
                 existing_clusters,
             )
@@ -1708,17 +1757,20 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
 
         persona_counts: dict[str, int] = {}
+        mode_counts: dict[str, int] = {}
         module_counts: dict[str, int] = {}
         for it in c_items:
             persona = str(it.get("persona", "unknown"))
+            mode = str(it.get("mode", persona))
             module = str(it.get("module", "unknown"))
             persona_counts[persona] = persona_counts.get(persona, 0) + 1
+            mode_counts[mode] = mode_counts.get(mode, 0) + 1
             module_counts[module] = module_counts.get(module, 0) + 1
 
         persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+        mode = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
         module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        normalized_problem = _truncate_text(str(representative.get("problem_statement") or ""), MAX_CACHED_PROBLEM_LENGTH)
-        cluster_problem_key = _cluster_canonical_problem_key(c_items) or canonical_problem_key(normalized_problem)
+        normalized_problem = str(grounding.get("canonical_problem_statement") or "")
         evidence_count = len(c_items)
         identity_count = len(source_identities)
         family_count = len(source_families)
@@ -1740,8 +1792,9 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
             {
                 "cluster_id": cluster_id,
                 "normalized_problem": normalized_problem,
-                "canonical_problem_key": cluster_problem_key,
+                **grounding,
                 "persona_candidate": persona,
+                "mode_candidate": mode,
                 "module_candidate": module,
                 "evidence_items": evidence,
                 "source_urls": urls,
@@ -1756,7 +1809,6 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
                 "evidence_roles": evidence_roles,
                 "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
                 "topic_id": topics[0] if len(topics) == 1 else "mixed",
-                "shared_intent_facets": _shared_intent_facets(c_items),
                 "evidence_tier": evidence_tier,
                 "quality_gate_passes": quality_gate,
                 "genuine_problem_signal": genuine_problem,
@@ -1838,22 +1890,30 @@ def load_foundation_index() -> dict:
 
 
 def match_cluster_to_foundation(cluster: dict, foundation: dict) -> dict:
-    problem = str(cluster.get("normalized_problem") or "")
+    problem_candidates = {
+        str(cluster.get("canonical_problem_statement") or cluster.get("normalized_problem") or "").strip(),
+        *(str(item.get("problem_statement") or "").strip() for item in (cluster.get("raw_items") or [])),
+    }
+    problem_candidates.discard("")
+
+    def best_similarity(text: str) -> float:
+        return max((_text_similarity(problem, text) for problem in sorted(problem_candidates)), default=0.0)
+
     best_req = (0.0, None)
     for req in foundation["requirements"]:
-        score = _text_similarity(problem, req["text"])
+        score = best_similarity(req["text"])
         if score > best_req[0]:
             best_req = (score, req)
 
     best_cap = (0.0, None)
     for cap in foundation["capabilities"]:
-        score = _text_similarity(problem, cap)
+        score = best_similarity(cap)
         if score > best_cap[0]:
             best_cap = (score, cap)
 
     best_dec = (0.0, None)
     for dec in foundation["decisions"]:
-        score = _text_similarity(problem, f"{dec['subject']} {dec['decision']}")
+        score = best_similarity(f"{dec['subject']} {dec['decision']}")
         if score > best_dec[0]:
             best_dec = (score, dec)
 
@@ -1913,6 +1973,9 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
             {
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
+                "canonical_problem_statement": c.get("canonical_problem_statement", ""),
+                "canonical_problem_statement_pl": c.get("canonical_problem_statement_pl", ""),
+                "canonical_problem_key": c.get("canonical_problem_key", ""),
                 "persona_candidate": c["persona_candidate"],
                 "module_candidate": c["module_candidate"],
                 "independent_source_family_count": c["independent_source_family_count"],
@@ -2009,6 +2072,8 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
             {
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
+                "canonical_problem_statement": c.get("canonical_problem_statement", ""),
+                "canonical_problem_statement_pl": c.get("canonical_problem_statement_pl", ""),
                 "persona_candidate": c["persona_candidate"],
                 "module_candidate": c["module_candidate"],
                 "concept_id": c.get("concept_id", "unclassified"),
@@ -2274,6 +2339,9 @@ def apply_governance(cluster: dict, ai_row: dict) -> dict:
     out = dict(ai_row)
     match = cluster.get("foundation_match", {})
 
+    out["problem_statement"] = str(cluster.get("canonical_problem_statement") or cluster.get("normalized_problem") or "")
+    out["problem_statement_pl"] = str(cluster.get("canonical_problem_statement_pl") or out.get("problem_statement_pl") or "")
+
     if match.get("best_capability_score", 0.0) >= 0.68:
         out["classification"] = "VALIDATED_CAPABILITY"
 
@@ -2397,7 +2465,9 @@ def create_observations_from_clusters(clusters: list[dict], run_id: str) -> list
             continue
 
         cid = cluster["cluster_id"]
-        fp = cluster["fingerprints"][0] if cluster.get("fingerprints") else ""
+        fp = str(cluster.get("canonical_problem_fingerprint") or "")
+        if not fp:
+            continue
         if cid in existing_cluster_ids or (fp and fp in existing_fp):
             continue
 
@@ -2409,14 +2479,14 @@ def create_observations_from_clusters(clusters: list[dict], run_id: str) -> list
             "source_type": first.get("source_type", "community"),
             "source_reference": cluster["source_urls"][0] if cluster.get("source_urls") else "",
             "persona": cluster.get("persona_candidate", "unknown"),
-            "mode": first.get("mode", cluster.get("persona_candidate", "unknown")),
+            "mode": cluster.get("mode_candidate", cluster.get("persona_candidate", "unknown")),
             "module": cluster.get("module_candidate", "unknown"),
             "type": first.get("type", "usability"),
             "severity": first.get("severity", "medium"),
             "frequency": first.get("frequency", "unknown"),
             "confidence": first.get("confidence", "medium"),
             "evidence": cluster.get("evidence_items", [])[:3] or [cluster.get("normalized_problem", "")],
-            "problem_statement": cluster.get("normalized_problem", ""),
+            "problem_statement": cluster.get("canonical_problem_statement", cluster.get("normalized_problem", "")),
             "status": "new",
             "cluster_id": cid,
             "problem_fingerprint": fp,
@@ -2448,7 +2518,7 @@ def build_inbox_issue_body(entry: dict, marker: str) -> str:
         cluster.get("module_candidate", "Inne / nie wiem"),
         "",
         "### Co zauważyłeś(-aś) / czego potrzebujesz?",
-        governed.get("problem_statement", ""),
+        cluster.get("canonical_problem_statement_pl") or cluster.get("canonical_problem_statement") or governed.get("problem_statement", ""),
         "",
         "### Dlaczego to ważne?",
         f"Discovery score: {entry['score']}/100. {governed.get('candidate_recommendation', '')}" + safety_prefix,
@@ -2659,8 +2729,8 @@ def run_discovery(
                     "cluster_id": c["cluster_id"],
                     "classification": cls,
                     "persona": c["persona_candidate"],
-                    "problem_statement": c["normalized_problem"],
-                    "problem_statement_pl": c["normalized_problem"] if "pl" in c.get("languages", []) else "Problem wymaga przeglądu Product Ownera.",
+                    "problem_statement": c.get("canonical_problem_statement", c["normalized_problem"]),
+                    "problem_statement_pl": c.get("canonical_problem_statement_pl", "Problem wymaga przeglądu Product Ownera."),
                     "evidence_summary": _safe_excerpt("; ".join(c["evidence_items"]), 160),
                     "source_diversity_summary": f"{c.get('evidence_item_count', c['source_count'])} items / {c.get('independent_source_identity_count', 0)} identities / {c['independent_source_family_count']} families",
                     "current_librecare_match": _foundation_match_summary(c.get("foundation_match", {})),
@@ -2753,9 +2823,9 @@ def run_discovery(
                 "rank": idx + 1,
                 "score": row["score"],
                 "cluster_id": row["cluster"]["cluster_id"],
-                "problem": row["governed"].get("problem_statement"),
-                "problem_statement": row["governed"].get("problem_statement"),
-                "problem_statement_pl": row["governed"].get("problem_statement_pl"),
+                "problem": row["cluster"].get("canonical_problem_statement"),
+                "problem_statement": row["cluster"].get("canonical_problem_statement"),
+                "problem_statement_pl": row["cluster"].get("canonical_problem_statement_pl"),
                 "persona": row["governed"].get("persona"),
                 "classification": row["governed"].get("classification"),
                 "evidence_count": len(row["cluster"].get("evidence_items", [])),
@@ -2790,7 +2860,7 @@ def run_discovery(
         report_watchlist.append({
             "cluster_id": cluster["cluster_id"], "score": row["score"], "evidence_tier": "WEAK",
             "concept_id": cluster.get("concept_id"), "topic_id": cluster.get("topic_id"),
-            "problem_statement": row["governed"].get("problem_statement"), "problem_statement_pl": row["governed"].get("problem_statement_pl"),
+            "problem_statement": cluster.get("canonical_problem_statement"), "problem_statement_pl": cluster.get("canonical_problem_statement_pl"),
             "languages": cluster.get("languages", []), "source_identities": cluster.get("source_identities", []),
             "source_families": cluster.get("source_families", []), "evidence_item_count": cluster.get("evidence_item_count", 0),
             "why_promising": "Deterministic user-facing problem signal passed quality filtering.",
