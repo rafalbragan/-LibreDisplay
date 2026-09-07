@@ -306,10 +306,13 @@ def upsert_impl(record: dict) -> dict:
     path = impl_path(record["implementation_id"])
     if path.exists():
         existing = read_json(path)
+        merged = dict(existing)
         for key, value in record.items():
             if value is not None or key not in existing:
-                existing[key] = value
-        record = existing
+                merged[key] = value
+        if merged == existing:
+            return existing
+        record = merged
     record["updated_at"] = now_iso()
     write_json(path, record)
     return record
@@ -565,27 +568,88 @@ class GitHubClient:
 GITHUB_CLIENT_FACTORY = GitHubClient
 
 
+def resolve_explicit_pr_target(pr: dict) -> tuple[str | None, Path | None, dict | None]:
+    """Resolve only one explicit canonical REQ/BUG identifier from PR text."""
+    title = str(pr.get("title", ""))
+    body = str(pr.get("body", ""))
+    req_ids = set(re.findall(r"(?<![0-9A-Za-z_-])REQ-\d{4}(?![0-9A-Za-z_-])", title))
+    req_ids.update(re.findall(r"<!--\s*LIBRECARE_REQUIREMENT_ID:\s*(REQ-\d{4})\s*-->", body))
+    bug_ids = set(re.findall(r"(?<![0-9A-Za-z_-])BUG-\d{4}(?![0-9A-Za-z_-])", title))
+    bug_ids.update(re.findall(r"<!--\s*LIBRECARE_BUG_ID:\s*(BUG-\d{4})\s*-->", body))
+    req_ids = sorted(req_ids)
+    bug_ids = sorted(bug_ids)
+    if len(req_ids) + len(bug_ids) != 1:
+        return None, None, None
+    if req_ids:
+        path, record = find_requirement(req_ids[0])
+        return ("REQUIREMENT", path, record) if record is not None else (None, None, None)
+    path, record = find_bug(bug_ids[0])
+    return ("BUG", path, record) if record is not None else (None, None, None)
+
+
+def is_safe_pr_head(event: dict) -> bool:
+    pr = event.get("pull_request") or {}
+    repository = event.get("repository") or {}
+    head = pr.get("head") or {}
+    base = pr.get("base") or {}
+    head_repo = head.get("repo") or {}
+    head_ref = str(head.get("ref") or "")
+    return bool(
+        pr.get("state") == "open"
+        and head_repo.get("full_name") == repository.get("full_name")
+        and head_ref
+        and head_ref != "master"
+        and head_ref != str(base.get("ref") or "")
+    )
+
+
 def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
     event = read_json(Path(event_file))
     pr = event.get("pull_request")
     if not isinstance(pr, dict):
         print("SKIP: not a pull_request payload")
         return 0
-    text = "\n".join([str(pr.get("title", "")), str(pr.get("body", ""))])
-    req_match = re.search(r"REQ-[0-9A-Za-z._-]+", text)
-    bug_match = re.search(r"BUG-[0-9A-Za-z._-]+", text)
-    if req_match:
-        req_path, req = find_requirement(req_match.group(0))
-        if req is None:
-            print("SKIP: no canonical requirement found")
-            return 0
+    if event.get("action") == "closed" or pr.get("state") == "closed" or pr.get("merged"):
+        print("SKIP: closed pull request state is advisory only")
+        return 0
+    if not is_safe_pr_head(event):
+        print("SKIP: pull request head is forked or targets an unsafe branch")
+        return 0
+    entity, target_path, target = resolve_explicit_pr_target(pr)
+    if entity is None or target_path is None or target is None:
+        print("SKIP: no single explicit canonical REQ/BUG reference in PR")
+        return 0
+
+    tracked_pr = {
+        "number": int(pr["number"]),
+        "url": pr.get("html_url"),
+        "head_ref": (pr.get("head") or {}).get("ref"),
+        "state": pr.get("state"),
+    }
+    if entity == "REQUIREMENT":
+        req_path, req = target_path, target
         impl = req.get("implementation") or {}
         pr_info = impl.get("implementation_pr") or {}
-        pr_info.update({"number": int(pr["number"]), "url": pr.get("html_url"), "head_ref": (pr.get("head") or {}).get("ref"), "state": pr.get("state"), "updated_at": now_iso()})
+        existing_impl = read_json(impl_path(f"IMP-{req['id']}")) if impl_path(f"IMP-{req['id']}").exists() else {}
+        unchanged = (
+            all(pr_info.get(key) == value for key, value in tracked_pr.items())
+            and impl.get("implementation_status") == "PR_READY"
+            and existing_impl.get("pull_request_number") == tracked_pr["number"]
+            and existing_impl.get("pull_request_url") == tracked_pr["url"]
+            and existing_impl.get("branch") == tracked_pr["head_ref"]
+            and existing_impl.get("status") == "READY_FOR_HUMAN_REVIEW"
+        )
+        if unchanged:
+            summary = {"entity": "REQUIREMENT", "req_id": req["id"], "status": "PR_READY", "pr_number": tracked_pr["number"], "pr_url": tracked_pr["url"], "originating_inbox_issue_number": impl.get("source_inbox_issue_number") or req.get("source_github_issue_number"), "changed": False}
+            if output_file:
+                write_json(Path(output_file), summary)
+            else:
+                print(json.dumps(summary, ensure_ascii=False))
+            return 0
+        pr_info.update(tracked_pr)
+        pr_info["updated_at"] = now_iso()
         impl["implementation_pr"] = pr_info
-        impl["implementation_status"] = "MERGED" if pr.get("merged") else "PR_READY"
-        if pr.get("merged"):
-            impl["validation_state"] = "VALIDATION_PENDING"
+        impl["implementation_status"] = "PR_READY"
         req["implementation"] = impl
         save_requirement(req_path, req)
         ensure_req_impl(req)
@@ -594,29 +658,40 @@ def cmd_track_pr(event_file: str, output_file: str | None = None) -> int:
             "pull_request_number": int(pr["number"]),
             "pull_request_url": pr.get("html_url"),
             "branch": (pr.get("head") or {}).get("ref"),
-            "status": "VALIDATION_PENDING" if pr.get("merged") else "READY_FOR_HUMAN_REVIEW",
-            "validation_state": "VALIDATION_PENDING" if pr.get("merged") else impl.get("validation_state", "PENDING"),
+            "status": "READY_FOR_HUMAN_REVIEW",
+            "validation_state": impl.get("validation_state", "PENDING"),
         })
-        summary = {"entity": "REQUIREMENT", "req_id": req["id"], "status": impl["implementation_status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": impl.get("source_inbox_issue_number") or req.get("source_github_issue_number")}
-    elif bug_match:
-        bug_path, bug = find_bug(bug_match.group(0))
-        if bug is None:
-            print("SKIP: no canonical bug found")
+        summary = {"entity": "REQUIREMENT", "req_id": req["id"], "status": impl["implementation_status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": impl.get("source_inbox_issue_number") or req.get("source_github_issue_number"), "changed": True}
+    else:
+        bug_path, bug = target_path, target
+        current_pr = bug.get("pull_request") or {}
+        bug_pr = {"number": tracked_pr["number"], "url": tracked_pr["url"], "branch": tracked_pr["head_ref"], "state": tracked_pr["state"]}
+        existing_impl = read_json(impl_path(f"IMP-{bug['bug_id']}")) if impl_path(f"IMP-{bug['bug_id']}").exists() else {}
+        unchanged = (
+            all(current_pr.get(key) == value for key, value in bug_pr.items())
+            and bug.get("status") == "PR_READY"
+            and existing_impl.get("pull_request_number") == tracked_pr["number"]
+            and existing_impl.get("pull_request_url") == tracked_pr["url"]
+            and existing_impl.get("branch") == tracked_pr["head_ref"]
+            and existing_impl.get("status") == "READY_FOR_HUMAN_REVIEW"
+        )
+        if unchanged:
+            summary = {"entity": "BUG", "bug_id": bug["bug_id"], "status": "PR_READY", "pr_number": tracked_pr["number"], "pr_url": tracked_pr["url"], "originating_inbox_issue_number": bug.get("source_issue_number"), "changed": False}
+            if output_file:
+                write_json(Path(output_file), summary)
+            else:
+                print(json.dumps(summary, ensure_ascii=False))
             return 0
-        bug["pull_request"] = {"number": int(pr["number"]), "url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "state": pr.get("state"), "updated_at": now_iso()}
+        bug_pr["updated_at"] = now_iso()
+        bug["pull_request"] = bug_pr
         bug["pull_request_number"] = int(pr["number"])
         bug["pull_request_url"] = pr.get("html_url")
-        bug["status"] = "VALIDATION_PENDING" if pr.get("merged") else "PR_READY"
-        if pr.get("merged"):
-            bug["validation_state"] = "VALIDATION_PENDING"
+        bug["status"] = "PR_READY"
         bug["updated_at"] = now_iso()
         write_json(bug_path, bug)
         ensure_bug_impl(bug)
-        upsert_impl({"implementation_id": f"IMP-{bug['bug_id']}", "pull_request_number": int(pr["number"]), "pull_request_url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "status": "VALIDATION_PENDING" if pr.get("merged") else "READY_FOR_HUMAN_REVIEW"})
-        summary = {"entity": "BUG", "bug_id": bug["bug_id"], "status": bug["status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": bug.get("source_issue_number")}
-    else:
-        print("SKIP: no REQ/BUG reference in PR")
-        return 0
+        upsert_impl({"implementation_id": f"IMP-{bug['bug_id']}", "pull_request_number": int(pr["number"]), "pull_request_url": pr.get("html_url"), "branch": (pr.get("head") or {}).get("ref"), "status": "READY_FOR_HUMAN_REVIEW"})
+        summary = {"entity": "BUG", "bug_id": bug["bug_id"], "status": bug["status"], "pr_number": int(pr["number"]), "pr_url": pr.get("html_url"), "originating_inbox_issue_number": bug.get("source_issue_number"), "changed": True}
     if output_file:
         write_json(Path(output_file), summary)
     else:
