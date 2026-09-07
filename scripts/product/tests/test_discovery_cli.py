@@ -1,4 +1,5 @@
 import importlib.util
+import hashlib
 import json
 import shutil
 import tempfile
@@ -74,31 +75,37 @@ def run_discovery_with_ai_file(cli, sources_file, ai_file, *, publish=False, rep
 
 
 def build_ai_payload_for_clusters(clusters, classification="PRODUCT_PROBLEM", solvability="APP"):
-    payload = {"clusters": []}
+    payload = {"analyses": {}}
     for c in clusters:
-        payload["clusters"].append(
-            {
-                "cluster_id": c["cluster_id"],
-                "classification": classification,
-                "persona": c["persona_candidate"],
-                "problem_statement": c["normalized_problem"],
-                "problem_statement_pl": "Zwięzły opis problemu po polsku",
-                "evidence_summary": "Evidence summary",
-                "source_diversity_summary": "Diverse sources",
-                "current_librecare_match": "AI summary",
-                "solvability": solvability,
-                "impact_score": 4,
-                "frequency_score": 4,
-                "evidence_score": 4,
-                "solvability_score": 4,
-                "novelty_score": 3,
-                "effort_score": 2,
-                "confidence": "high",
-                "counterargument": "Counter point",
-                "candidate_recommendation": "Recommend human review",
-            }
-        )
+        payload["analyses"][_analysis_slot(c)] = {
+            "classification": classification,
+            "persona": c["persona_candidate"],
+            "problem_statement": c["normalized_problem"],
+            "problem_statement_pl": "Zwięzły opis problemu po polsku",
+            "evidence_summary": "Evidence summary",
+            "source_diversity_summary": "Diverse sources",
+            "current_librecare_match": "AI summary",
+            "solvability": solvability,
+            "impact_score": 4,
+            "frequency_score": 4,
+            "evidence_score": 4,
+            "solvability_score": 4,
+            "novelty_score": 3,
+            "effort_score": 2,
+            "confidence": "high",
+            "counterargument": "Counter point",
+            "candidate_recommendation": "Recommend human review",
+        }
     return payload
+
+
+def _analysis_slot(cluster):
+    digest = hashlib.sha256(str(cluster["cluster_id"]).encode("utf-8")).hexdigest()[:16]
+    return f"slot_{digest}"
+
+
+def _analysis(payload, cluster):
+    return payload["analyses"][_analysis_slot(cluster)]
 
 
 def _prepare_clusters(cli, sources_file):
@@ -653,7 +660,7 @@ def test_cluster_id_stable_for_input_order_permutation(cli_env):
     c = {
         "canonical_url": "https://example.com/c",
         "content_hash": cli.content_hash("C"),
-        "problem_statement": "Caregiver struggles to detect stale readings quickly today",
+        "problem_statement": "Caregiver has trouble detecting stale readings quickly",
         "source_name": "source_c",
         "source_identity": "source_c",
         "source_family": "official_vendor",
@@ -730,30 +737,7 @@ def _write_custom_sources(path: Path, texts: list[str]) -> None:
 
 
 def _write_ai_payload(root: Path, clusters):
-    payload = {"clusters": []}
-    for cluster in clusters:
-        payload["clusters"].append(
-            {
-                "cluster_id": cluster["cluster_id"],
-                "classification": "PRODUCT_PROBLEM",
-                "persona": cluster["persona_candidate"],
-                "problem_statement": cluster["normalized_problem"],
-                "problem_statement_pl": "Zwięzły opis problemu po polsku",
-                "evidence_summary": "Evidence summary",
-                "source_diversity_summary": "Diverse sources",
-                "current_librecare_match": "AI summary",
-                "solvability": "APP",
-                "impact_score": 4,
-                "frequency_score": 4,
-                "evidence_score": 4,
-                "solvability_score": 4,
-                "novelty_score": 3,
-                "effort_score": 2,
-                "confidence": "high",
-                "counterargument": "Counter point",
-                "candidate_recommendation": "Recommend human review",
-            }
-        )
+    payload = build_ai_payload_for_clusters(clusters)
     path = root / "ai.json"
     path.write_text(json.dumps(payload), encoding="utf-8")
     return path
@@ -836,7 +820,7 @@ def test_cluster_id_stable_for_input_order_permutation(cli_env):
     c = {
         "canonical_url": "https://example.com/c",
         "content_hash": cli.content_hash("C"),
-        "problem_statement": "Caregiver has trouble detecting stale readings quickly",
+        "problem_statement": "Caregiver struggles to detect stale readings quickly today",
         "source_name": "source_c",
         "source_identity": "source_c",
         "source_family": "official_vendor",
@@ -1231,7 +1215,7 @@ def test_copilot_programmatic_invocation_and_json_parse(cli_env, monkeypatch):
 
     class FakeResult:
         returncode = 0
-        stdout = '{"clusters": []}'
+        stdout = '{"analyses": {}}'
         stderr = ""
 
     seen = {}
@@ -1249,7 +1233,7 @@ def test_copilot_programmatic_invocation_and_json_parse(cli_env, monkeypatch):
     assert "--model=gpt-5.4-mini" in cmd
     assert "--deny-tool=write" in cmd
     assert "--deny-tool=shell" in cmd
-    assert parsed == {"clusters": []}
+    assert parsed == {"analyses": {}}
 
 
 def test_top3_eligible_selection_filters_before_limit(cli_env, fixture_sources, monkeypatch):
@@ -1273,19 +1257,6 @@ def test_top3_eligible_selection_filters_before_limit(cli_env, fixture_sources, 
 
     clusters = _prepare_clusters(cli, fixture_sources)
     payload = build_ai_payload_for_clusters(clusters, classification="PRODUCT_PROBLEM")
-    if len(payload["clusters"]) < 6:
-        for idx in range(6 - len(payload["clusters"])):
-            payload["clusters"].append({
-                **payload["clusters"][0],
-                "cluster_id": f"DISC-TEST-{idx}",
-                "problem_statement": f"Problem {idx}",
-            })
-
-    payload["clusters"][0]["classification"] = "INCONCLUSIVE"
-    payload["clusters"][1]["classification"] = "TEST_COVERAGE_GAP"
-    payload["clusters"][2]["classification"] = "PRODUCT_PROBLEM"
-    payload["clusters"][3]["classification"] = "PRODUCT_OPPORTUNITY"
-    payload["clusters"][4]["classification"] = "SAFETY_GAP"
 
     ai_file = root / "ai.json"
     ai_file.write_text(json.dumps(payload), encoding="utf-8")
@@ -1393,7 +1364,7 @@ def test_product_foundation_match_is_deterministic_source_of_truth(cli_env, fixt
     cli, root = cli_env
     clusters = _prepare_clusters(cli, fixture_sources)
     ai_payload = build_ai_payload_for_clusters(clusters, classification="PRODUCT_PROBLEM")
-    for row in ai_payload["clusters"]:
+    for row in ai_payload["analyses"].values():
         row["current_librecare_match"] = "AI CONTRADICTION"
     ai_file = root / "ai.json"
     ai_file.write_text(json.dumps(ai_payload), encoding="utf-8")
@@ -1802,9 +1773,8 @@ def test_normalize_ai_output_normalizes_scores(cli_env):
     """normalize_ai_output should normalize all score fields."""
     cli, _ = cli_env
     payload = {
-        "clusters": [
-            {
-                "cluster_id": "DISC-ABC123",
+        "analyses": {
+            "slot_test": {
                 "impact_score": 4.0,  # integral float -> should become 4
                 "frequency_score": "3",  # numeric string -> should become 3
                 "evidence_score": 4,
@@ -1812,15 +1782,15 @@ def test_normalize_ai_output_normalizes_scores(cli_env):
                 "novelty_score": 2,
                 "effort_score": 2,
             }
-        ]
+        }
     }
     normalized = cli.normalize_ai_output(payload)
-    assert normalized["clusters"][0]["impact_score"] == 4
-    assert normalized["clusters"][0]["frequency_score"] == 3
-    assert normalized["clusters"][0]["evidence_score"] == 4
-    assert normalized["clusters"][0]["solvability_score"] == 4.5  # Should stay invalid for validation to catch
-    assert normalized["clusters"][0]["novelty_score"] == 2
-    assert normalized["clusters"][0]["effort_score"] == 2
+    assert normalized["analyses"]["slot_test"]["impact_score"] == 4
+    assert normalized["analyses"]["slot_test"]["frequency_score"] == 3
+    assert normalized["analyses"]["slot_test"]["evidence_score"] == 4
+    assert normalized["analyses"]["slot_test"]["solvability_score"] == 4.5
+    assert normalized["analyses"]["slot_test"]["novelty_score"] == 2
+    assert normalized["analyses"]["slot_test"]["effort_score"] == 2
 
 
 def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixture_sources):
@@ -1828,7 +1798,7 @@ def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixt
     cli, _ = cli_env
     clusters = _prepare_clusters(cli, fixture_sources)
     payload = build_ai_payload_for_clusters(clusters)
-    payload["clusters"][0]["impact_score"] = True
+    _analysis(payload, clusters[0])["impact_score"] = True
 
     valid, errors = cli.validate_ai_output(payload, clusters)
     assert valid is False
@@ -1838,20 +1808,23 @@ def test_validate_ai_output_rejects_bool_score_in_complete_payload(cli_env, fixt
 def test_validator_rejects_each_authoritative_required_field_when_missing(cli_env, fixture_sources):
     cli, _ = cli_env
     cluster = _prepare_clusters(cli, fixture_sources)[0]
-    complete_row = build_ai_payload_for_clusters([cluster])["clusters"][0]
+    complete_row = _analysis(build_ai_payload_for_clusters([cluster]), cluster)
 
-    for field in cli.AI_CLUSTER_REQUIRED_FIELDS:
+    for field in cli.AI_ANALYSIS_REQUIRED_FIELDS:
         candidate = dict(complete_row)
         del candidate[field]
-        valid, errors = cli.validate_ai_output({"clusters": [candidate]}, [cluster])
+        valid, errors = cli.validate_ai_output({"analyses": {_analysis_slot(cluster): candidate}}, [cluster])
         assert valid is False, field
         assert any("missing fields" in error and field in error for error in errors), field
 
 
 def _run_discovery_with_two_ai_payloads(
-    cli, fixture_sources, monkeypatch, first_payload: dict, second_payload: dict, prompt_sink: list | None = None,
+    cli, fixture_sources, monkeypatch, first_payload, second_payload, prompt_sink: list | None = None,
 ):
-    ai_responses = [json.dumps(first_payload), json.dumps(second_payload)]
+    ai_responses = [
+        value if isinstance(value, str) else json.dumps(value)
+        for value in (first_payload, second_payload)
+    ]
     call_count = [0]
 
     def mock_run_copilot(prompt: str, model: str) -> str:
@@ -1976,25 +1949,29 @@ def _six_cluster_repair_sources(tmp_path):
 def _payload_for_cluster_ids(clusters, cluster_ids):
     wanted = set(cluster_ids)
     payload = build_ai_payload_for_clusters(clusters)
-    payload["clusters"] = [row for row in payload["clusters"] if row["cluster_id"] in wanted]
+    payload["analyses"] = {
+        _analysis_slot(cluster): _analysis(payload, cluster)
+        for cluster in clusters if cluster["cluster_id"] in wanted
+    }
     return payload
 
 
-def test_ai_repair_prompt_uses_only_authoritative_deterministic_cluster_ids(cli_env):
+def test_ai_repair_prompt_uses_only_authoritative_deterministic_slots(cli_env):
     cli, _ = cli_env
     clusters = _authoritative_repair_clusters()
 
     prompt = json.loads(cli.build_ai_repair_prompt(
-        "RUN-9-REGRESSION", [clusters[1]], ["DISC-AAAA", "DISC-CCCC"], "gpt-5.4-mini",
+        "RUN-14-REGRESSION", [clusters[1]], ["slot_a", "slot_c"], "gpt-5.4-mini",
     ))
     constraints = " ".join(prompt["constraints"])
 
-    assert prompt["repair_cluster_ids"] == ["DISC-BBBB"]
-    assert prompt["preserved_cluster_ids"] == ["DISC-AAAA", "DISC-CCCC"]
+    expected_slot = cli.analysis_slot_for_cluster_id("DISC-BBBB")
+    assert prompt["repair_analysis_slots"] == [expected_slot]
+    assert prompt["preserved_analysis_slots"] == ["slot_a", "slot_c"]
     assert [cluster["cluster_id"] for cluster in prompt["clusters"]] == ["DISC-BBBB"]
-    assert "previous ai cluster_id values are untrusted" in prompt["instruction"].lower()
-    assert "only authoritative identity source" in constraints.lower()
-    assert "exactly one row per repair_cluster_id" in constraints
+    assert prompt["clusters"][0]["analysis_slot"] == expected_slot
+    assert "python owns cluster identity" in prompt["instruction"].lower()
+    assert "one value per repair_analysis_slot" in constraints
     assert "validation_errors" not in prompt
     assert "previous_valid_rows_advisory" not in prompt
 
@@ -2006,38 +1983,37 @@ def test_initial_repair_and_validator_share_authoritative_contract(cli_env, fixt
     repair = json.loads(cli.build_ai_repair_prompt(
         "CONTRACT-PARITY", [clusters[0]], [], "gpt-5.4-mini",
     ))
-    authoritative_fields = list(cli.AI_CLUSTER_REQUIRED_FIELDS)
+    authoritative_fields = list(cli.AI_ANALYSIS_REQUIRED_FIELDS)
     initial_contract = initial["required_output"]
     repair_contract = repair["required_output"]
 
-    assert initial_contract["clusters_item_required"] == authoritative_fields
-    assert repair_contract["clusters_item_required"] == authoritative_fields
+    assert initial_contract["analysis_item_required"] == authoritative_fields
+    assert repair_contract["analysis_item_required"] == authoritative_fields
     assert initial_contract == repair_contract == cli._ai_output_contract()
     assert initial_contract["classification_enum"] == repair_contract["classification_enum"] == sorted(cli.CLASSIFICATIONS)
     assert initial_contract["solvability_enum"] == repair_contract["solvability_enum"] == sorted(cli.SOLVABILITY_VALUES)
     assert initial_contract["confidence_enum"] == repair_contract["confidence_enum"] == sorted(cli.CONFIDENCE_VALUES)
     assert list(initial_contract["score_fields"]) == list(repair_contract["score_fields"]) == list(cli.AI_SCORE_FIELDS)
-    initial_templates = initial["required_response_skeleton"]["clusters"]
-    assert [row["cluster_id"] for row in initial_templates] == [
-        cluster["cluster_id"] for cluster in clusters
-    ]
-    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in initial_templates)
-    repair_templates = repair["required_response_skeleton"]["clusters"]
+    assert "cluster_id" not in authoritative_fields
+    initial_templates = initial["required_response_skeleton"]["analyses"]
+    assert list(initial_templates) == [_analysis_slot(cluster) for cluster in clusters]
+    assert all(set(row) == set(authoritative_fields) for row in initial_templates.values())
+    repair_templates = repair["required_response_skeleton"]["analyses"]
     assert len(repair_templates) == 1
-    row_template = repair_templates[0]
+    row_template = next(iter(repair_templates.values()))
     assert list(row_template) == authoritative_fields
-    assert row_template["cluster_id"] == clusters[0]["cluster_id"]
+    assert "cluster_id" not in row_template
     assert all(row_template[field] == 0 for field in cli.AI_SCORE_FIELDS)
 
 
-def test_ai_repair_recovers_unknown_first_response_from_authoritative_ids(cli_env, tmp_path, monkeypatch):
+def test_ai_cluster_id_injection_cannot_redefine_identity(cli_env, tmp_path, monkeypatch):
     cli, _ = cli_env
     sources = _multi_cluster_repair_sources(tmp_path)
     clusters = _prepare_clusters(cli, sources)
     assert len(clusters) == 3
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][0]["cluster_id"] = "DISC-WRONG"
+    _analysis(first_invalid, clusters[0])["cluster_id"] = "DISC-WRONG"
     second_valid = _payload_for_cluster_ids(clusters, [expected_ids[0]])
     prompts = []
     governed_pairs = []
@@ -2054,22 +2030,24 @@ def test_ai_repair_recovers_unknown_first_response_from_authoritative_ids(cli_en
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == [expected_ids[0]]
-    assert prompts[1]["preserved_cluster_ids"] == expected_ids[1:]
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[0])]
+    assert prompts[1]["preserved_analysis_slots"] == [_analysis_slot(c) for c in clusters[1:]]
     assert [row["cluster_id"] for row in prompts[1]["clusters"]] == [expected_ids[0]]
     assert governed_pairs == [(cluster_id, cluster_id) for cluster_id in expected_ids]
     assert "DISC-WRONG" not in json.dumps(report)
 
 
-def test_ai_repair_recovers_duplicate_first_response_from_authoritative_ids(cli_env, tmp_path, monkeypatch):
+def test_first_unknown_slot_and_missing_slot_repairs_only_missing(cli_env, tmp_path, monkeypatch):
     cli, _ = cli_env
     sources = _multi_cluster_repair_sources(tmp_path)
     clusters = _prepare_clusters(cli, sources)
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     assert len(expected_ids) == 3
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][1]["cluster_id"] = expected_ids[0]
-    second_valid = _payload_for_cluster_ids(clusters, expected_ids[:2])
+    missing_slot = _analysis_slot(clusters[1])
+    unknown = first_invalid["analyses"].pop(missing_slot)
+    first_invalid["analyses"]["slot_unknown"] = unknown
+    second_valid = _payload_for_cluster_ids(clusters, [expected_ids[1]])
     prompts = []
 
     report = _run_discovery_with_two_ai_payloads(
@@ -2078,8 +2056,8 @@ def test_ai_repair_recovers_duplicate_first_response_from_authoritative_ids(cli_
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == expected_ids[:2]
-    assert prompts[1]["preserved_cluster_ids"] == [expected_ids[2]]
+    assert prompts[1]["repair_analysis_slots"] == [missing_slot]
+    assert prompts[1]["preserved_analysis_slots"] == [_analysis_slot(clusters[0]), _analysis_slot(clusters[2])]
 
 
 def test_ai_repair_regenerates_missing_first_response_from_authoritative_context(cli_env, tmp_path, monkeypatch):
@@ -2089,7 +2067,8 @@ def test_ai_repair_regenerates_missing_first_response_from_authoritative_context
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     assert len(expected_ids) == 3
     first_invalid = build_ai_payload_for_clusters(clusters)
-    missing_id = first_invalid["clusters"].pop()["cluster_id"]
+    missing_id = expected_ids[-1]
+    first_invalid["analyses"].pop(_analysis_slot(clusters[-1]))
     second_valid = _payload_for_cluster_ids(clusters, [missing_id])
     prompts = []
 
@@ -2099,8 +2078,8 @@ def test_ai_repair_regenerates_missing_first_response_from_authoritative_context
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == [missing_id]
-    assert prompts[1]["preserved_cluster_ids"] == expected_ids[:-1]
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[-1])]
+    assert prompts[1]["preserved_analysis_slots"] == [_analysis_slot(c) for c in clusters[:-1]]
     assert missing_id in {cluster["cluster_id"] for cluster in prompts[1]["clusters"]}
 
 
@@ -2125,8 +2104,8 @@ def test_run9_shape_repairs_only_missing_sixth_row_in_authoritative_order(cli_en
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == [expected_ids[5]]
-    assert prompts[1]["preserved_cluster_ids"] == expected_ids[:5]
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[5])]
+    assert prompts[1]["preserved_analysis_slots"] == [_analysis_slot(c) for c in clusters[:5]]
     assert [cluster["cluster_id"] for cluster in prompts[1]["clusters"]] == [expected_ids[5]]
     assert governed_ids == expected_ids
 
@@ -2136,15 +2115,15 @@ def test_run10_style_missing_fields_in_repair_fails_closed(cli_env, tmp_path, mo
     sources = _six_cluster_repair_sources(tmp_path)
     clusters = _prepare_clusters(cli, sources)
     first = build_ai_payload_for_clusters(clusters)
-    first["clusters"][0]["impact_score"] = 4.5
-    first["clusters"][1]["impact_score"] = 4.5
+    _analysis(first, clusters[0])["impact_score"] = 4.5
+    _analysis(first, clusters[1])["impact_score"] = 4.5
     repair_ids = [clusters[0]["cluster_id"], clusters[1]["cluster_id"]]
     incomplete_repair = _payload_for_cluster_ids(clusters, repair_ids)
     missing_fields = {
         "candidate_recommendation", "classification", "confidence", "counterargument",
         "current_librecare_match", "solvability", "source_diversity_summary",
     }
-    for row in incomplete_repair["clusters"]:
+    for row in incomplete_repair["analyses"].values():
         for field in missing_fields:
             del row[field]
 
@@ -2167,8 +2146,8 @@ def test_run10_style_complete_repair_succeeds(cli_env, tmp_path, monkeypatch):
     clusters = _prepare_clusters(cli, sources)
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     first = build_ai_payload_for_clusters(clusters)
-    first["clusters"][0]["impact_score"] = 4.5
-    first["clusters"][1]["impact_score"] = 4.5
+    _analysis(first, clusters[0])["impact_score"] = 4.5
+    _analysis(first, clusters[1])["impact_score"] = 4.5
     prompts = []
 
     report = _run_discovery_with_two_ai_payloads(
@@ -2178,11 +2157,11 @@ def test_run10_style_complete_repair_succeeds(cli_env, tmp_path, monkeypatch):
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == expected_ids[:2]
-    assert set(prompts[1]["required_output"]["clusters_item_required"]) == set(cli.AI_CLUSTER_REQUIRED_FIELDS)
-    repair_templates = prompts[1]["required_response_skeleton"]["clusters"]
-    assert [row["cluster_id"] for row in repair_templates] == expected_ids[:2]
-    assert all(set(row) == set(cli.AI_CLUSTER_REQUIRED_FIELDS) for row in repair_templates)
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(c) for c in clusters[:2]]
+    assert set(prompts[1]["required_output"]["analysis_item_required"]) == set(cli.AI_ANALYSIS_REQUIRED_FIELDS)
+    repair_templates = prompts[1]["required_response_skeleton"]["analyses"]
+    assert list(repair_templates) == [_analysis_slot(c) for c in clusters[:2]]
+    assert all(set(row) == set(cli.AI_ANALYSIS_REQUIRED_FIELDS) for row in repair_templates.values())
 
 
 def test_partial_repair_replaces_only_invalid_field_row(cli_env, tmp_path, monkeypatch):
@@ -2191,7 +2170,7 @@ def test_partial_repair_replaces_only_invalid_field_row(cli_env, tmp_path, monke
     clusters = _prepare_clusters(cli, sources)
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     first = build_ai_payload_for_clusters(clusters)
-    first["clusters"][3]["impact_score"] = 4.5
+    _analysis(first, clusters[3])["impact_score"] = 4.5
     second = _payload_for_cluster_ids(clusters, [expected_ids[3]])
     prompts = []
 
@@ -2199,20 +2178,19 @@ def test_partial_repair_replaces_only_invalid_field_row(cli_env, tmp_path, monke
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == [expected_ids[3]]
-    assert prompts[1]["preserved_cluster_ids"] == expected_ids[:3] + expected_ids[4:]
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[3])]
+    assert prompts[1]["preserved_analysis_slots"] == [_analysis_slot(c) for c in clusters[:3] + clusters[4:]]
 
 
-def test_extra_unknown_row_is_discarded_without_second_ai_call(cli_env, tmp_path, monkeypatch):
+def test_shuffled_analysis_keys_keep_authoritative_association(cli_env, tmp_path, monkeypatch):
     cli, _ = cli_env
     sources = _multi_cluster_repair_sources(tmp_path)
     clusters = _prepare_clusters(cli, sources)
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     first = build_ai_payload_for_clusters(clusters)
-    first["clusters"][0]["impact_score"] = "4"
-    unknown = dict(first["clusters"][0])
-    unknown["cluster_id"] = "DISC-WRONG"
-    first["clusters"].append(unknown)
+    for index, cluster in enumerate(clusters):
+        _analysis(first, cluster)["candidate_recommendation"] = f"marker-{index}"
+    first["analyses"] = dict(reversed(list(first["analyses"].items())))
     calls = []
 
     def mock_run_copilot(prompt: str, model: str) -> str:
@@ -2223,7 +2201,7 @@ def test_extra_unknown_row_is_discarded_without_second_ai_call(cli_env, tmp_path
     original_apply_governance = cli.apply_governance
     monkeypatch.setattr(cli, "run_copilot_json", mock_run_copilot)
     monkeypatch.setattr(cli, "apply_governance", lambda cluster, row: (
-        governed_rows.append((row["cluster_id"], row["impact_score"])), original_apply_governance(cluster, row)
+        governed_rows.append((row["cluster_id"], row["candidate_recommendation"])), original_apply_governance(cluster, row)
     )[1])
     report = cli.run_discovery(
         sources_file=sources, max_items_per_source=20, publish_top3_flag=False,
@@ -2236,12 +2214,10 @@ def test_extra_unknown_row_is_discarded_without_second_ai_call(cli_env, tmp_path
     assert report["counts"]["AI_CALLS"] == 1
     assert len(calls) == 1
     assert [cluster_id for cluster_id, _ in governed_rows] == expected_ids
-    assert governed_rows[0][1] == 4
-    assert isinstance(governed_rows[0][1], int)
-    assert "DISC-WRONG" not in json.dumps(report)
+    assert governed_rows == [(cluster_id, f"marker-{index}") for index, cluster_id in enumerate(expected_ids)]
 
 
-def test_second_partial_response_returning_preserved_id_fails_closed(cli_env, tmp_path, monkeypatch):
+def test_second_partial_response_returning_preserved_slot_fails_closed(cli_env, tmp_path, monkeypatch):
     cli, _ = cli_env
     sources = _six_cluster_repair_sources(tmp_path)
     clusters = _prepare_clusters(cli, sources)
@@ -2256,7 +2232,7 @@ def test_second_partial_response_returning_preserved_id_fails_closed(cli_env, tm
     assert report["top10"] == []
     assert report["counts"]["OBSERVATIONS_CREATED"] == 0
     assert report["counts"]["PRODUCT_INBOX_ACTIONS"] == 0
-    assert any(f"unknown cluster_id: {expected_ids[0]}" in error for error in report["errors"])
+    assert any(f"unknown analysis_slot: {_analysis_slot(clusters[0])}" in error for error in report["errors"])
 
 
 def test_second_partial_response_missing_one_of_two_targets_fails_closed(cli_env, tmp_path, monkeypatch):
@@ -2272,14 +2248,14 @@ def test_second_partial_response_missing_one_of_two_targets_fails_closed(cli_env
 
     report = _run_discovery_with_two_ai_payloads(cli, sources, monkeypatch, first, second, prompts)
 
-    assert prompts[1]["repair_cluster_ids"] == [expected_ids[3], expected_ids[5]]
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[3]), _analysis_slot(clusters[5])]
     assert report["status"] == "FAILED"
     assert report["counts"]["AI_CALLS"] == 2
     assert report["top10"] == []
     assert report["counts"]["OBSERVATIONS_CREATED"] == 0
     assert report["counts"]["PRODUCT_INBOX_ACTIONS"] == 0
-    assert any("AI payload cluster count mismatch: expected 2, got 1" in error for error in report["errors"])
-    assert any(expected_ids[5] in error and "missing clusters" in error for error in report["errors"])
+    assert any("AI payload analysis count mismatch: expected 2, got 1" in error for error in report["errors"])
+    assert any(_analysis_slot(clusters[5]) in error and "missing analysis slots" in error for error in report["errors"])
 
 
 def test_all_invalid_first_rows_repairs_all_clusters(cli_env, tmp_path, monkeypatch):
@@ -2288,7 +2264,7 @@ def test_all_invalid_first_rows_repairs_all_clusters(cli_env, tmp_path, monkeypa
     clusters = _prepare_clusters(cli, sources)
     expected_ids = [cluster["cluster_id"] for cluster in clusters]
     first = build_ai_payload_for_clusters(clusters)
-    for row in first["clusters"]:
+    for row in first["analyses"].values():
         row["confidence"] = "invalid"
     prompts = []
 
@@ -2298,8 +2274,8 @@ def test_all_invalid_first_rows_repairs_all_clusters(cli_env, tmp_path, monkeypa
 
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == expected_ids
-    assert prompts[1]["preserved_cluster_ids"] == []
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(c) for c in clusters]
+    assert prompts[1]["preserved_analysis_slots"] == []
 
 
 def test_ai_retry_on_first_validation_failure(cli_env, fixture_sources, monkeypatch):
@@ -2310,11 +2286,11 @@ def test_ai_retry_on_first_validation_failure(cli_env, fixture_sources, monkeypa
 
     # First response: invalid (4.5 for impact_score)
     first_ai_payload = build_ai_payload_for_clusters(clusters)
-    first_ai_payload["clusters"][0]["impact_score"] = 4.5  # Invalid
+    _analysis(first_ai_payload, clusters[0])["impact_score"] = 4.5
 
     # Second response: repaired
     second_ai_payload = _payload_for_cluster_ids(clusters, [clusters[0]["cluster_id"]])
-    second_ai_payload["clusters"][0]["impact_score"] = 4  # Valid
+    _analysis(second_ai_payload, clusters[0])["impact_score"] = 4
 
     ai_responses = [
         json.dumps(first_ai_payload),
@@ -2367,9 +2343,9 @@ def test_ai_fails_after_two_invalid_attempts(cli_env, fixture_sources, monkeypat
 
     # Both responses invalid
     invalid_payload = build_ai_payload_for_clusters(clusters)
-    invalid_payload["clusters"][0]["impact_score"] = 4.5  # Invalid
+    _analysis(invalid_payload, clusters[0])["impact_score"] = 4.5
     invalid_repair = _payload_for_cluster_ids(clusters, [clusters[0]["cluster_id"]])
-    invalid_repair["clusters"][0]["impact_score"] = 4.5
+    _analysis(invalid_repair, clusters[0])["impact_score"] = 4.5
 
     ai_file = root / "ai.json"
     ai_file.write_text(json.dumps(invalid_payload), encoding="utf-8")
@@ -2417,7 +2393,7 @@ def test_ai_repair_preserves_cluster_ids(cli_env, fixture_sources, monkeypatch):
     clusters = _prepare_clusters(cli, fixture_sources)
 
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][0]["impact_score"] = 4.5
+    _analysis(first_invalid, clusters[0])["impact_score"] = 4.5
 
     second_repaired = _payload_for_cluster_ids(clusters, [clusters[0]["cluster_id"]])
 
@@ -2456,22 +2432,23 @@ def test_ai_repair_preserves_cluster_ids(cli_env, fixture_sources, monkeypatch):
         assert row["cluster_id"].startswith("DISC-")
 
 
-def test_ai_repair_with_unknown_cluster_id_fails_closed(cli_env, fixture_sources, monkeypatch):
-    """Repair response with unknown cluster_id must fail closed."""
+def test_ai_repair_with_unknown_slot_fails_closed(cli_env, fixture_sources, monkeypatch):
     cli, _ = cli_env
     clusters = _prepare_clusters(cli, fixture_sources)
 
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][0]["cluster_id"] = "DISC-FIRST-WRONG"
+    _analysis(first_invalid, clusters[0])["impact_score"] = 4.5
 
     second_bad = _payload_for_cluster_ids(clusters, [clusters[0]["cluster_id"]])
-    second_bad["clusters"][0]["cluster_id"] = "DISC-UNKNOWN-ID"
+    analysis = second_bad["analyses"].pop(_analysis_slot(clusters[0]))
+    second_bad["analyses"]["slot_unknown"] = analysis
 
     report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
     assert report["status"] == "FAILED"
     assert report["counts"]["AI_CALLS"] == 2
     assert report["top10"] == []
-    assert any("unknown cluster_id: DISC-UNKNOWN-ID" in error for error in report["errors"])
+    assert any("unknown analysis_slot: slot_unknown" in error for error in report["errors"])
+    assert any("missing analysis slots" in error for error in report["errors"])
     assert len(report["created_observations"]) == 0
     assert len(report["top3_issue_actions"]) == 0
 
@@ -2482,9 +2459,9 @@ def test_ai_repair_with_missing_cluster_fails_closed(cli_env, fixture_sources, m
     clusters = _prepare_clusters(cli, fixture_sources)
 
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][0]["impact_score"] = 4.5
+    _analysis(first_invalid, clusters[0])["impact_score"] = 4.5
 
-    second_bad = {"clusters": []}
+    second_bad = {"analyses": {}}
 
     report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
     assert report["status"] == "FAILED"
@@ -2494,23 +2471,89 @@ def test_ai_repair_with_missing_cluster_fails_closed(cli_env, fixture_sources, m
     assert len(report["top3_issue_actions"]) == 0
 
 
-def test_ai_repair_with_duplicate_additional_cluster_fails_closed(cli_env, fixture_sources, monkeypatch):
-    """Repair response with duplicated/additional cluster row must fail closed."""
+def test_ai_repair_duplicate_slot_key_fails_closed(cli_env, fixture_sources, monkeypatch):
     cli, _ = cli_env
     clusters = _prepare_clusters(cli, fixture_sources)
 
     first_invalid = build_ai_payload_for_clusters(clusters)
-    first_invalid["clusters"][0]["impact_score"] = 4.5
+    _analysis(first_invalid, clusters[0])["impact_score"] = 4.5
 
     second_bad = _payload_for_cluster_ids(clusters, [clusters[0]["cluster_id"]])
-    second_bad["clusters"].append(dict(second_bad["clusters"][0]))
+    slot = _analysis_slot(clusters[0])
+    encoded = json.dumps(second_bad["analyses"][slot])
+    second_bad = '{"analyses":{"' + slot + '":' + encoded + ',"' + slot + '":' + encoded + '}}'
 
     report = _run_discovery_with_two_ai_payloads(cli, fixture_sources, monkeypatch, first_invalid, second_bad)
     assert report["status"] == "FAILED"
     assert report["counts"]["AI_CALLS"] == 2
     assert report["top10"] == []
+    assert any("Duplicate JSON object key" in error for error in report["errors"])
     assert len(report["created_observations"]) == 0
     assert len(report["top3_issue_actions"]) == 0
+
+
+def test_analysis_slots_are_stable_unique_and_collision_checked(cli_env, monkeypatch):
+    cli, _ = cli_env
+    clusters = _authoritative_repair_clusters()
+    first = cli.build_analysis_slot_map(clusters)
+    second = cli.build_analysis_slot_map(list(reversed(clusters)))
+
+    assert first == second
+    assert len(first) == len(clusters)
+    assert set(first.values()) == {cluster["cluster_id"] for cluster in clusters}
+    assert all(slot.startswith("slot_") and len(slot) == 21 for slot in first)
+
+    monkeypatch.setattr(cli, "analysis_slot_for_cluster_id", lambda _cluster_id: "slot_collision")
+    with pytest.raises(ValueError, match="Analysis slot collision"):
+        cli.build_analysis_slot_map(clusters)
+
+
+def test_duplicate_slot_key_in_first_response_repairs_all_without_heuristic_winner(
+    cli_env, tmp_path, monkeypatch,
+):
+    cli, _ = cli_env
+    sources = _multi_cluster_repair_sources(tmp_path)
+    clusters = _prepare_clusters(cli, sources)
+    payload = build_ai_payload_for_clusters(clusters)
+    slot = _analysis_slot(clusters[0])
+    encoded = json.dumps(payload["analyses"][slot])
+    other_pairs = ",".join(
+        f"{json.dumps(key)}:{json.dumps(value)}"
+        for key, value in payload["analyses"].items() if key != slot
+    )
+    duplicate_first = (
+        '{"analyses":{' + json.dumps(slot) + ':' + encoded + ','
+        + json.dumps(slot) + ':' + encoded + (',' + other_pairs if other_pairs else '') + '}}'
+    )
+    prompts = []
+
+    report = _run_discovery_with_two_ai_payloads(
+        cli, sources, monkeypatch, duplicate_first, build_ai_payload_for_clusters(clusters), prompts,
+    )
+
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+    assert report["counts"]["AI_CALLS"] == 2
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(cluster) for cluster in clusters]
+    assert prompts[1]["preserved_analysis_slots"] == []
+
+
+def test_model_analysis_contract_excludes_identity_and_python_attaches_exact_ids(cli_env):
+    cli, _ = cli_env
+    clusters = _authoritative_repair_clusters()
+    payload = build_ai_payload_for_clusters(clusters)
+
+    assert "cluster_id" not in cli.AI_ANALYSIS_REQUIRED_FIELDS
+    assert all("cluster_id" not in analysis for analysis in payload["analyses"].values())
+    valid, errors = cli.validate_ai_output(payload, clusters)
+    assert valid, errors
+
+    rows = cli._attach_authoritative_cluster_ids(clusters, payload)["clusters"]
+    assert [row["cluster_id"] for row in rows] == [cluster["cluster_id"] for cluster in clusters]
+
+    _analysis(payload, clusters[0])["cluster_id"] = "DISC-WRONG"
+    valid, errors = cli.validate_ai_output(payload, clusters)
+    assert valid is False
+    assert any("unexpected fields" in error and "cluster_id" in error for error in errors)
 
 
 def test_workflow_artifact_upload_with_if_always():
@@ -2730,7 +2773,7 @@ def test_v15_reddit_query_search_carries_language_and_concept(cli_env, monkeypat
         urls.append(url)
         return {"data": {"children": [{"data": {"title": "LibreLinkUp delayed readings for caregiver", "selftext": "Missing current data", "permalink": "/r/diabetes/comments/x/y", "created_utc": time.time()}}]}}
     monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
-    packs = {"concepts": [{"concept_id": "glucose_sharing_delay_or_failure", "topic_id": "caregiver", "queries": {"en": ["LibreLinkUp delayed readings"]}}]}
+    packs = {"concepts": [{"concept_id": "glucose_sharing_delay_or_failure", "topic_id": "caregiver", "queries": {"en": ["Libre delayed readings"]}}]}
     result = cli._collect_reddit_oauth({"name": "reddit", "family": "reddit", "subreddits": ["diabetes"], "max_queries": 1}, 1, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
     assert "/search?" in urls[0] and "/new?" not in urls[0]
     assert result.items[0]["language"] == "en"
@@ -2746,7 +2789,7 @@ def test_v15_github_search_bounds_and_no_pull_requests(cli_env, monkeypatch):
                  "updated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"), "pull_request": {}} for idx in range(100)]
     monkeypatch.setattr(cli, "_fetch_json", fake_fetch)
     packs = {"concepts": [{"concept_id": f"concept_{idx}", "topic_id": "topic", "queries": {"en": [f"query {idx}"]}} for idx in range(40)]}
-    items = cli._collect_github_issue_search({"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 48, "max_pages": 9}, 30, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
+    items = cli._collect_github_issue_search({"name": "gh", "family": "github_community", "repos": ["o/r"], "max_queries": 1, "max_pages": 2, "max_results_per_query": 10}, 7, 1, 1, cli.DiscoveryCache(Path("unused.json")), 1, packs, ["en"], 365)
     assert len(urls) == 2
     assert all("/repos/o/r/issues?" in url and "/search/issues" not in url for url in urls)
     assert items == []
@@ -2798,10 +2841,10 @@ def test_v15_query_pack_and_ai_safety_contract(cli_env):
 def test_v15_ai_requires_polish_problem_statement(cli_env):
     cli, _ = cli_env
     clusters = [{"cluster_id": "DISC-X"}]
-    payload = {"clusters": [{"cluster_id": "DISC-X", "classification": "PRODUCT_PROBLEM", "persona": "caregiver", "problem_statement": "Missing readings",
+    payload = {"analyses": {_analysis_slot(clusters[0]): {"classification": "PRODUCT_PROBLEM", "persona": "caregiver", "problem_statement": "Missing readings",
         "evidence_summary": "e", "source_diversity_summary": "s", "current_librecare_match": "m", "solvability": "APP",
         "impact_score": 1, "frequency_score": 1, "evidence_score": 1, "solvability_score": 1, "novelty_score": 1, "effort_score": 1,
-        "confidence": "medium", "counterargument": "c", "candidate_recommendation": "review"}]}
+        "confidence": "medium", "counterargument": "c", "candidate_recommendation": "review"}}}
     valid, errors = cli.validate_ai_output(payload, clusters)
     assert valid is False
     assert any("problem_statement_pl" in error for error in errors)
@@ -3516,7 +3559,7 @@ def test_ai_persona_cannot_override_unknown_evidence(cli_env):
     cli, _ = cli_env
     cluster = _run6_grounding_cluster(cli)
     payload = build_ai_payload_for_clusters([cluster])
-    payload["clusters"][0]["persona"] = "caregiver"
+    _analysis(payload, cluster)["persona"] = "caregiver"
     valid, errors = cli.validate_ai_output(payload, [cluster])
     assert valid is False
     assert any("persona must equal persona_candidate" in error for error in errors)
@@ -3537,7 +3580,7 @@ def test_ai_persona_override_uses_bounded_repair(cli_env, tmp_path, monkeypatch)
     source_path.write_text(json.dumps(sources), encoding="utf-8")
     clusters = _prepare_clusters(cli, source_path)
     invalid = build_ai_payload_for_clusters(clusters)
-    invalid["clusters"][0]["persona"] = "caregiver"
+    _analysis(invalid, clusters[0])["persona"] = "caregiver"
     repaired = build_ai_payload_for_clusters(clusters)
     responses = iter([json.dumps(invalid), json.dumps(repaired)])
     prompts = []
@@ -3552,8 +3595,8 @@ def test_ai_persona_override_uses_bounded_repair(cli_env, tmp_path, monkeypatch)
     )
     assert report["status"] in {"SUCCESS", "DEGRADED"}
     assert report["counts"]["AI_CALLS"] == 2
-    assert prompts[1]["repair_cluster_ids"] == [clusters[0]["cluster_id"]]
-    assert prompts[1]["preserved_cluster_ids"] == []
+    assert prompts[1]["repair_analysis_slots"] == [_analysis_slot(clusters[0])]
+    assert prompts[1]["preserved_analysis_slots"] == []
     assert "validation_errors" not in prompts[1]
     assert prompts[1]["clusters"][0]["persona_candidate"] == "unknown"
 
@@ -3600,7 +3643,7 @@ def test_unknown_cluster_rejects_unsupported_caregiver_statement(cli_env):
     )
     cluster = cli.cluster_items([item])[0]
     payload = build_ai_payload_for_clusters([cluster])
-    payload["clusters"][0].update({
+    _analysis(payload, cluster).update({
         "persona": "unknown",
         "problem_statement": "Caregiver does not receive current glucose values",
         "problem_statement_pl": "Opiekun nie otrzymuje aktualnych wartości glukozy",
@@ -3729,7 +3772,7 @@ def test_ai_overclaim_cannot_redefine_report_observation_registry_or_inbox(cli_e
     cli, root = cli_env
     cluster = _run6_grounding_cluster(cli)
     cluster["foundation_match"] = {}
-    ai = build_ai_payload_for_clusters([cluster])["clusters"][0]
+    ai = _analysis(build_ai_payload_for_clusters([cluster]), cluster)
     ai["problem_statement"] = "The connection between the sensor and the app is lost without clear notification."
     ai["problem_statement_pl"] = "Połączenie jest tracone bez jasnego powiadomienia."
     governed = cli.apply_governance(cluster, ai)
@@ -3783,8 +3826,8 @@ def test_run7_ai_overclaim_is_canonicalized_end_to_end(cli_env, tmp_path):
     source_path.write_text(json.dumps(sources), encoding="utf-8")
     cluster = _prepare_clusters(cli, source_path)[0]
     payload = build_ai_payload_for_clusters([cluster])
-    payload["clusters"][0]["problem_statement"] = "The connection between the sensor and the app is lost without clear notification."
-    payload["clusters"][0]["problem_statement_pl"] = "Połączenie jest tracone bez jasnego powiadomienia."
+    _analysis(payload, cluster)["problem_statement"] = "The connection between the sensor and the app is lost without clear notification."
+    _analysis(payload, cluster)["problem_statement_pl"] = "Połączenie jest tracone bez jasnego powiadomienia."
     ai_path = tmp_path / "run7-ai.json"
     ai_path.write_text(json.dumps(payload), encoding="utf-8")
 

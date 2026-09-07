@@ -100,8 +100,7 @@ AI_SCORE_FIELDS = (
     "novelty_score",
     "effort_score",
 )
-AI_CLUSTER_REQUIRED_FIELDS = (
-    "cluster_id",
+AI_ANALYSIS_REQUIRED_FIELDS = (
     "classification",
     "persona",
     "problem_statement",
@@ -1998,8 +1997,9 @@ def _ai_output_contract() -> dict:
     score_rule = "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)"
     return {
         "type": "object",
-        "required": ["clusters"],
-        "clusters_item_required": list(AI_CLUSTER_REQUIRED_FIELDS),
+        "required": ["analyses"],
+        "analyses_type": "object keyed by exact requested analysis_slot",
+        "analysis_item_required": list(AI_ANALYSIS_REQUIRED_FIELDS),
         "classification_enum": sorted(CLASSIFICATIONS),
         "solvability_enum": sorted(SOLVABILITY_VALUES),
         "confidence_enum": sorted(CONFIDENCE_VALUES),
@@ -2007,9 +2007,8 @@ def _ai_output_contract() -> dict:
     }
 
 
-def _ai_cluster_row_template(cluster_id: str) -> dict:
+def _ai_analysis_template() -> dict:
     text_placeholders = {
-        "cluster_id": cluster_id,
         "classification": "<allowed classification_enum value>",
         "persona": "<exact persona_candidate>",
         "problem_statement": "<concise English problem>",
@@ -2024,15 +2023,39 @@ def _ai_cluster_row_template(cluster_id: str) -> dict:
     }
     return {
         field: 0 if field in AI_SCORE_FIELDS else text_placeholders[field]
-        for field in AI_CLUSTER_REQUIRED_FIELDS
+        for field in AI_ANALYSIS_REQUIRED_FIELDS
     }
 
 
+def analysis_slot_for_cluster_id(cluster_id: str) -> str:
+    """Return an opaque stable model-visible slot for an application-owned cluster ID."""
+    digest = hashlib.sha256(cluster_id.encode("utf-8")).hexdigest()[:16]
+    return f"slot_{digest}"
+
+
+def build_analysis_slot_map(clusters: list[dict]) -> dict[str, str]:
+    """Build and collision-check the authoritative analysis-slot identity mapping."""
+    slots: dict[str, str] = {}
+    cluster_ids: set[str] = set()
+    for cluster in clusters:
+        cluster_id = str(cluster["cluster_id"])
+        if cluster_id in cluster_ids:
+            raise ValueError(f"Duplicate authoritative cluster_id: {cluster_id}")
+        cluster_ids.add(cluster_id)
+        slot = analysis_slot_for_cluster_id(cluster_id)
+        if slot in slots:
+            raise ValueError(f"Analysis slot collision: {slot}")
+        slots[slot] = cluster_id
+    return slots
+
+
 def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
+    slot_map = build_analysis_slot_map(clusters)
     compact = []
     for c in clusters:
         compact.append(
             {
+                "analysis_slot": analysis_slot_for_cluster_id(str(c["cluster_id"])),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2062,11 +2085,12 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "model": model,
         "required_output": _ai_output_contract(),
         "required_response_skeleton": {
-            "clusters": [_ai_cluster_row_template(str(cluster["cluster_id"])) for cluster in clusters],
+            "analyses": {slot: _ai_analysis_template() for slot in slot_map},
         },
         "constraints": [
             "Return JSON only.",
-            "Copy required_response_skeleton as the response shape: do not add, remove, duplicate, or reorder rows; never modify cluster_id; replace only the other placeholders with grounded analysis.",
+            "Copy required_response_skeleton as the response shape: return exactly one analysis value for every analysis_slot key and no other keys; replace only analysis placeholders with grounded analysis.",
+            "Do not include cluster_id inside an analysis value. Python owns identity through the deterministic analysis_slot mapping.",
             "Problem statement must describe problem, not solution.",
             "The output persona MUST exactly equal persona_candidate. If persona_candidate is unknown, persona MUST be unknown.",
             "For a cluster with multiple structured_evidence_items, problem_statement MUST state only the common denominator supported by every evidence item.",
@@ -2088,14 +2112,16 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
 def build_ai_repair_prompt(
     run_id: str,
     repair_clusters: list[dict],
-    preserved_cluster_ids: list[str],
+    preserved_analysis_slots: list[str],
     model: str,
 ) -> str:
     """Build a bounded repair prompt for schema and evidence-grounding failures."""
+    slot_map = build_analysis_slot_map(repair_clusters)
     compact = []
     for c in repair_clusters:
         compact.append(
             {
+                "analysis_slot": analysis_slot_for_cluster_id(str(c["cluster_id"])),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2109,26 +2135,26 @@ def build_ai_repair_prompt(
             }
         )
 
-    repair_cluster_ids = [str(cluster["cluster_id"]) for cluster in repair_clusters]
+    repair_analysis_slots = list(slot_map)
     payload = {
         "task": "Repair LibreCare AI cluster analysis. SCHEMA AND EVIDENCE-GROUNDING REPAIR ONLY.",
         "run_id": run_id,
         "model": model,
-        "instruction": "Use ONLY repair_cluster_ids from the deterministic repair cluster context. Return exactly one row for every repair ID and no other IDs. Do not return preserved cluster rows. Previous AI cluster_id values are untrusted and must be ignored. Regenerate each required analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
-        "repair_cluster_ids": repair_cluster_ids,
-        "preserved_cluster_ids": preserved_cluster_ids,
+        "instruction": "Use ONLY repair_analysis_slots from deterministic repair context. Return exactly one analysis for every repair slot and no other slots. Do not return preserved slots. Python owns cluster identity; never return cluster_id as analysis data and never map by position.",
+        "repair_analysis_slots": repair_analysis_slots,
+        "preserved_analysis_slots": preserved_analysis_slots,
         "required_output": _ai_output_contract(),
         "required_response_skeleton": {
-            "clusters": [_ai_cluster_row_template(cluster_id) for cluster_id in repair_cluster_ids],
+            "analyses": {slot: _ai_analysis_template() for slot in repair_analysis_slots},
         },
         "constraints": [
-            "Return JSON object with 'clusters' array only.",
-            "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
-            "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
-            "Previous AI cluster_id values are untrusted and must not define repair identity.",
-            "Copy required_response_skeleton as the response shape: do not add, remove, duplicate, or reorder rows; never modify cluster_id; replace only the other placeholders with grounded analysis.",
-            "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
-            "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
+            "Return a JSON object with an 'analyses' object only.",
+            "The deterministic repair analysis slots are the only model-visible identity keys for this response.",
+            "Return exactly one value per repair_analysis_slot: no preserved slots, unknown slots, duplicate keys, or omissions.",
+            "Do not include cluster_id inside any analysis value.",
+            "Copy required_response_skeleton as the response shape; JSON object key order is irrelevant.",
+            "Do not positionally map any analysis to deterministic cluster context.",
+            "Regenerate complete valid analyses only for repair_analysis_slots.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
             "For multiple evidence items, problem_statement must contain only their common denominator; source-specific details belong only in evidence_summary.",
             "problem_statement_pl must express exactly the same grounded meaning without additional claims.",
@@ -2169,18 +2195,37 @@ def run_copilot_json(prompt: str, model: str) -> str:
     return proc.stdout
 
 
+class DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _strict_json_object_pairs(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJsonKeyError(f"Duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _strict_json_loads(text: str) -> dict:
+    return json.loads(text, object_pairs_hook=_strict_json_object_pairs)
+
+
 def extract_json_object(raw: str) -> dict:
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
     try:
-        return json.loads(text)
+        return _strict_json_loads(text)
+    except DuplicateJsonKeyError:
+        raise
     except Exception:
         match = re.search(r"\{[\s\S]*\}", text)
         if not match:
             raise
-        return json.loads(match.group(0))
+        return _strict_json_loads(match.group(0))
 
 
 def normalize_ai_score(val) -> int | None:
@@ -2239,11 +2284,11 @@ def normalize_ai_output(payload: dict) -> dict:
     """Normalize AI output score fields deterministically. Returns modified payload."""
     if not isinstance(payload, dict):
         return payload
-    entries = payload.get("clusters")
-    if not isinstance(entries, list):
+    entries = payload.get("analyses")
+    if not isinstance(entries, dict):
         return payload
 
-    for entry in entries:
+    for entry in entries.values():
         if not isinstance(entry, dict):
             continue
         for key in AI_SCORE_FIELDS:
@@ -2261,40 +2306,40 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     errors = []
     if not isinstance(payload, dict):
         return False, ["AI payload is not a JSON object"]
-    entries = payload.get("clusters")
-    if not isinstance(entries, list):
-        return False, ["AI payload missing 'clusters' array"]
+    if set(payload) != {"analyses"}:
+        return False, ["AI payload must contain only the 'analyses' object"]
+    entries = payload.get("analyses")
+    if not isinstance(entries, dict):
+        return False, ["AI payload missing 'analyses' object"]
 
-    expected_ids = {c["cluster_id"] for c in clusters}
-    clusters_by_id = {c["cluster_id"]: c for c in clusters}
-    got_ids = set()
-    seen_ids: dict[str, int] = {}
-    required = set(AI_CLUSTER_REQUIRED_FIELDS)
+    slot_map = build_analysis_slot_map(clusters)
+    expected_slots = set(slot_map)
+    got_slots = set(entries)
+    clusters_by_id = {str(c["cluster_id"]): c for c in clusters}
+    required = set(AI_ANALYSIS_REQUIRED_FIELDS)
 
     if len(entries) != len(clusters):
-        errors.append(f"AI payload cluster count mismatch: expected {len(clusters)}, got {len(entries)}")
+        errors.append(f"AI payload analysis count mismatch: expected {len(clusters)}, got {len(entries)}")
 
-    for idx, row in enumerate(entries):
+    for slot, row in entries.items():
         if not isinstance(row, dict):
-            errors.append(f"clusters[{idx}] is not an object")
+            errors.append(f"analyses[{slot}] is not an object")
             continue
         missing = [k for k in sorted(required) if k not in row]
         if missing:
-            errors.append(f"clusters[{idx}] missing fields: {missing}")
+            errors.append(f"analyses[{slot}] missing fields: {missing}")
             continue
-        cid = str(row["cluster_id"])
-        seen_ids[cid] = seen_ids.get(cid, 0) + 1
-        if seen_ids[cid] > 1:
-            errors.append(f"clusters[{idx}] duplicate cluster_id: {cid}")
-        got_ids.add(cid)
-        if cid not in expected_ids:
-            errors.append(f"clusters[{idx}] unknown cluster_id: {cid}")
+        unexpected = sorted(set(row) - required)
+        if unexpected:
+            errors.append(f"analyses[{slot}] unexpected fields: {unexpected}")
+        if slot not in expected_slots:
+            errors.append(f"AI output unknown analysis_slot: {slot}")
         else:
-            cluster = clusters_by_id[cid]
+            cluster = clusters_by_id[slot_map[slot]]
             persona_candidate = str(cluster.get("persona_candidate") or "unknown")
             if row["persona"] != persona_candidate:
                 errors.append(
-                    f"clusters[{idx}] persona must equal persona_candidate: expected {persona_candidate}, got {row['persona']}"
+                    f"analyses[{slot}] persona must equal persona_candidate: expected {persona_candidate}, got {row['persona']}"
                 )
             evidence_text = " ".join(
                 f"{item.get('problem_statement') or ''} {item.get('excerpt') or ''}"
@@ -2308,55 +2353,62 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             }
             for persona_name, terms in persona_terms.items():
                 if any(term in output_statements for term in terms) and not any(term in evidence_text for term in terms):
-                    errors.append(f"clusters[{idx}] unsupported {persona_name} claim in problem statement")
+                    errors.append(f"analyses[{slot}] unsupported {persona_name} claim in problem statement")
         if row["classification"] not in CLASSIFICATIONS:
-            errors.append(f"clusters[{idx}] invalid classification: {row['classification']}")
+            errors.append(f"analyses[{slot}] invalid classification: {row['classification']}")
         if row["solvability"] not in SOLVABILITY_VALUES:
-            errors.append(f"clusters[{idx}] invalid solvability: {row['solvability']}")
+            errors.append(f"analyses[{slot}] invalid solvability: {row['solvability']}")
         if row["confidence"] not in CONFIDENCE_VALUES:
-            errors.append(f"clusters[{idx}] invalid confidence: {row['confidence']}")
+            errors.append(f"analyses[{slot}] invalid confidence: {row['confidence']}")
         for score_key in AI_SCORE_FIELDS:
             val = row.get(score_key)
             if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 5:
-                errors.append(f"clusters[{idx}] {score_key} must be int 0..5")
+                errors.append(f"analyses[{slot}] {score_key} must be int 0..5")
 
-    missing_cluster_ids = expected_ids - got_ids
-    if missing_cluster_ids:
-        errors.append(f"AI output missing clusters: {sorted(missing_cluster_ids)}")
+    missing_slots = expected_slots - got_slots
+    if missing_slots:
+        errors.append(f"AI output missing analysis slots: {sorted(missing_slots)}")
     return not errors, errors
 
 
-def _partition_reusable_ai_rows(payload: dict, clusters: list[dict]) -> tuple[dict[str, dict], list[dict]]:
-    """Partition normalized untrusted rows using authoritative IDs and singleton validation."""
-    entries = payload.get("clusters") if isinstance(payload, dict) else None
-    entries = entries if isinstance(entries, list) else []
-    id_counts: dict[str, int] = {}
-    candidates_by_id: dict[str, dict] = {}
-    for row in entries:
-        if not isinstance(row, dict):
-            continue
-        cluster_id = str(row.get("cluster_id") or "")
-        id_counts[cluster_id] = id_counts.get(cluster_id, 0) + 1
-        candidates_by_id[cluster_id] = row
-
-    reusable_rows_by_id: dict[str, dict] = {}
+def _partition_reusable_ai_analyses(payload: dict, clusters: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+    """Partition untrusted analyses by deterministic slot using singleton validation."""
+    entries = payload.get("analyses") if isinstance(payload, dict) else None
+    entries = entries if isinstance(entries, dict) else {}
+    reusable_by_slot: dict[str, dict] = {}
     repair_clusters = []
     for cluster in clusters:
-        cluster_id = str(cluster["cluster_id"])
-        candidate = candidates_by_id.get(cluster_id)
+        slot = analysis_slot_for_cluster_id(str(cluster["cluster_id"]))
+        candidate = entries.get(slot)
         reusable = False
-        if candidate is not None and id_counts.get(cluster_id) == 1:
-            reusable, _ = validate_ai_output({"clusters": [candidate]}, [cluster])
+        if candidate is not None:
+            reusable, _ = validate_ai_output({"analyses": {slot: candidate}}, [cluster])
         if reusable:
-            reusable_rows_by_id[cluster_id] = candidate
+            reusable_by_slot[slot] = candidate
         else:
             repair_clusters.append(cluster)
-    return reusable_rows_by_id, repair_clusters
+    return reusable_by_slot, repair_clusters
 
 
-def _compose_ai_payload(clusters: list[dict], rows_by_id: dict[str, dict]) -> dict:
-    """Compose rows in deterministic authoritative cluster order."""
-    return {"clusters": [rows_by_id[str(cluster["cluster_id"])] for cluster in clusters]}
+def _compose_analysis_payload(clusters: list[dict], analyses_by_slot: dict[str, dict]) -> dict:
+    """Compose analyses in deterministic authoritative slot order."""
+    return {"analyses": {
+        analysis_slot_for_cluster_id(str(cluster["cluster_id"])):
+            analyses_by_slot[analysis_slot_for_cluster_id(str(cluster["cluster_id"]))]
+        for cluster in clusters
+    }}
+
+
+def _attach_authoritative_cluster_ids(clusters: list[dict], payload: dict) -> dict:
+    """Create downstream rows in authoritative order; model data never supplies identity."""
+    analyses = payload["analyses"]
+    return {"clusters": [
+        {
+            "cluster_id": str(cluster["cluster_id"]),
+            **analyses[analysis_slot_for_cluster_id(str(cluster["cluster_id"]))],
+        }
+        for cluster in clusters
+    ]}
 
 
 def apply_governance(cluster: dict, ai_row: dict) -> dict:
@@ -2743,14 +2795,12 @@ def run_discovery(
             raw = "{}"
         ai_calls = 1
     else:
-        payload = {"clusters": []}
+        payload = {"analyses": {}}
         for c in clusters:
             cls = "PRODUCT_PROBLEM"
             if c["foundation_match"].get("best_capability_score", 0) >= 0.68:
                 cls = "VALIDATED_CAPABILITY"
-            payload["clusters"].append(
-                {
-                    "cluster_id": c["cluster_id"],
+            payload["analyses"][analysis_slot_for_cluster_id(str(c["cluster_id"]))] = {
                     "classification": cls,
                     "persona": c["persona_candidate"],
                     "problem_statement": c.get("canonical_problem_statement", c["normalized_problem"]),
@@ -2769,7 +2819,6 @@ def run_discovery(
                     "counterargument": "Evidence may still be incomplete.",
                     "candidate_recommendation": "Needs human review.",
                 }
-            )
         raw = json.dumps(payload)
         ai_calls = 0
 
@@ -2777,6 +2826,9 @@ def run_discovery(
     if clusters:
         try:
             ai_payload = extract_json_object(raw)
+        except DuplicateJsonKeyError:
+            # Identity is ambiguous. Trust nothing from call one and repair all slots.
+            ai_payload = {"analyses": {}}
         except Exception as exc:  # noqa: BLE001
             status = "FAILED"
             errors.append(f"AI output parse failed: {exc}")
@@ -2790,20 +2842,20 @@ def run_discovery(
     if clusters and ai_payload:
         valid, ai_errors = validate_ai_output(ai_payload, clusters)
         if not valid:
-            reusable_rows_by_id, repair_clusters = _partition_reusable_ai_rows(ai_payload, clusters)
+            reusable_by_slot, repair_clusters = _partition_reusable_ai_analyses(ai_payload, clusters)
             if not repair_clusters:
-                ai_payload = _compose_ai_payload(clusters, reusable_rows_by_id)
+                ai_payload = _compose_analysis_payload(clusters, reusable_by_slot)
                 valid, ai_errors = validate_ai_output(ai_payload, clusters)
             elif ai_mode == "copilot" and ai_calls < 2:
                 # Repair only missing, invalid, or ambiguous authoritative rows.
                 try:
-                    preserved_cluster_ids = [
-                        str(cluster["cluster_id"])
+                    preserved_analysis_slots = [
+                        analysis_slot_for_cluster_id(str(cluster["cluster_id"]))
                         for cluster in clusters
-                        if str(cluster["cluster_id"]) in reusable_rows_by_id
+                        if analysis_slot_for_cluster_id(str(cluster["cluster_id"])) in reusable_by_slot
                     ]
                     repair_prompt = build_ai_repair_prompt(
-                        run_id, repair_clusters, preserved_cluster_ids, model=ai_model,
+                        run_id, repair_clusters, preserved_analysis_slots, model=ai_model,
                     )
                     repair_raw = run_copilot_json(repair_prompt, model=ai_model)
                     ai_calls += 1
@@ -2811,11 +2863,8 @@ def run_discovery(
                         repair_payload = normalize_ai_output(extract_json_object(repair_raw))
                         repair_valid, ai_errors = validate_ai_output(repair_payload, repair_clusters)
                         if repair_valid:
-                            repaired_rows_by_id = {
-                                str(row["cluster_id"]): row for row in repair_payload["clusters"]
-                            }
-                            merged_rows_by_id = {**reusable_rows_by_id, **repaired_rows_by_id}
-                            ai_payload = _compose_ai_payload(clusters, merged_rows_by_id)
+                            merged_by_slot = {**reusable_by_slot, **repair_payload["analyses"]}
+                            ai_payload = _compose_analysis_payload(clusters, merged_by_slot)
                             valid, ai_errors = validate_ai_output(ai_payload, clusters)
                         else:
                             valid = False
@@ -2830,6 +2879,7 @@ def run_discovery(
             status = "FAILED"
             errors.extend(ai_errors)
         else:
+            ai_payload = _attach_authoritative_cluster_ids(clusters, ai_payload)
             ai_map = {x["cluster_id"]: x for x in ai_payload["clusters"]}
             for cluster in clusters:
                 governed = apply_governance(cluster, ai_map[cluster["cluster_id"]])
