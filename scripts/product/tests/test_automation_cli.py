@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 WORKSPACE_ROOT = Path(__file__).resolve().parents[3]
 CLI_PATH = WORKSPACE_ROOT / "scripts" / "product" / "automation_cli.py"
@@ -966,7 +967,7 @@ class AutomationCliTest(unittest.TestCase):
 		self.assertNotIn("```", created["body"])
 		self.assertNotIn("<!-- inject -->", created["body"])
 
-	def test_bug_pr_merge_sets_validation_pending(self):
+	def test_closed_bug_pr_is_advisory_and_does_not_mutate_repository(self):
 		code = self.cli.cmd_bug_create(
 			source="MANUAL",
 			source_reference="MANUAL-001",
@@ -997,10 +998,128 @@ class AutomationCliTest(unittest.TestCase):
 		}
 		event_file = self.root / "pr-event.json"
 		self.write_json(event_file, pr_event)
+		before_bug = bug_path.read_bytes()
 		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file)))
-		updated = self.read_json(bug_path)
-		self.assertEqual("VALIDATION_PENDING", updated["status"])
-		self.assertEqual(91, updated["pull_request_number"])
+		self.assertEqual(before_bug, bug_path.read_bytes())
+
+	def test_pr20_run_number_is_unrelated_and_causes_zero_mutation(self):
+		event = {
+			"action": "opened",
+			"pull_request": {
+				"number": 20,
+				"html_url": "https://github.com/rafalbragan/-LibreDisplay/pull/20",
+				"title": "product: canonicalize Discovery cluster grounding",
+				"body": "Regression is based on real LibreCare Discovery run #7.",
+				"state": "open",
+				"merged": False,
+				"head": {"ref": "fix/librecare-discovery-canonical-grounding"},
+			},
+		}
+		event_file = self.root / "pr20.json"
+		self.write_json(event_file, event)
+		before = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "bugs", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertEqual((None, None, None), self.cli.resolve_explicit_pr_target(event["pull_request"]))
+		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file)))
+		after = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "bugs", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertEqual(before, after)
+
+	def test_explicit_req_with_fixes_reference_tracks_idempotently(self):
+		event = {
+			"action": "opened",
+			"repository": {"full_name": "rafalbragan/-LibreDisplay"},
+			"pull_request": {
+				"number": 108,
+				"html_url": "https://example/pr/108",
+				"title": "Implement accepted requirement",
+				"body": f"<!-- LIBRECARE_REQUIREMENT_ID: {self.accepted_req_id} -->\nFixes #7",
+				"state": "open",
+				"merged": False,
+				"head": {"ref": "copilot/req-9999", "repo": {"full_name": "rafalbragan/-LibreDisplay"}},
+				"base": {"ref": "master"},
+			},
+		}
+		event_file = self.root / "req-pr.json"
+		output_file = self.root / "req-pr-result.json"
+		self.write_json(event_file, event)
+		entity, _path, requirement = self.cli.resolve_explicit_pr_target(event["pull_request"])
+		self.assertEqual("REQUIREMENT", entity)
+		self.assertEqual(self.accepted_req_id, requirement["id"])
+		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file), str(output_file)))
+		first = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file), str(output_file)))
+		second = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertEqual(first, second)
+		self.assertFalse(self.read_json(output_file)["changed"])
+
+	def test_narrative_requirement_reference_without_marker_is_unrelated(self):
+		pr = {
+			"title": "product: harden implementation PR tracking safety",
+			"body": "Bot incorrectly linked PR #20 to REQ-0003; this hotfix restores IMP-REQ-0003.",
+		}
+		self.assertEqual((None, None, None), self.cli.resolve_explicit_pr_target(pr))
+
+	def test_fork_pr_with_explicit_req_fails_closed_with_zero_mutation(self):
+		event = {
+			"action": "opened",
+			"repository": {"full_name": "rafalbragan/-LibreDisplay"},
+			"pull_request": {
+				"number": 109,
+				"html_url": "https://example/pr/109",
+				"title": f"{self.accepted_req_id} implementation",
+				"body": f"<!-- LIBRECARE_REQUIREMENT_ID: {self.accepted_req_id} -->",
+				"state": "open",
+				"merged": False,
+				"head": {"ref": "contributor/req-9999", "repo": {"full_name": "fork-owner/-LibreDisplay"}},
+				"base": {"ref": "master"},
+			},
+		}
+		event_file = self.root / "fork-pr.json"
+		self.write_json(event_file, event)
+		before = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "bugs", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertFalse(self.cli.is_safe_pr_head(event))
+		self.assertEqual(0, self.cli.cmd_track_pr(str(event_file)))
+		after = {
+			path.relative_to(self.root): path.read_bytes()
+			for directory in ("requirements", "implementation", "bugs", "inbox")
+			for path in (self.root / "product" / directory).glob("*")
+			if path.is_file()
+		}
+		self.assertEqual(before, after)
+
+	def test_leading_dash_repo_name_is_accepted_as_single_argument(self):
+		with mock.patch.object(self.cli, "cmd_record_ci_result", return_value=0) as command:
+			code = self.cli.main([
+				"record-ci-result", "--pr-number=20", "--workflow-name=Android CI",
+				"--conclusion=success", "--run-id=1", "--run-url=https://example/run/1",
+				"--repo-owner=rafalbragan", "--repo-name=-LibreDisplay",
+			])
+		self.assertEqual(0, code)
+		self.assertEqual("-LibreDisplay", command.call_args.args[9])
 
 	def test_canonical_bug_intake_sources_are_supported(self):
 		for idx, source in enumerate(

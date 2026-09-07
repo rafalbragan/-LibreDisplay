@@ -566,7 +566,13 @@ class ProductCliInboxTest(unittest.TestCase):
         self.assertIn("Pull Request:", open_summary["comment_markdown"])
         self.assertIn("Wymagany przegląd człowieka przed scaleniem.", open_summary["comment_markdown"])
 
-        merged_summary = self.run_pr_track({
+        before = {
+            path.relative_to(self.root): path.read_bytes()
+            for directory in ("requirements", "implementation", "inbox")
+            for path in (self.root / "product" / directory).glob("*")
+            if path.is_file()
+        }
+        closed_event = {
             "action": "closed",
             "pull_request": {
                 "number": 27,
@@ -577,17 +583,60 @@ class ProductCliInboxTest(unittest.TestCase):
                 "merged": True,
                 "head": {"ref": "copilot/req-222"},
             }
-        })
-        self.assertEqual("MERGED", merged_summary["status"])
+        }
+        event_file = self.root / "closed-pr-event.json"
+        self.write_json(event_file, closed_event)
         with self.patched_paths():
-            req_path, requirement = self.cli.load_requirement_by_id(req_id)
-        self.assertIsNotNone(req_path)
-        self.assertEqual("MERGED", requirement["implementation"]["implementation_status"])
-        self.assertEqual("VALIDATION_PENDING", requirement["implementation"]["validation_state"])
-        implementation = self.implementation_record(f"IMP-{req_id}")
-        self.assertEqual("MERGED", implementation["status"])
-        self.assertEqual("VALIDATION_PENDING", implementation["validation_state"])
-        self.assertEqual("copilot/req-222", implementation["branch"])
+            self.assertEqual(0, self.cli.cmd_track_implementation_pr(str(event_file)))
+        after = {
+            path.relative_to(self.root): path.read_bytes()
+            for directory in ("requirements", "implementation", "inbox")
+            for path in (self.root / "product" / directory).glob("*")
+            if path.is_file()
+        }
+        self.assertEqual(before, after)
+
+    def test_pr20_run_number_without_explicit_req_fails_closed_with_zero_mutation(self):
+        event = {
+            "action": "opened",
+            "pull_request": {
+                "number": 20,
+                "html_url": "https://github.com/rafalbragan/-LibreDisplay/pull/20",
+                "title": "product: canonicalize Discovery cluster grounding",
+                "body": "Regression is based on real LibreCare Discovery run #7.",
+                "state": "open",
+                "merged": False,
+                "head": {"ref": "fix/librecare-discovery-canonical-grounding"},
+            },
+        }
+        before = {
+            path.relative_to(self.root): path.read_bytes()
+            for directory in ("requirements", "implementation", "inbox")
+            for path in (self.root / "product" / directory).glob("*")
+            if path.is_file()
+        }
+        event_file = self.root / "pr20-event.json"
+        self.write_json(event_file, event)
+        with self.patched_paths():
+            self.assertEqual((None, None), self.cli.find_requirement_for_pr(event["pull_request"]))
+            self.assertEqual(0, self.cli.cmd_track_implementation_pr(str(event_file)))
+        after = {
+            path.relative_to(self.root): path.read_bytes()
+            for directory in ("requirements", "implementation", "inbox")
+            for path in (self.root / "product" / directory).glob("*")
+            if path.is_file()
+        }
+        self.assertEqual(before, after)
+
+    def test_explicit_requirement_marker_wins_without_using_fixes_issue(self):
+        pr = {
+            "title": "Implementacja Product Review",
+            "body": "<!-- LIBRECARE_REQUIREMENT_ID: REQ-0003 -->\nFixes #7",
+        }
+        with self.patched_paths():
+            path, requirement = self.cli.find_requirement_for_pr(pr)
+        self.assertIsNotNone(path)
+        self.assertEqual("REQ-0003", requirement["id"])
 
     def test_validate_passes_with_canonical_implementation_record(self):
         event = self.make_issue_event(228, "Problem", "Walidacja implementacji")
@@ -807,7 +856,7 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("contents: write", text)
         self.assertIn("issues: write", text)
         self.assertIn("npm install -g @github/copilot", text)
-        self.assertIn("workflow_run:", text)
+        self.assertNotIn("workflow_run:", text)
 
     def test_workflow_ai_invocation_is_read_only(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
@@ -857,11 +906,13 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("if (!shouldProcess)", text)
         self.assertIn("core.setOutput('process', 'false');", text)
 
-    def test_workflow_has_copilot_handoff_and_pr_tracking(self):
+    def test_workflow_has_copilot_handoff_but_no_implementation_lifecycle(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("inbox-sync-implementation-handoff", text)
-        self.assertIn("track-implementation-pr", text)
-        self.assertIn("record-ci-result", text)
+        self.assertNotIn("track-implementation-pr", text)
+        self.assertNotIn("record-ci-result", text)
+        self.assertNotIn("implementation-pr-tracking", text)
+        self.assertNotIn("implementation-ci-repair-loop", text)
         self.assertIn("copilot-swe-agent[bot]", text)
         self.assertRegex(text, r"agent_assignment|agentAssignment")
         self.assertIn("product/implementation", text)
@@ -893,6 +944,19 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertIn("copilot-requests: write", text)
         self.assertNotIn("gh pr merge", text)
         self.assertNotIn("pulls.merge", text)
+
+    def test_implementation_automation_persists_only_to_safe_same_repo_head(self):
+        text = BUG_WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("pr.head?.repo?.full_name === context.payload.repository?.full_name", text)
+        self.assertIn("headRef !== 'master'", text)
+        self.assertIn("pr.head.ref !== 'master'", text)
+        self.assertIn("ref: ${{ steps.target.outputs.head_sha }}", text)
+        self.assertIn('git push origin "HEAD:$HEAD_REF"', text)
+        self.assertNotIn('git push origin "HEAD:${{ github.event.pull_request.base.ref }}"', text)
+        self.assertNotIn('git push origin "HEAD:${{ github.event.workflow_run.head_branch }}"', text)
+        self.assertIn("f'--repo-name={repo_name}'", text)
+        self.assertIn("ids.length === 1", text)
+        self.assertIn("SKIP: CI repair target is unrelated, closed, forked, or uses an unsafe branch.", text)
 
 
 if __name__ == "__main__":
