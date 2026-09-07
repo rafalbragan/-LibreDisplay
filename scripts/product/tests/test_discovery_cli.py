@@ -100,7 +100,20 @@ def build_ai_payload_for_clusters(clusters, classification="PRODUCT_PROBLEM", so
 
 
 def _analysis_slot(cluster):
-    digest = hashlib.sha256(str(cluster["cluster_id"]).encode("utf-8")).hexdigest()[:16]
+    identity = {
+        "cluster_id": str(cluster["cluster_id"]),
+        "canonical_problem_key": str(cluster.get("canonical_problem_key") or ""),
+        "canonical_problem_fingerprint": str(cluster.get("canonical_problem_fingerprint") or ""),
+        "canonical_problem_statement": str(cluster.get("canonical_problem_statement") or ""),
+        "normalized_problem": str(cluster.get("normalized_problem") or ""),
+        "concept_id": str(cluster.get("concept_id") or ""),
+        "topic_id": str(cluster.get("topic_id") or ""),
+        "persona_candidate": str(cluster.get("persona_candidate") or "unknown"),
+        "module_candidate": str(cluster.get("module_candidate") or "unknown"),
+        "fingerprints": sorted(str(value) for value in (cluster.get("fingerprints") or [])),
+    }
+    material = json.dumps(identity, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    digest = hashlib.sha256(material.encode("utf-8")).hexdigest()[:16]
     return f"slot_{digest}"
 
 
@@ -1965,7 +1978,7 @@ def test_ai_repair_prompt_uses_only_authoritative_deterministic_slots(cli_env):
     ))
     constraints = " ".join(prompt["constraints"])
 
-    expected_slot = cli.analysis_slot_for_cluster_id("DISC-BBBB")
+    expected_slot = cli.analysis_slot_for_cluster(clusters[1])
     assert prompt["repair_analysis_slots"] == [expected_slot]
     assert prompt["preserved_analysis_slots"] == ["slot_a", "slot_c"]
     assert [cluster["cluster_id"] for cluster in prompt["clusters"]] == ["DISC-BBBB"]
@@ -2503,7 +2516,13 @@ def test_analysis_slots_are_stable_unique_and_collision_checked(cli_env, monkeyp
     assert set(first.values()) == {cluster["cluster_id"] for cluster in clusters}
     assert all(slot.startswith("slot_") and len(slot) == 21 for slot in first)
 
-    monkeypatch.setattr(cli, "analysis_slot_for_cluster_id", lambda _cluster_id: "slot_collision")
+    duplicate_id_clusters = [dict(clusters[0]), dict(clusters[1])]
+    duplicate_id_clusters[1]["cluster_id"] = duplicate_id_clusters[0]["cluster_id"]
+    duplicate_slots = cli.build_analysis_slot_map(duplicate_id_clusters)
+    assert len(duplicate_slots) == 2
+    assert list(duplicate_slots.values()) == [clusters[0]["cluster_id"], clusters[0]["cluster_id"]]
+
+    monkeypatch.setattr(cli, "analysis_slot_for_cluster", lambda _cluster: "slot_collision")
     with pytest.raises(ValueError, match="Analysis slot collision"):
         cli.build_analysis_slot_map(clusters)
 

@@ -2028,21 +2028,35 @@ def _ai_analysis_template() -> dict:
 
 
 def analysis_slot_for_cluster_id(cluster_id: str) -> str:
-    """Return an opaque stable model-visible slot for an application-owned cluster ID."""
+    """Return an opaque stable slot for callers with only a unique cluster ID."""
     digest = hashlib.sha256(cluster_id.encode("utf-8")).hexdigest()[:16]
     return f"slot_{digest}"
+
+
+def analysis_slot_for_cluster(cluster: dict) -> str:
+    """Return an opaque slot from deterministic, order-independent cluster identity."""
+    identity = {
+        "cluster_id": str(cluster["cluster_id"]),
+        "canonical_problem_key": str(cluster.get("canonical_problem_key") or ""),
+        "canonical_problem_fingerprint": str(cluster.get("canonical_problem_fingerprint") or ""),
+        "canonical_problem_statement": str(cluster.get("canonical_problem_statement") or ""),
+        "normalized_problem": str(cluster.get("normalized_problem") or ""),
+        "concept_id": str(cluster.get("concept_id") or ""),
+        "topic_id": str(cluster.get("topic_id") or ""),
+        "persona_candidate": str(cluster.get("persona_candidate") or "unknown"),
+        "module_candidate": str(cluster.get("module_candidate") or "unknown"),
+        "fingerprints": sorted(str(value) for value in (cluster.get("fingerprints") or [])),
+    }
+    material = json.dumps(identity, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return analysis_slot_for_cluster_id(material)
 
 
 def build_analysis_slot_map(clusters: list[dict]) -> dict[str, str]:
     """Build and collision-check the authoritative analysis-slot identity mapping."""
     slots: dict[str, str] = {}
-    cluster_ids: set[str] = set()
     for cluster in clusters:
         cluster_id = str(cluster["cluster_id"])
-        if cluster_id in cluster_ids:
-            raise ValueError(f"Duplicate authoritative cluster_id: {cluster_id}")
-        cluster_ids.add(cluster_id)
-        slot = analysis_slot_for_cluster_id(cluster_id)
+        slot = analysis_slot_for_cluster(cluster)
         if slot in slots:
             raise ValueError(f"Analysis slot collision: {slot}")
         slots[slot] = cluster_id
@@ -2055,7 +2069,7 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
     for c in clusters:
         compact.append(
             {
-                "analysis_slot": analysis_slot_for_cluster_id(str(c["cluster_id"])),
+                "analysis_slot": analysis_slot_for_cluster(c),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2121,7 +2135,7 @@ def build_ai_repair_prompt(
     for c in repair_clusters:
         compact.append(
             {
-                "analysis_slot": analysis_slot_for_cluster_id(str(c["cluster_id"])),
+                "analysis_slot": analysis_slot_for_cluster(c),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2315,7 +2329,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     slot_map = build_analysis_slot_map(clusters)
     expected_slots = set(slot_map)
     got_slots = set(entries)
-    clusters_by_id = {str(c["cluster_id"]): c for c in clusters}
+    clusters_by_slot = {analysis_slot_for_cluster(c): c for c in clusters}
     required = set(AI_ANALYSIS_REQUIRED_FIELDS)
 
     if len(entries) != len(clusters):
@@ -2335,7 +2349,7 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
         if slot not in expected_slots:
             errors.append(f"AI output unknown analysis_slot: {slot}")
         else:
-            cluster = clusters_by_id[slot_map[slot]]
+            cluster = clusters_by_slot[slot]
             persona_candidate = str(cluster.get("persona_candidate") or "unknown")
             if row["persona"] != persona_candidate:
                 errors.append(
@@ -2378,7 +2392,7 @@ def _partition_reusable_ai_analyses(payload: dict, clusters: list[dict]) -> tupl
     reusable_by_slot: dict[str, dict] = {}
     repair_clusters = []
     for cluster in clusters:
-        slot = analysis_slot_for_cluster_id(str(cluster["cluster_id"]))
+        slot = analysis_slot_for_cluster(cluster)
         candidate = entries.get(slot)
         reusable = False
         if candidate is not None:
@@ -2393,8 +2407,7 @@ def _partition_reusable_ai_analyses(payload: dict, clusters: list[dict]) -> tupl
 def _compose_analysis_payload(clusters: list[dict], analyses_by_slot: dict[str, dict]) -> dict:
     """Compose analyses in deterministic authoritative slot order."""
     return {"analyses": {
-        analysis_slot_for_cluster_id(str(cluster["cluster_id"])):
-            analyses_by_slot[analysis_slot_for_cluster_id(str(cluster["cluster_id"]))]
+        analysis_slot_for_cluster(cluster): analyses_by_slot[analysis_slot_for_cluster(cluster)]
         for cluster in clusters
     }}
 
@@ -2405,7 +2418,7 @@ def _attach_authoritative_cluster_ids(clusters: list[dict], payload: dict) -> di
     return {"clusters": [
         {
             "cluster_id": str(cluster["cluster_id"]),
-            **analyses[analysis_slot_for_cluster_id(str(cluster["cluster_id"]))],
+            **analyses[analysis_slot_for_cluster(cluster)],
         }
         for cluster in clusters
     ]}
@@ -2800,7 +2813,7 @@ def run_discovery(
             cls = "PRODUCT_PROBLEM"
             if c["foundation_match"].get("best_capability_score", 0) >= 0.68:
                 cls = "VALIDATED_CAPABILITY"
-            payload["analyses"][analysis_slot_for_cluster_id(str(c["cluster_id"]))] = {
+            payload["analyses"][analysis_slot_for_cluster(c)] = {
                     "classification": cls,
                     "persona": c["persona_candidate"],
                     "problem_statement": c.get("canonical_problem_statement", c["normalized_problem"]),
@@ -2850,9 +2863,9 @@ def run_discovery(
                 # Repair only missing, invalid, or ambiguous authoritative rows.
                 try:
                     preserved_analysis_slots = [
-                        analysis_slot_for_cluster_id(str(cluster["cluster_id"]))
+                        analysis_slot_for_cluster(cluster)
                         for cluster in clusters
-                        if analysis_slot_for_cluster_id(str(cluster["cluster_id"])) in reusable_by_slot
+                        if analysis_slot_for_cluster(cluster) in reusable_by_slot
                     ]
                     repair_prompt = build_ai_repair_prompt(
                         run_id, repair_clusters, preserved_analysis_slots, model=ai_model,
@@ -2879,10 +2892,14 @@ def run_discovery(
             status = "FAILED"
             errors.extend(ai_errors)
         else:
-            ai_payload = _attach_authoritative_cluster_ids(clusters, ai_payload)
-            ai_map = {x["cluster_id"]: x for x in ai_payload["clusters"]}
+            analyses_by_slot = ai_payload["analyses"]
             for cluster in clusters:
-                governed = apply_governance(cluster, ai_map[cluster["cluster_id"]])
+                slot = analysis_slot_for_cluster(cluster)
+                authoritative_row = {
+                    "cluster_id": str(cluster["cluster_id"]),
+                    **analyses_by_slot[slot],
+                }
+                governed = apply_governance(cluster, authoritative_row)
                 if cluster.get("identity_ambiguous"):
                     governed["eligible_for_inbox"] = False
                     governed["exclusion_reason"] = "Cluster identity ambiguous; requires human registry review"
