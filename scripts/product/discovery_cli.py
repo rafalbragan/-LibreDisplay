@@ -2068,6 +2068,47 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
     return json.dumps(payload, ensure_ascii=False, indent=2)
 
 
+def _prepare_ai_repair_context(clusters: list[dict], original_payload: dict) -> dict:
+    authoritative_cluster_ids = [str(cluster["cluster_id"]) for cluster in clusters]
+    authoritative_id_set = set(authoritative_cluster_ids)
+    previous_rows = original_payload.get("clusters") if isinstance(original_payload, dict) else None
+    previous_rows = previous_rows if isinstance(previous_rows, list) else []
+    id_counts: dict[str, int] = {}
+    for row in previous_rows:
+        if isinstance(row, dict):
+            cluster_id = str(row.get("cluster_id") or "")
+            id_counts[cluster_id] = id_counts.get(cluster_id, 0) + 1
+
+    allowed_fields = (
+        "cluster_id", "classification", "persona", "problem_statement", "problem_statement_pl",
+        "evidence_summary", "source_diversity_summary", "current_librecare_match", "solvability",
+        "impact_score", "frequency_score", "evidence_score", "solvability_score", "novelty_score",
+        "effort_score", "confidence", "counterargument", "candidate_recommendation",
+    )
+    previous_valid_rows_advisory = []
+    for row in previous_rows:
+        if not isinstance(row, dict):
+            continue
+        cluster_id = str(row.get("cluster_id") or "")
+        if cluster_id not in authoritative_id_set or id_counts.get(cluster_id) != 1:
+            continue
+        bounded_row = {}
+        for key in allowed_fields:
+            if key not in row:
+                continue
+            value = row[key]
+            if isinstance(value, str):
+                bounded_row[key] = _truncate_text(value, MAX_CACHED_EXCERPT_LENGTH)
+            elif value is None or isinstance(value, (bool, int, float)):
+                bounded_row[key] = value
+        previous_valid_rows_advisory.append(bounded_row)
+
+    return {
+        "authoritative_cluster_ids": authoritative_cluster_ids,
+        "previous_valid_rows_advisory": previous_valid_rows_advisory,
+    }
+
+
 def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors: list[str], original_payload: dict, model: str) -> str:
     """Build a bounded repair prompt for schema and evidence-grounding failures."""
     compact = []
@@ -2087,13 +2128,14 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
             }
         )
 
+    repair_context = _prepare_ai_repair_context(clusters, original_payload)
     payload = {
         "task": "Repair LibreCare AI cluster analysis. SCHEMA AND EVIDENCE-GROUNDING REPAIR ONLY.",
         "run_id": run_id,
         "model": model,
-        "instruction": "Your previous analysis had schema or evidence-grounding errors below. Return the COMPLETE corrected clusters array using the exact same cluster_ids. Correct invalid fields from the bounded evidence context without adding claims. Do NOT add/remove clusters or change valid analytical intent.",
+        "instruction": "Use ONLY authoritative_cluster_ids from the deterministic cluster context. Return exactly one row for every authoritative ID and no other IDs. Previous AI cluster_id values are untrusted and must be ignored. Regenerate missing analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
         "validation_errors": validation_errors[:10],  # Show first 10 errors
-        "original_payload": original_payload,
+        **repair_context,
         "score_requirements": {
             "impact_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
             "frequency_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
@@ -2104,8 +2146,12 @@ def build_ai_repair_prompt(run_id: str, clusters: list[dict], validation_errors:
         },
         "constraints": [
             "Return JSON object with 'clusters' array only.",
-            "Preserve all cluster_ids from original analysis.",
-            "Preserve valid analytical intent (classification, scores, etc.).",
+            "The deterministic clusters and authoritative_cluster_ids are the only authoritative identity source.",
+            "Return exactly one row per authoritative_cluster_id: no unknown IDs, duplicates, or omissions.",
+            "Previous AI cluster_id values are untrusted; do not copy them unless they identify a unique previous_valid_rows_advisory row and belong to authoritative_cluster_ids.",
+            "If previous AI identity conflicts with authoritative_cluster_ids, authoritative_cluster_ids always win.",
+            "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
+            "Preserve valid analytical intent from previous_valid_rows_advisory when useful; regenerate every missing row from deterministic cluster context.",
             "Fix ONLY the schema or evidence-grounding violations listed in validation_errors.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
             "For multiple evidence items, problem_statement must contain only their common denominator; source-specific details belong only in evidence_summary.",
