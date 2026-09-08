@@ -92,6 +92,29 @@ SOLVABILITY_VALUES = {"APP", "ABBOTT_LIMITATION", "EXTERNAL_ONLY", "MIXED"}
 CONFIDENCE_VALUES = {"low", "medium", "high"}
 ELIGIBLE_CLASSIFICATIONS = {"PRODUCT_PROBLEM", "PRODUCT_OPPORTUNITY", "SAFETY_GAP"}
 
+AI_SCORE_FIELDS = (
+    "impact_score",
+    "frequency_score",
+    "evidence_score",
+    "solvability_score",
+    "novelty_score",
+    "effort_score",
+)
+AI_ANALYSIS_REQUIRED_FIELDS = (
+    "classification",
+    "persona",
+    "problem_statement",
+    "problem_statement_pl",
+    "evidence_summary",
+    "source_diversity_summary",
+    "current_librecare_match",
+    "solvability",
+    *AI_SCORE_FIELDS,
+    "confidence",
+    "counterargument",
+    "candidate_recommendation",
+)
+
 SOURCE_FAMILIES = {"official_vendor", "github_community", "reddit", "other_community", "competitor"}
 SOURCE_TYPE_BY_FAMILY = {
     "official_vendor": "community",
@@ -1691,6 +1714,178 @@ def _reuse_existing_cluster_id(cluster: dict, existing_clusters: list[dict]) -> 
     return best_cluster_id if best_score >= 0.70 else None
 
 
+def _stable_evidence_identity(item: dict) -> tuple[str, str, str, str, str, str]:
+    source_identity = str(item.get("source_identity") or item.get("source_name") or "unknown")
+    canonical_url = str(item.get("canonical_url") or "")
+    content = str(item.get("content_hash") or "")
+    canonical_fp = str(item.get("canonical_problem_fingerprint") or "")
+    problem_fp = str(item.get("problem_fingerprint") or "")
+    # Fallback textual material keeps dedupe deterministic when hashes are unavailable.
+    fallback = f"{item.get('problem_statement') or ''}|{item.get('excerpt') or ''}"
+    return (source_identity, canonical_url, content, canonical_fp, problem_fp, fallback)
+
+
+def _dedupe_raw_items_deterministic(items: list[dict]) -> list[dict]:
+    deduped = {}
+    for item in items:
+        key = _stable_evidence_identity(item)
+        if key not in deduped:
+            deduped[key] = item
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _build_cluster_record(c_items: list[dict], existing_clusters: list[dict] | None = None) -> dict:
+    grounding = _canonical_cluster_grounding(c_items)
+    problem_fps = sorted(
+        set(
+            str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
+            for item in c_items
+            if str(item.get("problem_statement") or "").strip()
+        )
+    )
+    cluster_id = _stable_cluster_id_from_items(c_items)
+    if existing_clusters:
+        reused_cluster_id = _reuse_existing_cluster_id(
+            {
+                "normalized_problem": grounding.get("canonical_problem_statement", ""),
+                "persona_candidate": "unknown",
+                "module_candidate": "unknown",
+            },
+            existing_clusters,
+        )
+        if reused_cluster_id:
+            cluster_id = reused_cluster_id
+
+    source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
+    source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
+    languages = sorted(set(str(x.get("language") or "unknown") for x in c_items))
+    evidence_roles = sorted(set(str(x.get("evidence_role") or "user_community") for x in c_items))
+    evidence = [
+        _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
+        for x in c_items
+    ]
+    urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
+
+    persona_counts: dict[str, int] = {}
+    mode_counts: dict[str, int] = {}
+    module_counts: dict[str, int] = {}
+    for it in c_items:
+        persona = str(it.get("persona", "unknown"))
+        mode = str(it.get("mode", persona))
+        module = str(it.get("module", "unknown"))
+        persona_counts[persona] = persona_counts.get(persona, 0) + 1
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        module_counts[module] = module_counts.get(module, 0) + 1
+
+    persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    mode = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    normalized_problem = str(grounding.get("canonical_problem_statement") or "")
+    evidence_count = len(c_items)
+    identity_count = len(source_identities)
+    family_count = len(source_families)
+    language_count = len(languages)
+    if identity_count >= 3 and family_count >= 2 and (language_count >= 2 or evidence_count >= 5):
+        evidence_tier = "STRONG"
+    elif (identity_count >= 2 and family_count >= 2) or identity_count >= 3:
+        evidence_tier = "CORROBORATED"
+    elif identity_count >= 2 or evidence_count >= 3:
+        evidence_tier = "SUPPORTED"
+    else:
+        evidence_tier = "WEAK"
+    genuine_problem = any(x.get("user_facing", False) or x.get("problem_signal_quality", 2) >= 2 for x in c_items)
+    quality_gate = genuine_problem and not all(x.get("technical_only", False) for x in c_items) and not all(x.get("marketing_only", False) for x in c_items) and not all(x.get("evidence_role") == "official_reference" for x in c_items)
+    concepts = sorted(set(str(x.get("concept_id") or "unclassified") for x in c_items))
+    topics = sorted(set(str(x.get("topic_id") or "unclassified") for x in c_items))
+
+    return {
+        "cluster_id": cluster_id,
+        "normalized_problem": normalized_problem,
+        **grounding,
+        "persona_candidate": persona,
+        "mode_candidate": mode,
+        "module_candidate": module,
+        "evidence_items": evidence,
+        "source_urls": urls,
+        "source_families": source_families,
+        "source_identities": source_identities,
+        "source_count": len(c_items),
+        "evidence_item_count": evidence_count,
+        "independent_source_identity_count": identity_count,
+        "independent_source_family_count": family_count,
+        "languages": languages,
+        "language_count": language_count,
+        "evidence_roles": evidence_roles,
+        "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
+        "topic_id": topics[0] if len(topics) == 1 else "mixed",
+        "evidence_tier": evidence_tier,
+        "quality_gate_passes": quality_gate,
+        "genuine_problem_signal": genuine_problem,
+        "fingerprints": problem_fps,
+        "raw_items": c_items,
+    }
+
+
+def _canonical_consolidation_key(cluster: dict) -> tuple[str, tuple[str, ...], str, str] | None:
+    if cluster.get("canonical_grounding_safe") is not True:
+        return None
+    canonical_key = str(cluster.get("canonical_problem_key") or "").strip()
+    if not canonical_key:
+        return None
+    facets = tuple(sorted(str(value) for value in (cluster.get("shared_intent_facets") or []) if str(value).strip()))
+    # Fail closed: concept-level canonical identity is too broad for automatic consolidation.
+    if not facets:
+        return None
+    concept_id = str(cluster.get("concept_id") or "")
+    topic_id = str(cluster.get("topic_id") or "")
+    if not concept_id or not topic_id:
+        return None
+    return canonical_key, facets, concept_id, topic_id
+
+
+def consolidate_canonical_clusters(clusters: list[dict], existing_clusters: list[dict] | None = None) -> list[dict]:
+    eligible_groups: dict[tuple[str, tuple[str, ...], str, str], list[dict]] = {}
+    passthrough: list[dict] = []
+    for cluster in sorted(clusters, key=lambda c: str(c.get("cluster_id") or "")):
+        key = _canonical_consolidation_key(cluster)
+        if key is None:
+            passthrough.append(cluster)
+            continue
+        eligible_groups.setdefault(key, []).append(cluster)
+
+    consolidated: list[dict] = list(passthrough)
+    for key in sorted(eligible_groups):
+        members = eligible_groups[key]
+        if len(members) <= 1:
+            consolidated.extend(members)
+            continue
+
+        merged_items = _dedupe_raw_items_deterministic([
+            item
+            for cluster in members
+            for item in (cluster.get("raw_items") or [])
+        ])
+        rebuilt = _build_cluster_record(merged_items, existing_clusters=existing_clusters)
+        expected_key, expected_facets, expected_concept, expected_topic = key
+        rebuilt_facets = tuple(sorted(str(value) for value in (rebuilt.get("shared_intent_facets") or []) if str(value).strip()))
+
+        invariants_hold = (
+            rebuilt.get("canonical_grounding_safe") is True
+            and str(rebuilt.get("canonical_problem_key") or "") == expected_key
+            and rebuilt_facets == expected_facets
+            and str(rebuilt.get("concept_id") or "") == expected_concept
+            and str(rebuilt.get("topic_id") or "") == expected_topic
+        )
+        if invariants_hold:
+            consolidated.append(rebuilt)
+        else:
+            # Fail closed if merged meaning drifts from deterministic grouping identity.
+            consolidated.extend(members)
+
+    consolidated.sort(key=lambda c: str(c.get("cluster_id") or ""))
+    return consolidated
+
+
 def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters: list[dict] | None = None) -> list[dict]:
     clusters: list[dict] = []
     eligible_items = [item for item in items if item.get("eligible_for_clustering", True)]
@@ -1722,100 +1917,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         if not placed:
             clusters.append({"items": [item], "token_union": tokens, "concept_id": item.get("concept_id"), "language": language})
 
-    out = []
-    for raw in clusters:
-        c_items = raw["items"]
-        grounding = _canonical_cluster_grounding(c_items)
-        problem_fps = sorted(
-            set(
-                str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
-                for item in c_items
-                if str(item.get("problem_statement") or "").strip()
-            )
-        )
-        cluster_id = _stable_cluster_id_from_items(c_items)
-        if existing_clusters:
-            reused_cluster_id = _reuse_existing_cluster_id(
-                {
-                    "normalized_problem": grounding.get("canonical_problem_statement", ""),
-                    "persona_candidate": "unknown",
-                    "module_candidate": "unknown",
-                },
-                existing_clusters,
-            )
-            if reused_cluster_id:
-                cluster_id = reused_cluster_id
-
-        source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
-        source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
-        languages = sorted(set(str(x.get("language") or "unknown") for x in c_items))
-        evidence_roles = sorted(set(str(x.get("evidence_role") or "user_community") for x in c_items))
-        evidence = [
-            _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
-            for x in c_items
-        ]
-        urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
-
-        persona_counts: dict[str, int] = {}
-        mode_counts: dict[str, int] = {}
-        module_counts: dict[str, int] = {}
-        for it in c_items:
-            persona = str(it.get("persona", "unknown"))
-            mode = str(it.get("mode", persona))
-            module = str(it.get("module", "unknown"))
-            persona_counts[persona] = persona_counts.get(persona, 0) + 1
-            mode_counts[mode] = mode_counts.get(mode, 0) + 1
-            module_counts[module] = module_counts.get(module, 0) + 1
-
-        persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        mode = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        normalized_problem = str(grounding.get("canonical_problem_statement") or "")
-        evidence_count = len(c_items)
-        identity_count = len(source_identities)
-        family_count = len(source_families)
-        language_count = len(languages)
-        if identity_count >= 3 and family_count >= 2 and (language_count >= 2 or evidence_count >= 5):
-            evidence_tier = "STRONG"
-        elif (identity_count >= 2 and family_count >= 2) or identity_count >= 3:
-            evidence_tier = "CORROBORATED"
-        elif identity_count >= 2 or evidence_count >= 3:
-            evidence_tier = "SUPPORTED"
-        else:
-            evidence_tier = "WEAK"
-        genuine_problem = any(x.get("user_facing", False) or x.get("problem_signal_quality", 2) >= 2 for x in c_items)
-        quality_gate = genuine_problem and not all(x.get("technical_only", False) for x in c_items) and not all(x.get("marketing_only", False) for x in c_items) and not all(x.get("evidence_role") == "official_reference" for x in c_items)
-        concepts = sorted(set(str(x.get("concept_id") or "unclassified") for x in c_items))
-        topics = sorted(set(str(x.get("topic_id") or "unclassified") for x in c_items))
-
-        out.append(
-            {
-                "cluster_id": cluster_id,
-                "normalized_problem": normalized_problem,
-                **grounding,
-                "persona_candidate": persona,
-                "mode_candidate": mode,
-                "module_candidate": module,
-                "evidence_items": evidence,
-                "source_urls": urls,
-                "source_families": source_families,
-                "source_identities": source_identities,
-                "source_count": len(c_items),
-                "evidence_item_count": evidence_count,
-                "independent_source_identity_count": identity_count,
-                "independent_source_family_count": family_count,
-                "languages": languages,
-                "language_count": language_count,
-                "evidence_roles": evidence_roles,
-                "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
-                "topic_id": topics[0] if len(topics) == 1 else "mixed",
-                "evidence_tier": evidence_tier,
-                "quality_gate_passes": quality_gate,
-                "genuine_problem_signal": genuine_problem,
-                "fingerprints": problem_fps,
-                "raw_items": c_items,
-            }
-        )
+    out = [_build_cluster_record(raw["items"], existing_clusters=existing_clusters) for raw in clusters]
 
     out.sort(key=lambda c: c["cluster_id"])
     return out
@@ -1970,11 +2072,83 @@ def _foundation_match_summary(match: dict) -> str:
     return "; ".join(parts)
 
 
+def _ai_output_contract() -> dict:
+    score_rule = "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)"
+    return {
+        "type": "object",
+        "required": ["analyses"],
+        "analyses_type": "object keyed by exact requested analysis_slot",
+        "analysis_item_required": list(AI_ANALYSIS_REQUIRED_FIELDS),
+        "classification_enum": sorted(CLASSIFICATIONS),
+        "solvability_enum": sorted(SOLVABILITY_VALUES),
+        "confidence_enum": sorted(CONFIDENCE_VALUES),
+        "score_fields": {field: score_rule for field in AI_SCORE_FIELDS},
+    }
+
+
+def _ai_analysis_template() -> dict:
+    text_placeholders = {
+        "classification": "<allowed classification_enum value>",
+        "persona": "<exact persona_candidate>",
+        "problem_statement": "<concise English problem>",
+        "problem_statement_pl": "<concise Polish problem>",
+        "evidence_summary": "<bounded evidence summary>",
+        "source_diversity_summary": "<bounded source diversity summary>",
+        "current_librecare_match": "<analysis>",
+        "solvability": "<allowed solvability_enum value>",
+        "confidence": "<allowed confidence_enum value>",
+        "counterargument": "<bounded counterargument>",
+        "candidate_recommendation": "<advisory recommendation>",
+    }
+    return {
+        field: 0 if field in AI_SCORE_FIELDS else text_placeholders[field]
+        for field in AI_ANALYSIS_REQUIRED_FIELDS
+    }
+
+
+def analysis_slot_for_cluster_id(cluster_id: str) -> str:
+    """Return an opaque stable slot for callers with only a unique cluster ID."""
+    digest = hashlib.sha256(cluster_id.encode("utf-8")).hexdigest()[:16]
+    return f"slot_{digest}"
+
+
+def analysis_slot_for_cluster(cluster: dict) -> str:
+    """Return an opaque slot from deterministic, order-independent cluster identity."""
+    identity = {
+        "cluster_id": str(cluster["cluster_id"]),
+        "canonical_problem_key": str(cluster.get("canonical_problem_key") or ""),
+        "canonical_problem_fingerprint": str(cluster.get("canonical_problem_fingerprint") or ""),
+        "canonical_problem_statement": str(cluster.get("canonical_problem_statement") or ""),
+        "normalized_problem": str(cluster.get("normalized_problem") or ""),
+        "concept_id": str(cluster.get("concept_id") or ""),
+        "topic_id": str(cluster.get("topic_id") or ""),
+        "persona_candidate": str(cluster.get("persona_candidate") or "unknown"),
+        "module_candidate": str(cluster.get("module_candidate") or "unknown"),
+        "fingerprints": sorted(str(value) for value in (cluster.get("fingerprints") or [])),
+    }
+    material = json.dumps(identity, ensure_ascii=True, sort_keys=True, separators=(",", ":"))
+    return analysis_slot_for_cluster_id(material)
+
+
+def build_analysis_slot_map(clusters: list[dict]) -> dict[str, str]:
+    """Build and collision-check the authoritative analysis-slot identity mapping."""
+    slots: dict[str, str] = {}
+    for cluster in clusters:
+        cluster_id = str(cluster["cluster_id"])
+        slot = analysis_slot_for_cluster(cluster)
+        if slot in slots:
+            raise ValueError(f"Analysis slot collision: {slot}")
+        slots[slot] = cluster_id
+    return slots
+
+
 def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
+    slot_map = build_analysis_slot_map(clusters)
     compact = []
     for c in clusters:
         compact.append(
             {
+                "analysis_slot": analysis_slot_for_cluster(c),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2002,54 +2176,14 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
         "task": "Classify LibreCare discovery clusters. Advisory only.",
         "run_id": run_id,
         "model": model,
-        "required_output": {
-            "type": "object",
-            "required": ["clusters"],
-            "clusters_item_required": [
-                "cluster_id",
-                "classification",
-                "persona",
-                "problem_statement",
-                "problem_statement_pl",
-                "evidence_summary",
-                "source_diversity_summary",
-                "current_librecare_match",
-                "solvability",
-                "impact_score",
-                "frequency_score",
-                "evidence_score",
-                "solvability_score",
-                "novelty_score",
-                "effort_score",
-                "confidence",
-                "counterargument",
-                "candidate_recommendation",
-            ],
-            "classification_enum": sorted(CLASSIFICATIONS),
-            "solvability_enum": sorted(SOLVABILITY_VALUES),
-            "confidence_enum": sorted(CONFIDENCE_VALUES),
-            "score_fields": {
-                "impact_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "frequency_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "evidence_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "solvability_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "novelty_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-                "effort_score": "JSON integer, one of: 0, 1, 2, 3, 4, 5 (MUST be an integer, not decimal or string)",
-            },
-            "score_example": {
-                "example_entry": {
-                    "cluster_id": "DISC-ABC123",
-                    "impact_score": 4,
-                    "frequency_score": 3,
-                    "evidence_score": 4,
-                    "solvability_score": 4,
-                    "novelty_score": 2,
-                    "effort_score": 2,
-                }
-            },
+        "required_output": _ai_output_contract(),
+        "required_response_skeleton": {
+            "analyses": {slot: _ai_analysis_template() for slot in slot_map},
         },
         "constraints": [
             "Return JSON only.",
+            "Copy required_response_skeleton as the response shape: return exactly one analysis value for every analysis_slot key and no other keys; replace only analysis placeholders with grounded analysis.",
+            "Do not include cluster_id inside an analysis value. Python owns identity through the deterministic analysis_slot mapping.",
             "Problem statement must describe problem, not solution.",
             "The output persona MUST exactly equal persona_candidate. If persona_candidate is unknown, persona MUST be unknown.",
             "For a cluster with multiple structured_evidence_items, problem_statement MUST state only the common denominator supported by every evidence item.",
@@ -2071,14 +2205,16 @@ def build_ai_prompt(run_id: str, clusters: list[dict], model: str) -> str:
 def build_ai_repair_prompt(
     run_id: str,
     repair_clusters: list[dict],
-    preserved_cluster_ids: list[str],
+    preserved_analysis_slots: list[str],
     model: str,
 ) -> str:
     """Build a bounded repair prompt for schema and evidence-grounding failures."""
+    slot_map = build_analysis_slot_map(repair_clusters)
     compact = []
     for c in repair_clusters:
         compact.append(
             {
+                "analysis_slot": analysis_slot_for_cluster(c),
                 "cluster_id": c["cluster_id"],
                 "normalized_problem": c["normalized_problem"],
                 "canonical_problem_statement": c.get("canonical_problem_statement", ""),
@@ -2092,29 +2228,26 @@ def build_ai_repair_prompt(
             }
         )
 
-    repair_cluster_ids = [str(cluster["cluster_id"]) for cluster in repair_clusters]
+    repair_analysis_slots = list(slot_map)
     payload = {
         "task": "Repair LibreCare AI cluster analysis. SCHEMA AND EVIDENCE-GROUNDING REPAIR ONLY.",
         "run_id": run_id,
         "model": model,
-        "instruction": "Use ONLY repair_cluster_ids from the deterministic repair cluster context. Return exactly one row for every repair ID and no other IDs. Do not return preserved cluster rows. Previous AI cluster_id values are untrusted and must be ignored. Regenerate each required analysis from deterministic bounded cluster context; never positionally remap an invalid row.",
-        "repair_cluster_ids": repair_cluster_ids,
-        "preserved_cluster_ids": preserved_cluster_ids,
-        "score_requirements": {
-            "impact_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "frequency_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "evidence_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "solvability_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "novelty_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
-            "effort_score": "MUST be JSON integer: one of exactly 0, 1, 2, 3, 4, 5. NOT decimal, NOT string, NOT text label.",
+        "instruction": "Use ONLY repair_analysis_slots from deterministic repair context. Return exactly one analysis for every repair slot and no other slots. Do not return preserved slots. Python owns cluster identity; never return cluster_id as analysis data and never map by position.",
+        "repair_analysis_slots": repair_analysis_slots,
+        "preserved_analysis_slots": preserved_analysis_slots,
+        "required_output": _ai_output_contract(),
+        "required_response_skeleton": {
+            "analyses": {slot: _ai_analysis_template() for slot in repair_analysis_slots},
         },
         "constraints": [
-            "Return JSON object with 'clusters' array only.",
-            "The deterministic repair clusters and repair_cluster_ids are the only authoritative identity source for this response.",
-            "Return exactly one row per repair_cluster_id: no preserved IDs, unknown IDs, duplicates, or omissions.",
-            "Previous AI cluster_id values are untrusted and must not define repair identity.",
-            "Do not positionally map an unknown or duplicate previous row to a deterministic cluster.",
-            "Regenerate complete valid rows only for repair_cluster_ids from deterministic cluster context.",
+            "Return a JSON object with an 'analyses' object only.",
+            "The deterministic repair analysis slots are the only model-visible identity keys for this response.",
+            "Return exactly one value per repair_analysis_slot: no preserved slots, unknown slots, duplicate keys, or omissions.",
+            "Do not include cluster_id inside any analysis value.",
+            "Copy required_response_skeleton as the response shape; JSON object key order is irrelevant.",
+            "Do not positionally map any analysis to deterministic cluster context.",
+            "Regenerate complete valid analyses only for repair_analysis_slots.",
             "persona MUST exactly equal persona_candidate; unknown MUST remain unknown.",
             "For multiple evidence items, problem_statement must contain only their common denominator; source-specific details belong only in evidence_summary.",
             "problem_statement_pl must express exactly the same grounded meaning without additional claims.",
@@ -2155,18 +2288,37 @@ def run_copilot_json(prompt: str, model: str) -> str:
     return proc.stdout
 
 
+class DuplicateJsonKeyError(ValueError):
+    pass
+
+
+def _strict_json_object_pairs(pairs: list[tuple[str, object]]) -> dict:
+    result = {}
+    for key, value in pairs:
+        if key in result:
+            raise DuplicateJsonKeyError(f"Duplicate JSON object key: {key}")
+        result[key] = value
+    return result
+
+
+def _strict_json_loads(text: str) -> dict:
+    return json.loads(text, object_pairs_hook=_strict_json_object_pairs)
+
+
 def extract_json_object(raw: str) -> dict:
     text = raw.strip()
     if text.startswith("```"):
         text = re.sub(r"^```(?:json)?", "", text).strip()
         text = re.sub(r"```$", "", text).strip()
     try:
-        return json.loads(text)
+        return _strict_json_loads(text)
+    except DuplicateJsonKeyError:
+        raise
     except Exception:
         match = re.search(r"\{[\s\S]*\}", text)
         if not match:
             raise
-        return json.loads(match.group(0))
+        return _strict_json_loads(match.group(0))
 
 
 def normalize_ai_score(val) -> int | None:
@@ -2225,23 +2377,14 @@ def normalize_ai_output(payload: dict) -> dict:
     """Normalize AI output score fields deterministically. Returns modified payload."""
     if not isinstance(payload, dict):
         return payload
-    entries = payload.get("clusters")
-    if not isinstance(entries, list):
+    entries = payload.get("analyses")
+    if not isinstance(entries, dict):
         return payload
 
-    score_keys = [
-        "impact_score",
-        "frequency_score",
-        "evidence_score",
-        "solvability_score",
-        "novelty_score",
-        "effort_score",
-    ]
-
-    for entry in entries:
+    for entry in entries.values():
         if not isinstance(entry, dict):
             continue
-        for key in score_keys:
+        for key in AI_SCORE_FIELDS:
             if key in entry:
                 normalized = normalize_ai_score(entry[key])
                 if normalized is not None:
@@ -2256,59 +2399,40 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
     errors = []
     if not isinstance(payload, dict):
         return False, ["AI payload is not a JSON object"]
-    entries = payload.get("clusters")
-    if not isinstance(entries, list):
-        return False, ["AI payload missing 'clusters' array"]
+    if set(payload) != {"analyses"}:
+        return False, ["AI payload must contain only the 'analyses' object"]
+    entries = payload.get("analyses")
+    if not isinstance(entries, dict):
+        return False, ["AI payload missing 'analyses' object"]
 
-    expected_ids = {c["cluster_id"] for c in clusters}
-    clusters_by_id = {c["cluster_id"]: c for c in clusters}
-    got_ids = set()
-    seen_ids: dict[str, int] = {}
-    required = {
-        "cluster_id",
-        "classification",
-        "persona",
-        "problem_statement",
-        "problem_statement_pl",
-        "evidence_summary",
-        "source_diversity_summary",
-        "current_librecare_match",
-        "solvability",
-        "impact_score",
-        "frequency_score",
-        "evidence_score",
-        "solvability_score",
-        "novelty_score",
-        "effort_score",
-        "confidence",
-        "counterargument",
-        "candidate_recommendation",
-    }
+    slot_map = build_analysis_slot_map(clusters)
+    expected_slots = set(slot_map)
+    got_slots = set(entries)
+    clusters_by_slot = {analysis_slot_for_cluster(c): c for c in clusters}
+    required = set(AI_ANALYSIS_REQUIRED_FIELDS)
 
     if len(entries) != len(clusters):
-        errors.append(f"AI payload cluster count mismatch: expected {len(clusters)}, got {len(entries)}")
+        errors.append(f"AI payload analysis count mismatch: expected {len(clusters)}, got {len(entries)}")
 
-    for idx, row in enumerate(entries):
+    for slot, row in entries.items():
         if not isinstance(row, dict):
-            errors.append(f"clusters[{idx}] is not an object")
+            errors.append(f"analyses[{slot}] is not an object")
             continue
         missing = [k for k in sorted(required) if k not in row]
         if missing:
-            errors.append(f"clusters[{idx}] missing fields: {missing}")
+            errors.append(f"analyses[{slot}] missing fields: {missing}")
             continue
-        cid = str(row["cluster_id"])
-        seen_ids[cid] = seen_ids.get(cid, 0) + 1
-        if seen_ids[cid] > 1:
-            errors.append(f"clusters[{idx}] duplicate cluster_id: {cid}")
-        got_ids.add(cid)
-        if cid not in expected_ids:
-            errors.append(f"clusters[{idx}] unknown cluster_id: {cid}")
+        unexpected = sorted(set(row) - required)
+        if unexpected:
+            errors.append(f"analyses[{slot}] unexpected fields: {unexpected}")
+        if slot not in expected_slots:
+            errors.append(f"AI output unknown analysis_slot: {slot}")
         else:
-            cluster = clusters_by_id[cid]
+            cluster = clusters_by_slot[slot]
             persona_candidate = str(cluster.get("persona_candidate") or "unknown")
             if row["persona"] != persona_candidate:
                 errors.append(
-                    f"clusters[{idx}] persona must equal persona_candidate: expected {persona_candidate}, got {row['persona']}"
+                    f"analyses[{slot}] persona must equal persona_candidate: expected {persona_candidate}, got {row['persona']}"
                 )
             evidence_text = " ".join(
                 f"{item.get('problem_statement') or ''} {item.get('excerpt') or ''}"
@@ -2322,62 +2446,61 @@ def validate_ai_output(payload: dict, clusters: list[dict]) -> tuple[bool, list[
             }
             for persona_name, terms in persona_terms.items():
                 if any(term in output_statements for term in terms) and not any(term in evidence_text for term in terms):
-                    errors.append(f"clusters[{idx}] unsupported {persona_name} claim in problem statement")
+                    errors.append(f"analyses[{slot}] unsupported {persona_name} claim in problem statement")
         if row["classification"] not in CLASSIFICATIONS:
-            errors.append(f"clusters[{idx}] invalid classification: {row['classification']}")
+            errors.append(f"analyses[{slot}] invalid classification: {row['classification']}")
         if row["solvability"] not in SOLVABILITY_VALUES:
-            errors.append(f"clusters[{idx}] invalid solvability: {row['solvability']}")
+            errors.append(f"analyses[{slot}] invalid solvability: {row['solvability']}")
         if row["confidence"] not in CONFIDENCE_VALUES:
-            errors.append(f"clusters[{idx}] invalid confidence: {row['confidence']}")
-        for score_key in [
-            "impact_score",
-            "frequency_score",
-            "evidence_score",
-            "solvability_score",
-            "novelty_score",
-            "effort_score",
-        ]:
+            errors.append(f"analyses[{slot}] invalid confidence: {row['confidence']}")
+        for score_key in AI_SCORE_FIELDS:
             val = row.get(score_key)
             if isinstance(val, bool) or not isinstance(val, int) or val < 0 or val > 5:
-                errors.append(f"clusters[{idx}] {score_key} must be int 0..5")
+                errors.append(f"analyses[{slot}] {score_key} must be int 0..5")
 
-    missing_cluster_ids = expected_ids - got_ids
-    if missing_cluster_ids:
-        errors.append(f"AI output missing clusters: {sorted(missing_cluster_ids)}")
+    missing_slots = expected_slots - got_slots
+    if missing_slots:
+        errors.append(f"AI output missing analysis slots: {sorted(missing_slots)}")
     return not errors, errors
 
 
-def _partition_reusable_ai_rows(payload: dict, clusters: list[dict]) -> tuple[dict[str, dict], list[dict]]:
-    """Partition normalized untrusted rows using authoritative IDs and singleton validation."""
-    entries = payload.get("clusters") if isinstance(payload, dict) else None
-    entries = entries if isinstance(entries, list) else []
-    id_counts: dict[str, int] = {}
-    candidates_by_id: dict[str, dict] = {}
-    for row in entries:
-        if not isinstance(row, dict):
-            continue
-        cluster_id = str(row.get("cluster_id") or "")
-        id_counts[cluster_id] = id_counts.get(cluster_id, 0) + 1
-        candidates_by_id[cluster_id] = row
-
-    reusable_rows_by_id: dict[str, dict] = {}
+def _partition_reusable_ai_analyses(payload: dict, clusters: list[dict]) -> tuple[dict[str, dict], list[dict]]:
+    """Partition untrusted analyses by deterministic slot using singleton validation."""
+    entries = payload.get("analyses") if isinstance(payload, dict) else None
+    entries = entries if isinstance(entries, dict) else {}
+    reusable_by_slot: dict[str, dict] = {}
     repair_clusters = []
     for cluster in clusters:
-        cluster_id = str(cluster["cluster_id"])
-        candidate = candidates_by_id.get(cluster_id)
+        slot = analysis_slot_for_cluster(cluster)
+        candidate = entries.get(slot)
         reusable = False
-        if candidate is not None and id_counts.get(cluster_id) == 1:
-            reusable, _ = validate_ai_output({"clusters": [candidate]}, [cluster])
+        if candidate is not None:
+            reusable, _ = validate_ai_output({"analyses": {slot: candidate}}, [cluster])
         if reusable:
-            reusable_rows_by_id[cluster_id] = candidate
+            reusable_by_slot[slot] = candidate
         else:
             repair_clusters.append(cluster)
-    return reusable_rows_by_id, repair_clusters
+    return reusable_by_slot, repair_clusters
 
 
-def _compose_ai_payload(clusters: list[dict], rows_by_id: dict[str, dict]) -> dict:
-    """Compose rows in deterministic authoritative cluster order."""
-    return {"clusters": [rows_by_id[str(cluster["cluster_id"])] for cluster in clusters]}
+def _compose_analysis_payload(clusters: list[dict], analyses_by_slot: dict[str, dict]) -> dict:
+    """Compose analyses in deterministic authoritative slot order."""
+    return {"analyses": {
+        analysis_slot_for_cluster(cluster): analyses_by_slot[analysis_slot_for_cluster(cluster)]
+        for cluster in clusters
+    }}
+
+
+def _attach_authoritative_cluster_ids(clusters: list[dict], payload: dict) -> dict:
+    """Create downstream rows in authoritative order; model data never supplies identity."""
+    analyses = payload["analyses"]
+    return {"clusters": [
+        {
+            "cluster_id": str(cluster["cluster_id"]),
+            **analyses[analysis_slot_for_cluster(cluster)],
+        }
+        for cluster in clusters
+    ]}
 
 
 def apply_governance(cluster: dict, ai_row: dict) -> dict:
@@ -2706,6 +2829,7 @@ def run_discovery(
             filter_summary["privacy_redacted"] = filter_summary.get("privacy_redacted", 0) + 1
     # Build logical clusters without identity reuse first; stateful registry assigns final stable IDs.
     clusters = cluster_items(deduped_items)
+    clusters = consolidate_canonical_clusters(clusters)
     observation_clusters = _existing_cluster_matches()
 
     cluster_registry = None
@@ -2764,14 +2888,12 @@ def run_discovery(
             raw = "{}"
         ai_calls = 1
     else:
-        payload = {"clusters": []}
+        payload = {"analyses": {}}
         for c in clusters:
             cls = "PRODUCT_PROBLEM"
             if c["foundation_match"].get("best_capability_score", 0) >= 0.68:
                 cls = "VALIDATED_CAPABILITY"
-            payload["clusters"].append(
-                {
-                    "cluster_id": c["cluster_id"],
+            payload["analyses"][analysis_slot_for_cluster(c)] = {
                     "classification": cls,
                     "persona": c["persona_candidate"],
                     "problem_statement": c.get("canonical_problem_statement", c["normalized_problem"]),
@@ -2790,7 +2912,6 @@ def run_discovery(
                     "counterargument": "Evidence may still be incomplete.",
                     "candidate_recommendation": "Needs human review.",
                 }
-            )
         raw = json.dumps(payload)
         ai_calls = 0
 
@@ -2798,6 +2919,9 @@ def run_discovery(
     if clusters:
         try:
             ai_payload = extract_json_object(raw)
+        except DuplicateJsonKeyError:
+            # Identity is ambiguous. Trust nothing from call one and repair all slots.
+            ai_payload = {"analyses": {}}
         except Exception as exc:  # noqa: BLE001
             status = "FAILED"
             errors.append(f"AI output parse failed: {exc}")
@@ -2811,20 +2935,20 @@ def run_discovery(
     if clusters and ai_payload:
         valid, ai_errors = validate_ai_output(ai_payload, clusters)
         if not valid:
-            reusable_rows_by_id, repair_clusters = _partition_reusable_ai_rows(ai_payload, clusters)
+            reusable_by_slot, repair_clusters = _partition_reusable_ai_analyses(ai_payload, clusters)
             if not repair_clusters:
-                ai_payload = _compose_ai_payload(clusters, reusable_rows_by_id)
+                ai_payload = _compose_analysis_payload(clusters, reusable_by_slot)
                 valid, ai_errors = validate_ai_output(ai_payload, clusters)
             elif ai_mode == "copilot" and ai_calls < 2:
                 # Repair only missing, invalid, or ambiguous authoritative rows.
                 try:
-                    preserved_cluster_ids = [
-                        str(cluster["cluster_id"])
+                    preserved_analysis_slots = [
+                        analysis_slot_for_cluster(cluster)
                         for cluster in clusters
-                        if str(cluster["cluster_id"]) in reusable_rows_by_id
+                        if analysis_slot_for_cluster(cluster) in reusable_by_slot
                     ]
                     repair_prompt = build_ai_repair_prompt(
-                        run_id, repair_clusters, preserved_cluster_ids, model=ai_model,
+                        run_id, repair_clusters, preserved_analysis_slots, model=ai_model,
                     )
                     repair_raw = run_copilot_json(repair_prompt, model=ai_model)
                     ai_calls += 1
@@ -2832,11 +2956,8 @@ def run_discovery(
                         repair_payload = normalize_ai_output(extract_json_object(repair_raw))
                         repair_valid, ai_errors = validate_ai_output(repair_payload, repair_clusters)
                         if repair_valid:
-                            repaired_rows_by_id = {
-                                str(row["cluster_id"]): row for row in repair_payload["clusters"]
-                            }
-                            merged_rows_by_id = {**reusable_rows_by_id, **repaired_rows_by_id}
-                            ai_payload = _compose_ai_payload(clusters, merged_rows_by_id)
+                            merged_by_slot = {**reusable_by_slot, **repair_payload["analyses"]}
+                            ai_payload = _compose_analysis_payload(clusters, merged_by_slot)
                             valid, ai_errors = validate_ai_output(ai_payload, clusters)
                         else:
                             valid = False
@@ -2851,9 +2972,14 @@ def run_discovery(
             status = "FAILED"
             errors.extend(ai_errors)
         else:
-            ai_map = {x["cluster_id"]: x for x in ai_payload["clusters"]}
+            analyses_by_slot = ai_payload["analyses"]
             for cluster in clusters:
-                governed = apply_governance(cluster, ai_map[cluster["cluster_id"]])
+                slot = analysis_slot_for_cluster(cluster)
+                authoritative_row = {
+                    "cluster_id": str(cluster["cluster_id"]),
+                    **analyses_by_slot[slot],
+                }
+                governed = apply_governance(cluster, authoritative_row)
                 if cluster.get("identity_ambiguous"):
                     governed["eligible_for_inbox"] = False
                     governed["exclusion_reason"] = "Cluster identity ambiguous; requires human registry review"

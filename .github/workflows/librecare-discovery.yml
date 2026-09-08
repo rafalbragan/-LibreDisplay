@@ -41,11 +41,17 @@ jobs:
       issues: write
       copilot-requests: write
     steps:
-      - name: Checkout master
+      - name: Checkout selected workflow ref
         uses: actions/checkout@v4
         with:
-          ref: master
+          ref: ${{ github.sha }}
           fetch-depth: 0
+
+      - name: Enforce branch validation safety
+        if: ${{ github.ref_name != 'master' && inputs.publish_top3 }}
+        run: |
+          echo "::error::publish_top3=true is forbidden for non-master Discovery validation runs."
+          exit 1
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -90,7 +96,7 @@ jobs:
             --repo-owner "${{ github.repository_owner }}" \
             --repo-name="${{ github.event.repository.name }}" \
             --github-token "$GITHUB_TOKEN" \
-            ${{ inputs.publish_top3 && '--publish-top3' || '' }}
+            ${{ github.ref_name == 'master' && inputs.publish_top3 && '--publish-top3' || '' }}
 
       - name: Validate Product Foundation
         if: always()
