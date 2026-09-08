@@ -130,6 +130,7 @@ def _prepare_clusters(cli, sources_file):
         collected.extend(result.items)
     deduped, _ = cli.dedupe_items(collected)
     clusters = cli.cluster_items(deduped)
+    clusters = cli.consolidate_canonical_clusters(clusters)
     observations = cli._existing_cluster_matches()
     registry = cli.load_cluster_registry(cli.DISCOVERY_CLUSTER_REGISTRY_PATH)
     clusters, _, _ = cli.resolve_cluster_ids_with_registry(clusters, registry, now_iso=cli.utc_now(), observation_clusters=observations)
@@ -3871,4 +3872,306 @@ def test_run7_ai_overclaim_is_canonicalized_end_to_end(cli_env, tmp_path):
     for token in ("without clear notification", "motorola", "edge 50", "android 16"):
         assert token not in serialized
 
-# End of evidence-grounding regressions.
+
+def _run16_missing_data_items(cli):
+    first = cli._normalize_item_fields(
+        {
+            "url": "https://github.com/j-kaltes/Juggluco/issues/610",
+            "text": "Data are missing for caregivers.",
+            "problem_statement": "Data are missing for caregivers",
+            "source_identity": "j-kaltes/Juggluco",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "query_id": "stale_or_missing_readings:en:run16a",
+            "evidence_role": "developer_community",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "juggluco_github",
+        "github_community",
+        "community",
+    )
+    second = cli._normalize_item_fields(
+        {
+            "url": "https://github.com/timoschlueter/nightscout-librelink-up/issues/294",
+            "text": "Not receiving new blood glucose values in the bridge.",
+            "problem_statement": "Not receiving new blood glucose values",
+            "source_identity": "timoschlueter/nightscout-librelink-up",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "query_id": "stale_or_missing_readings:en:run16b",
+            "evidence_role": "developer_community",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "nightscout_librelink_up_github",
+        "github_community",
+        "community",
+    )
+    assert first is not None and second is not None
+    return [first, second]
+
+
+def test_canonical_consolidation_run16_missing_data_regression(cli_env):
+    cli, _ = cli_env
+    lexical_clusters = cli.cluster_items(_run16_missing_data_items(cli))
+    assert len(lexical_clusters) == 2
+    assert all(cluster["canonical_grounding_safe"] is True for cluster in lexical_clusters)
+    assert {tuple(cluster.get("shared_intent_facets") or []) for cluster in lexical_clusters} == {("missing_data",)}
+    assert len({cluster["canonical_problem_key"] for cluster in lexical_clusters}) == 1
+
+    consolidated = cli.consolidate_canonical_clusters(lexical_clusters)
+    assert len(consolidated) == 1
+    cluster = consolidated[0]
+    assert set(cluster["source_identities"]) == {
+        "j-kaltes/Juggluco",
+        "timoschlueter/nightscout-librelink-up",
+    }
+    assert cluster["independent_source_identity_count"] == 2
+    assert cluster["independent_source_family_count"] == 1
+    assert cluster["evidence_item_count"] >= 2
+    assert cluster["evidence_tier"] == "SUPPORTED"
+    assert cluster["canonical_problem_key"] == "concept:stale_or_missing_readings|topic:data_freshness|facets:missing_data"
+    assert cluster["shared_intent_facets"] == ["missing_data"]
+    assert cluster["cluster_id"].startswith("DISC-")
+
+
+def test_canonical_consolidation_is_order_independent(cli_env):
+    cli, _ = cli_env
+    forward = cli.consolidate_canonical_clusters(cli.cluster_items(_run16_missing_data_items(cli)))[0]
+    reverse = cli.consolidate_canonical_clusters(cli.cluster_items(list(reversed(_run16_missing_data_items(cli)))))[0]
+    for key in (
+        "cluster_id",
+        "canonical_problem_key",
+        "canonical_problem_fingerprint",
+        "shared_intent_facets",
+        "source_identities",
+        "source_families",
+        "evidence_item_count",
+        "independent_source_identity_count",
+        "independent_source_family_count",
+        "evidence_tier",
+    ):
+        assert forward[key] == reverse[key]
+
+
+def test_canonical_consolidation_fails_closed_for_empty_shared_facets(cli_env):
+    cli, _ = cli_env
+    item_a = cli._normalize_item_fields(
+        {
+            "url": "https://example.com/empty-facet-a",
+            "text": "Glycemia telemetry anomaly.",
+            "problem_statement": "Glycemia telemetry anomaly",
+            "source_identity": "repo/empty-a",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "empty_a",
+        "github_community",
+        "community",
+    )
+    item_b = cli._normalize_item_fields(
+        {
+            "url": "https://example.com/empty-facet-b",
+            "text": "Chronology dashboard confusion.",
+            "problem_statement": "Chronology dashboard confusion",
+            "source_identity": "repo/empty-b",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "empty_b",
+        "github_community",
+        "community",
+    )
+    lexical = cli.cluster_items([item_a, item_b])
+    assert len(lexical) == 2
+    assert all(cluster["canonical_grounding_safe"] is True for cluster in lexical)
+    assert all(cluster["shared_intent_facets"] == [] for cluster in lexical)
+    assert len({cluster["canonical_problem_key"] for cluster in lexical}) == 1
+    assert lexical[0]["canonical_problem_key"].endswith("facets:concept")
+    assert len(cli.consolidate_canonical_clusters(lexical)) == 2
+
+
+def test_canonical_consolidation_does_not_merge_unsafe_clusters(cli_env):
+    cli, _ = cli_env
+    lexical = cli.cluster_items(_run16_missing_data_items(cli))
+    assert len(lexical) == 2
+    unsafe = []
+    for row in lexical:
+        mutated = dict(row)
+        mutated["cluster_id"] = "DISC-SAME-UNSAFE"
+        mutated["canonical_grounding_safe"] = False
+        unsafe.append(mutated)
+    assert len(cli.consolidate_canonical_clusters(unsafe)) == 2
+
+
+def test_canonical_consolidation_keeps_different_keys_separate(cli_env):
+    cli, _ = cli_env
+    missing = cli._normalize_item_fields(
+        {
+            "url": "https://example.com/key-missing",
+            "text": "Data are missing for users.",
+            "problem_statement": "Data are missing for users",
+            "source_identity": "repo/missing",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "missing",
+        "github_community",
+        "community",
+    )
+    stale = cli._normalize_item_fields(
+        {
+            "url": "https://example.com/key-stale",
+            "text": "Readings stopped updating.",
+            "problem_statement": "Readings stopped updating",
+            "source_identity": "repo/stale",
+            "language": "en",
+            "concept_id": "stale_or_missing_readings",
+            "topic_id": "data_freshness",
+            "persona": "unknown",
+            "mode": "unknown",
+            "module": "unknown",
+        },
+        "stale",
+        "github_community",
+        "community",
+    )
+    lexical = cli.cluster_items([missing, stale])
+    assert len(lexical) == 2
+    assert len({cluster["canonical_problem_key"] for cluster in lexical}) == 2
+    assert len(cli.consolidate_canonical_clusters(lexical)) == 2
+
+
+def test_canonical_consolidation_dedupes_identical_raw_evidence(cli_env):
+    cli, _ = cli_env
+    item = _run16_missing_data_items(cli)[0]
+    first = cli._build_cluster_record([item])
+    second = cli._build_cluster_record([dict(item)])
+    second["cluster_id"] = "DISC-DIFFERENT"
+    consolidated = cli.consolidate_canonical_clusters([first, second])
+    assert len(consolidated) == 1
+    assert consolidated[0]["evidence_item_count"] == 1
+    assert consolidated[0]["source_count"] == 1
+    assert len(consolidated[0]["raw_items"]) == 1
+
+
+def test_canonical_consolidation_is_idempotent(cli_env):
+    cli, _ = cli_env
+    lexical = cli.cluster_items(_run16_missing_data_items(cli))
+    once = cli.consolidate_canonical_clusters(lexical)
+    twice = cli.consolidate_canonical_clusters(once)
+    assert json.dumps(once, sort_keys=True) == json.dumps(twice, sort_keys=True)
+
+
+def test_existing_supported_disconnect_cluster_is_preserved(cli_env):
+    cli, _ = cli_env
+    cluster = _run6_grounding_cluster(cli)
+    consolidated = cli.consolidate_canonical_clusters([cluster])
+    assert len(consolidated) == 1
+    assert consolidated[0]["canonical_problem_key"] == cluster["canonical_problem_key"]
+    assert consolidated[0]["shared_intent_facets"] == ["disconnect"]
+    assert consolidated[0]["evidence_tier"] == "SUPPORTED"
+    assert set(consolidated[0]["source_identities"]) == {
+        "Crazy-Marvin/LibreLinkUpDesktop",
+        "j-kaltes/Juggluco",
+    }
+
+
+def test_run_discovery_reports_single_supported_missing_data_representation(cli_env, tmp_path):
+    cli, _ = cli_env
+    sources = {
+        "sources": [
+            {
+                "name": "canonical_a",
+                "family": "github_community",
+                "kind": "github_issues",
+                "enabled": True,
+                "fixture_items": [
+                    {
+                        "url": "https://github.com/j-kaltes/Juggluco/issues/610",
+                        "text": "Data are missing for caregivers.",
+                        "problem_statement": "Data are missing for caregivers",
+                        "source_identity": "j-kaltes/Juggluco",
+                        "language": "en",
+                        "concept_id": "stale_or_missing_readings",
+                        "topic_id": "data_freshness",
+                        "persona": "unknown",
+                        "mode": "unknown",
+                        "module": "unknown",
+                    }
+                ],
+            },
+            {
+                "name": "canonical_b",
+                "family": "github_community",
+                "kind": "github_issues",
+                "enabled": True,
+                "fixture_items": [
+                    {
+                        "url": "https://github.com/timoschlueter/nightscout-librelink-up/issues/294",
+                        "text": "Not receiving new blood glucose values in the bridge.",
+                        "problem_statement": "Not receiving new blood glucose values",
+                        "source_identity": "timoschlueter/nightscout-librelink-up",
+                        "language": "en",
+                        "concept_id": "stale_or_missing_readings",
+                        "topic_id": "data_freshness",
+                        "persona": "unknown",
+                        "mode": "unknown",
+                        "module": "unknown",
+                    }
+                ],
+            },
+        ]
+    }
+    sources_path = tmp_path / "canonical-sources.json"
+    sources_path.write_text(json.dumps(sources), encoding="utf-8")
+
+    report = cli.run_discovery(
+        sources_file=sources_path,
+        max_items_per_source=20,
+        publish_top3_flag=False,
+        repo_owner="",
+        repo_name="",
+        github_token="",
+        ai_mode="heuristic",
+        ai_model="gpt-5.4-mini",
+        ai_response_file=None,
+        timeout=1.0,
+        retries=1,
+        cache_max_age_seconds=3600,
+        languages=["en"],
+        primary_languages=["en"],
+        lookback_days=365,
+    )
+
+    assert report["status"] in {"SUCCESS", "DEGRADED"}
+    assert report["counts"]["CLUSTERS"] == 1
+    assert len(report["watchlist"]) == 0
+    assert len(report["top10"]) == 1
+    top = report["top10"][0]
+    assert top["concept_id"] == "stale_or_missing_readings"
+    assert top["topic_id"] == "data_freshness"
+    assert top["evidence_tier"] == "SUPPORTED"
+    assert top["independent_source_identity_count"] == 2
+    assert top["independent_source_family_count"] == 1
+    assert set(top["source_identities"]) == {
+        "j-kaltes/Juggluco",
+        "timoschlueter/nightscout-librelink-up",
+    }

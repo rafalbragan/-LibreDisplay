@@ -1714,6 +1714,178 @@ def _reuse_existing_cluster_id(cluster: dict, existing_clusters: list[dict]) -> 
     return best_cluster_id if best_score >= 0.70 else None
 
 
+def _stable_evidence_identity(item: dict) -> tuple[str, str, str, str, str, str]:
+    source_identity = str(item.get("source_identity") or item.get("source_name") or "unknown")
+    canonical_url = str(item.get("canonical_url") or "")
+    content = str(item.get("content_hash") or "")
+    canonical_fp = str(item.get("canonical_problem_fingerprint") or "")
+    problem_fp = str(item.get("problem_fingerprint") or "")
+    # Fallback textual material keeps dedupe deterministic when hashes are unavailable.
+    fallback = f"{item.get('problem_statement') or ''}|{item.get('excerpt') or ''}"
+    return (source_identity, canonical_url, content, canonical_fp, problem_fp, fallback)
+
+
+def _dedupe_raw_items_deterministic(items: list[dict]) -> list[dict]:
+    deduped = {}
+    for item in items:
+        key = _stable_evidence_identity(item)
+        if key not in deduped:
+            deduped[key] = item
+    return [deduped[key] for key in sorted(deduped)]
+
+
+def _build_cluster_record(c_items: list[dict], existing_clusters: list[dict] | None = None) -> dict:
+    grounding = _canonical_cluster_grounding(c_items)
+    problem_fps = sorted(
+        set(
+            str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
+            for item in c_items
+            if str(item.get("problem_statement") or "").strip()
+        )
+    )
+    cluster_id = _stable_cluster_id_from_items(c_items)
+    if existing_clusters:
+        reused_cluster_id = _reuse_existing_cluster_id(
+            {
+                "normalized_problem": grounding.get("canonical_problem_statement", ""),
+                "persona_candidate": "unknown",
+                "module_candidate": "unknown",
+            },
+            existing_clusters,
+        )
+        if reused_cluster_id:
+            cluster_id = reused_cluster_id
+
+    source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
+    source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
+    languages = sorted(set(str(x.get("language") or "unknown") for x in c_items))
+    evidence_roles = sorted(set(str(x.get("evidence_role") or "user_community") for x in c_items))
+    evidence = [
+        _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
+        for x in c_items
+    ]
+    urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
+
+    persona_counts: dict[str, int] = {}
+    mode_counts: dict[str, int] = {}
+    module_counts: dict[str, int] = {}
+    for it in c_items:
+        persona = str(it.get("persona", "unknown"))
+        mode = str(it.get("mode", persona))
+        module = str(it.get("module", "unknown"))
+        persona_counts[persona] = persona_counts.get(persona, 0) + 1
+        mode_counts[mode] = mode_counts.get(mode, 0) + 1
+        module_counts[module] = module_counts.get(module, 0) + 1
+
+    persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    mode = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
+    normalized_problem = str(grounding.get("canonical_problem_statement") or "")
+    evidence_count = len(c_items)
+    identity_count = len(source_identities)
+    family_count = len(source_families)
+    language_count = len(languages)
+    if identity_count >= 3 and family_count >= 2 and (language_count >= 2 or evidence_count >= 5):
+        evidence_tier = "STRONG"
+    elif (identity_count >= 2 and family_count >= 2) or identity_count >= 3:
+        evidence_tier = "CORROBORATED"
+    elif identity_count >= 2 or evidence_count >= 3:
+        evidence_tier = "SUPPORTED"
+    else:
+        evidence_tier = "WEAK"
+    genuine_problem = any(x.get("user_facing", False) or x.get("problem_signal_quality", 2) >= 2 for x in c_items)
+    quality_gate = genuine_problem and not all(x.get("technical_only", False) for x in c_items) and not all(x.get("marketing_only", False) for x in c_items) and not all(x.get("evidence_role") == "official_reference" for x in c_items)
+    concepts = sorted(set(str(x.get("concept_id") or "unclassified") for x in c_items))
+    topics = sorted(set(str(x.get("topic_id") or "unclassified") for x in c_items))
+
+    return {
+        "cluster_id": cluster_id,
+        "normalized_problem": normalized_problem,
+        **grounding,
+        "persona_candidate": persona,
+        "mode_candidate": mode,
+        "module_candidate": module,
+        "evidence_items": evidence,
+        "source_urls": urls,
+        "source_families": source_families,
+        "source_identities": source_identities,
+        "source_count": len(c_items),
+        "evidence_item_count": evidence_count,
+        "independent_source_identity_count": identity_count,
+        "independent_source_family_count": family_count,
+        "languages": languages,
+        "language_count": language_count,
+        "evidence_roles": evidence_roles,
+        "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
+        "topic_id": topics[0] if len(topics) == 1 else "mixed",
+        "evidence_tier": evidence_tier,
+        "quality_gate_passes": quality_gate,
+        "genuine_problem_signal": genuine_problem,
+        "fingerprints": problem_fps,
+        "raw_items": c_items,
+    }
+
+
+def _canonical_consolidation_key(cluster: dict) -> tuple[str, tuple[str, ...], str, str] | None:
+    if cluster.get("canonical_grounding_safe") is not True:
+        return None
+    canonical_key = str(cluster.get("canonical_problem_key") or "").strip()
+    if not canonical_key:
+        return None
+    facets = tuple(sorted(str(value) for value in (cluster.get("shared_intent_facets") or []) if str(value).strip()))
+    # Fail closed: concept-level canonical identity is too broad for automatic consolidation.
+    if not facets:
+        return None
+    concept_id = str(cluster.get("concept_id") or "")
+    topic_id = str(cluster.get("topic_id") or "")
+    if not concept_id or not topic_id:
+        return None
+    return canonical_key, facets, concept_id, topic_id
+
+
+def consolidate_canonical_clusters(clusters: list[dict], existing_clusters: list[dict] | None = None) -> list[dict]:
+    eligible_groups: dict[tuple[str, tuple[str, ...], str, str], list[dict]] = {}
+    passthrough: list[dict] = []
+    for cluster in sorted(clusters, key=lambda c: str(c.get("cluster_id") or "")):
+        key = _canonical_consolidation_key(cluster)
+        if key is None:
+            passthrough.append(cluster)
+            continue
+        eligible_groups.setdefault(key, []).append(cluster)
+
+    consolidated: list[dict] = list(passthrough)
+    for key in sorted(eligible_groups):
+        members = eligible_groups[key]
+        if len(members) <= 1:
+            consolidated.extend(members)
+            continue
+
+        merged_items = _dedupe_raw_items_deterministic([
+            item
+            for cluster in members
+            for item in (cluster.get("raw_items") or [])
+        ])
+        rebuilt = _build_cluster_record(merged_items, existing_clusters=existing_clusters)
+        expected_key, expected_facets, expected_concept, expected_topic = key
+        rebuilt_facets = tuple(sorted(str(value) for value in (rebuilt.get("shared_intent_facets") or []) if str(value).strip()))
+
+        invariants_hold = (
+            rebuilt.get("canonical_grounding_safe") is True
+            and str(rebuilt.get("canonical_problem_key") or "") == expected_key
+            and rebuilt_facets == expected_facets
+            and str(rebuilt.get("concept_id") or "") == expected_concept
+            and str(rebuilt.get("topic_id") or "") == expected_topic
+        )
+        if invariants_hold:
+            consolidated.append(rebuilt)
+        else:
+            # Fail closed if merged meaning drifts from deterministic grouping identity.
+            consolidated.extend(members)
+
+    consolidated.sort(key=lambda c: str(c.get("cluster_id") or ""))
+    return consolidated
+
+
 def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters: list[dict] | None = None) -> list[dict]:
     clusters: list[dict] = []
     eligible_items = [item for item in items if item.get("eligible_for_clustering", True)]
@@ -1745,100 +1917,7 @@ def cluster_items(items: list[dict], threshold: float = 0.40, existing_clusters:
         if not placed:
             clusters.append({"items": [item], "token_union": tokens, "concept_id": item.get("concept_id"), "language": language})
 
-    out = []
-    for raw in clusters:
-        c_items = raw["items"]
-        grounding = _canonical_cluster_grounding(c_items)
-        problem_fps = sorted(
-            set(
-                str(item.get("canonical_problem_fingerprint") or item.get("problem_fingerprint") or "")
-                for item in c_items
-                if str(item.get("problem_statement") or "").strip()
-            )
-        )
-        cluster_id = _stable_cluster_id_from_items(c_items)
-        if existing_clusters:
-            reused_cluster_id = _reuse_existing_cluster_id(
-                {
-                    "normalized_problem": grounding.get("canonical_problem_statement", ""),
-                    "persona_candidate": "unknown",
-                    "module_candidate": "unknown",
-                },
-                existing_clusters,
-            )
-            if reused_cluster_id:
-                cluster_id = reused_cluster_id
-
-        source_identities = sorted(set(str(x.get("source_identity") or x.get("source_name") or "unknown") for x in c_items))
-        source_families = sorted(set(str(x.get("source_family") or "unknown") for x in c_items))
-        languages = sorted(set(str(x.get("language") or "unknown") for x in c_items))
-        evidence_roles = sorted(set(str(x.get("evidence_role") or "user_community") for x in c_items))
-        evidence = [
-            _truncate_text(x.get("excerpt") or _safe_excerpt(str(x.get("problem_statement") or "")), MAX_CACHED_EXCERPT_LENGTH)
-            for x in c_items
-        ]
-        urls = sorted(set(str(x.get("canonical_url") or "") for x in c_items if x.get("canonical_url")))
-
-        persona_counts: dict[str, int] = {}
-        mode_counts: dict[str, int] = {}
-        module_counts: dict[str, int] = {}
-        for it in c_items:
-            persona = str(it.get("persona", "unknown"))
-            mode = str(it.get("mode", persona))
-            module = str(it.get("module", "unknown"))
-            persona_counts[persona] = persona_counts.get(persona, 0) + 1
-            mode_counts[mode] = mode_counts.get(mode, 0) + 1
-            module_counts[module] = module_counts.get(module, 0) + 1
-
-        persona = sorted(persona_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        mode = sorted(mode_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        module = sorted(module_counts.items(), key=lambda kv: (-kv[1], kv[0]))[0][0]
-        normalized_problem = str(grounding.get("canonical_problem_statement") or "")
-        evidence_count = len(c_items)
-        identity_count = len(source_identities)
-        family_count = len(source_families)
-        language_count = len(languages)
-        if identity_count >= 3 and family_count >= 2 and (language_count >= 2 or evidence_count >= 5):
-            evidence_tier = "STRONG"
-        elif (identity_count >= 2 and family_count >= 2) or identity_count >= 3:
-            evidence_tier = "CORROBORATED"
-        elif identity_count >= 2 or evidence_count >= 3:
-            evidence_tier = "SUPPORTED"
-        else:
-            evidence_tier = "WEAK"
-        genuine_problem = any(x.get("user_facing", False) or x.get("problem_signal_quality", 2) >= 2 for x in c_items)
-        quality_gate = genuine_problem and not all(x.get("technical_only", False) for x in c_items) and not all(x.get("marketing_only", False) for x in c_items) and not all(x.get("evidence_role") == "official_reference" for x in c_items)
-        concepts = sorted(set(str(x.get("concept_id") or "unclassified") for x in c_items))
-        topics = sorted(set(str(x.get("topic_id") or "unclassified") for x in c_items))
-
-        out.append(
-            {
-                "cluster_id": cluster_id,
-                "normalized_problem": normalized_problem,
-                **grounding,
-                "persona_candidate": persona,
-                "mode_candidate": mode,
-                "module_candidate": module,
-                "evidence_items": evidence,
-                "source_urls": urls,
-                "source_families": source_families,
-                "source_identities": source_identities,
-                "source_count": len(c_items),
-                "evidence_item_count": evidence_count,
-                "independent_source_identity_count": identity_count,
-                "independent_source_family_count": family_count,
-                "languages": languages,
-                "language_count": language_count,
-                "evidence_roles": evidence_roles,
-                "concept_id": concepts[0] if len(concepts) == 1 else "mixed",
-                "topic_id": topics[0] if len(topics) == 1 else "mixed",
-                "evidence_tier": evidence_tier,
-                "quality_gate_passes": quality_gate,
-                "genuine_problem_signal": genuine_problem,
-                "fingerprints": problem_fps,
-                "raw_items": c_items,
-            }
-        )
+    out = [_build_cluster_record(raw["items"], existing_clusters=existing_clusters) for raw in clusters]
 
     out.sort(key=lambda c: c["cluster_id"])
     return out
@@ -2750,6 +2829,7 @@ def run_discovery(
             filter_summary["privacy_redacted"] = filter_summary.get("privacy_redacted", 0) + 1
     # Build logical clusters without identity reuse first; stateful registry assigns final stable IDs.
     clusters = cluster_items(deduped_items)
+    clusters = consolidate_canonical_clusters(clusters)
     observation_clusters = _existing_cluster_matches()
 
     cluster_registry = None
