@@ -55,6 +55,14 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
 - **Revisit condition:** Phase 3 begins only on explicit human go-ahead.
 - **Structured record:** `decisions/DEC-0005-phase1-no-production-ui-change.json`.
 
+## D-0005 — ACCEPT REQ-0004 (nawigacja wykresow Home/Monitoring)
+- **Date:** 2026-10-16
+- **Status:** ACCEPTED
+- **Decision:** Przyjeto REQ-0004 do implementacji UX wykresu dla Home i Monitoring (zakresy 1h/3h/6h/12h/24h, mini-nawigator, pan/zoom, powrot do najnowszych danych) bez zmian logiki medycznej.
+- **Reason:** Product Owner zatwierdzil Issue #25 jako priorytet ergonomii analizy historii glikemii.
+- **Revisit condition:** Jesli testy ujawnia spadek czytelnosci lub problemy dostepnosci.
+- **Structured record:** `decisions/DEC-0008-accept-req0004-chart-navigation-redesign.json`.
+
 ---
 
 Add new decisions above this line in reverse-chronological order, and mirror meaningful ones as

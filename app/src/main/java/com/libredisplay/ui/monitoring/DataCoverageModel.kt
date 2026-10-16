@@ -130,6 +130,7 @@ fun computeDataCoverage(
 
 /** Short label for a [TimeRange] (used in coverage model). */
 internal fun TimeRange.toSelectedRangeLabel(): String = when (this) {
+    TimeRange.LAST_1_HOUR -> "1 godz."
     TimeRange.LAST_3_HOURS -> "3 godz."
     TimeRange.LAST_6_HOURS -> "6 godz."
     TimeRange.LAST_12_HOURS -> "12 godz."

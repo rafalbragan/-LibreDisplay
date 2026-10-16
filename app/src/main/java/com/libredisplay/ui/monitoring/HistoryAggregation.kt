@@ -8,6 +8,7 @@ import java.time.ZoneId
 import java.time.temporal.ChronoUnit
 
 internal enum class TimeRange(val duration: Duration, val label: String, val shortLabel: String) {
+    LAST_1_HOUR(Duration.ofHours(1), "Ostatnia 1 godz.", "1h"),
     LAST_3_HOURS(Duration.ofHours(3), "Ostatnie 3 godz.", "3h"),
     LAST_6_HOURS(Duration.ofHours(6), "Ostatnie 6 godz.", "6h"),
     LAST_12_HOURS(Duration.ofHours(12), "Ostatnie 12 godz.", "12h"),
@@ -185,6 +186,7 @@ private fun calculateBucket(
 }
 
 internal fun chartModeForRange(range: TimeRange): String = when (range) {
+    TimeRange.LAST_1_HOUR,
     TimeRange.LAST_3_HOURS,
     TimeRange.LAST_6_HOURS,
     TimeRange.LAST_12_HOURS,
@@ -210,6 +212,7 @@ internal fun TimeRangeState.toHistoryTimeRange(): TimeRange = when (presetRange)
 internal fun rangeStartInstant(range: TimeRange, end: Instant = Instant.now()): Instant = end.minus(range.duration)
 
 internal fun bucketSizeForRange(range: TimeRange): Duration = when (range) {
+    TimeRange.LAST_1_HOUR -> Duration.ofMinutes(5)
     TimeRange.LAST_3_HOURS -> Duration.ofMinutes(5)
     TimeRange.LAST_6_HOURS -> Duration.ofMinutes(5)
     TimeRange.LAST_12_HOURS -> Duration.ofMinutes(5)

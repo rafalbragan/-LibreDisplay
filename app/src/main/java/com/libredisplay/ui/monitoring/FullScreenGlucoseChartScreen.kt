@@ -4,6 +4,8 @@ import android.content.res.Configuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,6 +31,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Slider
 import androidx.compose.material3.Text
@@ -45,8 +48,16 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
+import androidx.compose.foundation.Canvas
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -256,14 +267,24 @@ internal fun FullScreenGlucoseChartScreen(
                         )
                     }
                     if (zoomEnabled) {
-                        Slider(
-                            value = viewportScrollFraction(viewport, start, end),
-                            onValueChange = { fraction ->
+                        FullScreenHistoryNavigator(
+                            viewport = viewport,
+                            selectedRangeStart = start,
+                            selectedRangeEnd = end,
+                            onViewportChanged = { fraction ->
                                 viewportStartMillis = viewportStartForFraction(fraction, viewport, start, end)
-                            },
-                            enabled = viewport.canPan,
-                            modifier = Modifier.fillMaxWidth()
+                            }
                         )
+                        if (!isViewportAtLatest(viewport, start, end)) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewportStartMillis = end.toEpochMilli() - viewport.duration.toMillis()
+                                },
+                                modifier = Modifier.fillMaxWidth()
+                            ) {
+                                Text("Wroc do najnowszych danych")
+                            }
+                        }
                     }
                 }
                 coverage.fullCoverageEstimate?.let { estimate ->
@@ -438,17 +459,128 @@ private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> 
 }
 
 internal fun historySelectableRanges(): List<TimeRange> = listOf(
+    TimeRange.LAST_1_HOUR,
     TimeRange.LAST_3_HOURS,
     TimeRange.LAST_6_HOURS,
     TimeRange.LAST_12_HOURS,
-    TimeRange.LAST_24_HOURS,
-    TimeRange.LAST_1_DAY,
-    TimeRange.LAST_3_DAYS,
-    TimeRange.LAST_7_DAYS,
-    TimeRange.LAST_30_DAYS,
-    TimeRange.LAST_90_DAYS,
-    TimeRange.LAST_365_DAYS
+    TimeRange.LAST_24_HOURS
 )
+
+@Composable
+private fun FullScreenHistoryNavigator(
+    viewport: HistoryViewport,
+    selectedRangeStart: Instant,
+    selectedRangeEnd: Instant,
+    onViewportChanged: (Float) -> Unit
+) {
+    val fraction = viewportScrollFraction(viewport, selectedRangeStart, selectedRangeEnd)
+    val totalMillis = Duration.between(selectedRangeStart, selectedRangeEnd).toMillis().coerceAtLeast(1L)
+    val rawWindowFraction = (viewport.duration.toMillis().toFloat() / totalMillis.toFloat()).coerceIn(0f, 1f)
+    val windowFraction = if (viewport.canPan) rawWindowFraction.coerceAtLeast(0.08f) else 1f
+    val latestFraction = androidx.compose.runtime.rememberUpdatedState(fraction)
+    val canPan = viewport.canPan
+    var dragFraction by remember { mutableStateOf(fraction) }
+
+    Canvas(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(22.dp)
+            .pointerInput(canPan, windowFraction) {
+                if (!canPan) return@pointerInput
+                detectDragGestures(
+                    onDragStart = { offset ->
+                        val geometry = computeHomeNavigatorGeometry(
+                            totalWidthPx = size.width.toFloat(),
+                            leftInsetPx = 0f,
+                            rightInsetPx = 0f,
+                            viewportFraction = latestFraction.value,
+                            windowFraction = windowFraction
+                        )
+                        val insideThumb = offset.x >= geometry.viewportLeft &&
+                            offset.x <= geometry.viewportLeft + geometry.viewportWidth
+                        dragFraction = if (insideThumb) {
+                            latestFraction.value
+                        } else {
+                            navigatorFractionForPosition(offset.x, geometry).also(onViewportChanged)
+                        }
+                    },
+                    onDragEnd = { dragFraction = latestFraction.value },
+                    onDragCancel = { dragFraction = latestFraction.value }
+                ) { change, dragAmount ->
+                    val geometry = computeHomeNavigatorGeometry(
+                        totalWidthPx = size.width.toFloat(),
+                        leftInsetPx = 0f,
+                        rightInsetPx = 0f,
+                        viewportFraction = dragFraction,
+                        windowFraction = windowFraction
+                    )
+                    dragFraction = navigatorFractionAfterDrag(dragFraction, dragAmount.x, geometry)
+                    onViewportChanged(dragFraction)
+                    change.consume()
+                }
+            }
+            .pointerInput(canPan, windowFraction) {
+                if (!canPan) return@pointerInput
+                detectTapGestures { offset ->
+                    val geometry = computeHomeNavigatorGeometry(
+                        totalWidthPx = size.width.toFloat(),
+                        leftInsetPx = 0f,
+                        rightInsetPx = 0f,
+                        viewportFraction = latestFraction.value,
+                        windowFraction = windowFraction
+                    )
+                    val target = navigatorFractionForPosition(offset.x, geometry)
+                    dragFraction = target
+                    onViewportChanged(target)
+                }
+            }
+            .semantics {
+                contentDescription = "Mini nawigator historii. Przeciagnij okno, aby przesunac zakres czasu."
+            }
+    ) {
+        val geometry = computeHomeNavigatorGeometry(
+            totalWidthPx = size.width,
+            leftInsetPx = 0f,
+            rightInsetPx = 0f,
+            viewportFraction = fraction,
+            windowFraction = windowFraction
+        )
+        val trackHeight = 4f
+        val trackTop = size.height / 2f - trackHeight / 2f
+        val thumbHeight = 12f
+        val thumbTop = size.height / 2f - thumbHeight / 2f
+        drawRoundRect(
+            color = LibreCareColors.SurfaceMuted,
+            topLeft = Offset(geometry.trackLeft, trackTop),
+            size = Size(geometry.trackWidth, trackHeight),
+            cornerRadius = CornerRadius(trackHeight / 2f, trackHeight / 2f)
+        )
+        drawRoundRect(
+            color = LibreCareColors.AccentTeal.copy(alpha = 0.28f),
+            topLeft = Offset(geometry.viewportLeft, thumbTop),
+            size = Size(geometry.viewportWidth, thumbHeight),
+            cornerRadius = CornerRadius(thumbHeight / 2f, thumbHeight / 2f)
+        )
+        drawRoundRect(
+            color = LibreCareColors.AccentTeal,
+            topLeft = Offset(geometry.viewportLeft, thumbTop),
+            size = Size(geometry.viewportWidth, thumbHeight),
+            cornerRadius = CornerRadius(thumbHeight / 2f, thumbHeight / 2f),
+            style = Stroke(width = 1.5f)
+        )
+    }
+}
+
+internal fun isViewportAtLatest(
+    viewport: HistoryViewport,
+    selectedRangeStart: Instant,
+    selectedRangeEnd: Instant,
+    toleranceMillis: Long = 60_000L
+): Boolean {
+    val latestStart = selectedRangeEnd.toEpochMilli() - viewport.duration.toMillis()
+    val latestClamped = latestStart.coerceAtLeast(selectedRangeStart.toEpochMilli())
+    return kotlin.math.abs(viewport.start.toEpochMilli() - latestClamped) <= toleranceMillis
+}
 
 @Composable
 private fun LocalEmptyChartState() {

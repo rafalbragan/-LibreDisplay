@@ -1,0 +1,8 @@
+{
+  "req_id": "REQ-0004",
+  "implementation_id": "IMP-REQ-0004",
+  "status": "AGENT_ASSIGNED",
+  "implementation_issue_number": 31,
+  "implementation_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/31",
+  "blocked": false
+}
