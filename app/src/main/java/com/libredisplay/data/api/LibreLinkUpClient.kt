@@ -37,7 +37,8 @@ interface AuthCapableLibreLinkUpClient {
 class RetrofitLibreLinkUpClient(
     private val initialRegion: String = "EU",
     private val http: LibreLinkUpHttp = OkHttpLibreLinkUpHttp(),
-    private val apiBaseUrlOverride: String? = LibreLinkUpConfig.baseUrlOverrideOrNull()
+    private val apiBaseUrlOverride: String? = LibreLinkUpConfig.baseUrlOverrideOrNull(),
+    private val nowProvider: () -> Instant = { Instant.now() }
 ) : LibreLinkUpClient, AuthCapableLibreLinkUpClient {
 
     private companion object {
@@ -108,7 +109,7 @@ class RetrofitLibreLinkUpClient(
                 throw NonRetryableLibreLinkUpException("Nie znaleziono aktywnych osób w LibreLinkUp.")
             }
             cachedConnections = persons
-            cachedConnectionsAt = Instant.now()
+            cachedConnectionsAt = nowProvider()
             DiagnosticStatus.setGetConnections("OK")
             persons
         }
@@ -268,7 +269,7 @@ class RetrofitLibreLinkUpClient(
         invalidateConnectionsCache()
     }
 
-    private fun freshCachedConnections(now: Instant = Instant.now()): List<LibreConnectionPerson>? {
+    private fun freshCachedConnections(now: Instant = nowProvider()): List<LibreConnectionPerson>? {
         val cachedAt = cachedConnectionsAt ?: return null
         if (cachedConnections.isEmpty()) return null
         val age = Duration.between(cachedAt, now)
