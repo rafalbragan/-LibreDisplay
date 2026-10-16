@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-16T11:27:29Z",
+  "generated_at": "2026-10-16T11:37:19Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -235,6 +235,47 @@
       "reasoning_summary": "Nie ma dowodu na realny problem produktowy: brak obserwacji i przebiegów testowych dotyczących wykresu, a część zakresu już istnieje w kodzie i testach logiki. Zgłoszenie jest szerokie, a faza foundation i DEC-0005 ograniczają zmiany UI. Rekomendacja doradcza: HOLD do czasu zaplanowanego badania interakcji z wykresem (mały ekran, duża czcionka, brak gestów) i wyodrębnienia węższych kandydatów, np. dostępność bez gestów. Zmiana nie dotyka logiki medycznej i nie dopuszcza dawkowania ani rekomendacji leczenia. Decyzję podejmuje człowiek.",
       "governance_notes": [],
       "generated_at": "2026-10-16T11:27:28Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000029",
+      "github_issue_number": 29,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/29",
+      "classification": "PRODUCT_PROBLEM",
+      "summary": "Zgłoszenie opisuje awarię (crash) aplikacji po wybraniu z Home osoby nieaktywnej lub bez świeżych danych, zamiast otwarcia widoku Monitoring. Jest to defekt stabilności, a nie nowa funkcja. Dotyka to bezpieczeństwa: opiekun traci bieżący obraz sytuacji i może uznać brak danych za brak ryzyka. Zgłoszenie pochodzi od jednego użytkownika i nie zawiera śladu stosu, wersji ani kroków powtarzalnych. Ścieżki nie ma w żadnym przebiegu testowym ani obserwacji. W kodzie istnieje markInactiveExcept (osoby oznaczane jako nieaktywne) i globalny crash handler, który loguje FATAL APP CRASH. Nie potwierdza to jednak awarii. Oczekiwane zachowanie (status, czas ostatniego odczytu) częściowo pokrywa się z zaakceptowanym REQ-0002 (świeżość danych).",
+      "evidence_available": [
+        "Samo zgłoszenie INBOX-GH-000029 (rafalbragan, persona OPIEKUN, moduł GLOWNA_MONITORING) opisuje ścieżkę Home -> osoba nieaktywna -> Monitoring.",
+        "Kod: ObservedPersonDao.markInactiveExcept i LocalGlucoseHistoryRepository oznaczają osoby jako nieaktywne, więc stan nieaktywny istnieje w modelu danych.",
+        "Kod: LibreDisplayApp instaluje globalny crash handler (FATAL APP CRASH) i DiagnosticLogger, więc po odtworzeniu awarii powinien powstać log z klasą wyjątku.",
+        "MonitoringViewModel.kt zawiera komentarz o wcześniejszym źródle crashy (wyścig korutyn nadpisujących stan dashboardu), co wskazuje na historycznie kruchy obszar.",
+        "REQ-0002 (ACCEPTED, DEC-0007) i REQ-0001 (DEC-0006) dotyczą świeżości danych i priorytetyzacji uwagi opiekuna na Home / Monitoring.",
+        "SAFETY_GUARDRAILS i DEC-0004 zakazują autonomicznego dawkowania; zgłoszenie nie dotyka logiki medycznej."
+      ],
+      "evidence_missing": [
+        "Brak odtworzenia: nie wiadomo, kiedy osoba jest „nieaktywna” (usunięta z konta, brak nowych danych, błąd API), ani czy crash jest deterministyczny.",
+        "Brak stack trace, logu FATAL APP CRASH, wersji aplikacji i urządzenia.",
+        "Brak przebiegu testowego w product/research/test-runs i obserwacji (katalog observations jest pusty) dla nawigacji do osoby nieaktywnej.",
+        "Brak testu ViewModel/Compose dla wyboru osoby nieaktywnej lub bez odczytów (puste dane, brak ostatniego odczytu, null).",
+        "Brak potwierdzenia, czy awaria występuje także w trybie Demo, czy tylko na danych rzeczywistych.",
+        "Brak danych o częstości: nie wiadomo, ilu opiekunów ma osoby nieaktywne.",
+        "Brak decyzji produktowej, jakie dokładnie stany mają być rozróżniane (nieaktywne, brak odczytu, nieaktualne, problem połączenia)."
+      ],
+      "existing_capability_overlap": [
+        "REQ-0002 formatuje świeżość danych na kartach Home / Monitoring (np. „5 min temu”), ale nie obejmuje otwierania ekranu osoby nieaktywnej ani braku jakiegokolwiek odczytu.",
+        "REQ-0001 grupuje osoby wymagające uwagi; nieaktywna osoba może się tam znaleźć, ale nie ma dowodu, że ścieżka nawigacji została przetestowana.",
+        "VALIDATED_CAPABILITIES.md nie zawiera zwalidowanej możliwości dotyczącej obsługi osoby nieaktywnej. Wynik PASS dla innych przebiegów nie dowodzi stabilności tej ścieżki.",
+        "DatabaseStartupTest i PrivacyRepositoryTest sprawdzają brak crasha dla pustych danych w warstwie bazy, nie w nawigacji Home -> Monitoring."
+      ],
+      "proposed_requirement": "Najpierw zarejestrować kandydata na bug (nie wymaganie UX) i odtworzyć awarię: przebieg testowy Home -> osoba nieaktywna / bez odczytu -> Monitoring, na danych rzeczywistych i w Demo, z zebraniem logu FATAL APP CRASH. Po potwierdzeniu: wąska poprawka przyczyny źródłowej, bez nowego zachowania, plus testy regresyjne ViewModel i nawigacji dla pustych danych. Zaprojektowanie wyraźnych stanów (nieaktywne, brak odczytu, nieaktualne, problem połączenia, czas ostatniego poprawnego odczytu) to oddzielny kandydat wymagania do decyzji człowieka, rozszerzający REQ-0002. Nie wolno przedstawiać braku danych jako stanu bezpiecznego ani wyprowadzać z niego rekomendacji leczenia.",
+      "user_value": "Wysoka dla opiekuna: dostęp do ekranu osoby nawet bez świeżych danych, bez utraty zaufania do aplikacji. Wartość ma charakter niezawodności i bezpieczeństwa (brak fałszywego poczucia bezpieczeństwa), a nie nowej funkcji. Wartość doprecyzowania stanów jest hipotetyczna do czasu obserwacji.",
+      "counterargument": "Zgłoszenie jest jednoosobowe, bez stack trace i bez odtworzenia, więc crash może być już naprawiony (zmiany z BUG-0004 i refaktory Monitoring), wynikać z konkretnego stanu lokalnej bazy lub zależeć od środowiska. Łączy też dwa tematy: crash (defekt) i rozbudowę komunikatów stanu (UX), przy czym ten drugi pokrywa się z REQ-0002 i nie powinien wchodzić do poprawki. W fazie foundation (DEC-0005) przebudowa widoku Monitoring odciągnęłaby uwagę. Przyjęcie bez odtworzenia grozi poprawką objawu zamiast przyczyny.",
+      "simpler_alternative": "Nie tworzyć nowego wymagania. Odtworzyć crash lokalnie lub na Demo z osobą bez odczytów, odczytać log FATAL APP CRASH i dodać test ViewModel/Compose dla pustych danych. Naprawić samą przyczynę (np. null lub pusta lista), a przy braku danych wyświetlić istniejący tekst „brak danych” z ostatnim znanym czasem odczytu. Rozszerzenie o rozróżnienie czterech stanów odłożyć do osobnej decyzji.",
+      "safety_impact": "HIGH",
+      "estimated_scope": "SMALL",
+      "proposed_priority": "P0",
+      "recommended_decision": "ACCEPT",
+      "reasoning_summary": "Crash na ścieżce opiekuna Home -> Monitoring dla osoby bez świeżych danych to realny problem niezawodności o wysokim wpływie bezpieczeństwa, zgodny z priorytetami (safety, data_reliability, caregiver_speed na 10). Dowody są jednak słabe: jedno zgłoszenie bez śladu stosu i bez przebiegu testowego, więc rekomendacja dotyczy zarejestrowania i odtworzenia bugu, a nie zmiany UX. Rozróżnienie stanów danych to osobny kandydat, związany z REQ-0002. Rekomendacja doradcza; decyzję podejmuje człowiek. Żadnych zmian logiki medycznej, dawkowania ani rekomendacji leczenia.",
+      "governance_notes": [],
+      "generated_at": "2026-10-16T11:37:19Z"
     }
   ]
 }

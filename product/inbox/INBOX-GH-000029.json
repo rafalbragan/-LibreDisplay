@@ -1,0 +1,15 @@
+{
+  "inbox_id": "INBOX-GH-000029",
+  "github_issue_number": 29,
+  "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/29",
+  "created_at": "2026-10-16T11:36:31Z",
+  "updated_at": "2026-10-16T11:37:19Z",
+  "submitted_by": "rafalbragan",
+  "type": "PROBLEM",
+  "persona": "OPIEKUN",
+  "module": "GLOWNA_MONITORING",
+  "raw_input": "Po wybraniu nieaktywnego użytkownika z Home aplikacja LibreCare potrafi się zamknąć (crash) zamiast bezpiecznie otworzyć widok Monitoring tej osoby.",
+  "why_it_matters": "Opiekun traci dostęp do bieżącego obrazu sytuacji i może błędnie uznać, że brak danych oznacza brak ryzyka. To wpływa na bezpieczeństwo i zaufanie.",
+  "context": "Ścieżka: Home -> wybór osoby oznaczonej jako nieaktywna / bez świeżych danych -> przejście do Monitoring.\nOczekiwane: brak awarii, czytelne oznaczenie statusu (nieaktywne, brak odczytu, dane nieaktualne, problem połączenia), pokazany czas ostatniego poprawnego odczytu.",
+  "status": "AWAITING_HUMAN_DECISION"
+}
