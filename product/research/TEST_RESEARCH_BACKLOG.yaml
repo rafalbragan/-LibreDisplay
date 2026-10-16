@@ -4,7 +4,7 @@
 # These activities reduce uncertainty about existing or proposed capabilities.
 
 version: 1
-updated: "2026-09-02"
+updated: "2026-10-16"
 
 items:
 
@@ -28,6 +28,19 @@ items:
       - "INBOX-GH-000002"
       - "GH-ISSUE-2"
     reason: "Zgłoszenie wskazuje na potencjalną lukę w jednoznaczności prezentacji nieświeżych danych opiekuna, ale repozytorium nie zawiera dowodu, że obecny ekran w scenariuszu STALE_DATA rzeczywiście wprowadza opiekuna w błąd."
+    risk: "MEDIUM"
+    priority: "P1"
+    recommended_test_or_research: "Define dedicated reproduction scenario and collect evidence before requirement drafting"
+    status: "OPEN"
+
+  INBOX-GH-000025:
+    title: "Inbox Coverage Gap: issue #25"
+    persona: "unknown"
+    module: "unknown"
+    source_ids:
+      - "INBOX-GH-000025"
+      - "GH-ISSUE-25"
+    reason: "Zgłoszenie dotyczy ergonomii i spójności sterowania wykresem glikemii (zakres 1h–24h, przesuwanie, zoom, tooltip, sterowanie bez gestów) na Home i w pełnoekranowej historii. Jest to zbiór 9 punktów o różnym charakterze, a nie jeden zweryfikowany problem. Zgłaszający sam zaznacza, że w kodzie istnieją selektor zakresu i obsługa gestów, a UX na małych ekranach i przy większej czcionce oraz kompletność sterowania bez gestów są „do reprodukcji”. W Product Foundation nie ma żadnego przebiegu testowego ani obserwacji dotyczących interakcji z wykresem, więc nie ma dowodu na realny problem użytkownika. Największy brak to dowód, nie funkcja."
     risk: "MEDIUM"
     priority: "P1"
     recommended_test_or_research: "Define dedicated reproduction scenario and collect evidence before requirement drafting"

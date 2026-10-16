@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-09-02T22:55:58Z",
+  "generated_at": "2026-10-16T11:27:29Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -196,6 +196,45 @@
       "reasoning_summary": "To jest rzeczywisty problem wiarygodności procesu Product Review, potwierdzony przez BUG-0001 i bezpośrednie dowody w kodzie oraz testach Futures. Nie jest to nowa funkcja kliniczna ani potrzeba autonomicznego leczenia. Należy zaakceptować potrzebę poprawy kontraktu review, ale ograniczyć ją do read-only evidence, jawnego raportowania niepewności i testów granicy między dowodem a decyzją. Nie należy uznawać Futures za validated capability ani potwierdzać twierdzenia o sześciu częściowo zaimplementowanych pomysłach bez dostępnego, niezależnego raportu. Wszelkie decyzje produktowe i implementacyjne muszą nadal wymagać człowieka, a zmiana nie może prowadzić do autonomicznych rekomendacji insuliny ani leczenia.",
       "governance_notes": [],
       "generated_at": "2026-09-02T17:33:39Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000025",
+      "github_issue_number": 25,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/25",
+      "classification": "TEST_COVERAGE_GAP",
+      "summary": "Zgłoszenie dotyczy ergonomii i spójności sterowania wykresem glikemii (zakres 1h–24h, przesuwanie, zoom, tooltip, sterowanie bez gestów) na Home i w pełnoekranowej historii. Jest to zbiór 9 punktów o różnym charakterze, a nie jeden zweryfikowany problem. Zgłaszający sam zaznacza, że w kodzie istnieją selektor zakresu i obsługa gestów, a UX na małych ekranach i przy większej czcionce oraz kompletność sterowania bez gestów są „do reprodukcji”. W Product Foundation nie ma żadnego przebiegu testowego ani obserwacji dotyczących interakcji z wykresem, więc nie ma dowodu na realny problem użytkownika. Największy brak to dowód, nie funkcja.",
+      "evidence_available": [
+        "Samo zgłoszenie INBOX-GH-000025 (zgłaszający: rafalbragan) potwierdza istnienie elementów range selector i obsługi gestów w kodzie.",
+        "W repozytorium istnieją MonitoringScreen.kt i FullScreenGlucoseChartScreen.kt oraz testy jednostkowe: HomeChartRangeSelectorBehaviorTest, HomeChartRangeOptionsTest, FullScreenHistoryViewportTest, GlucoseChartLayoutLogicTest, HistorySelectorModelTest, GlucoseChartSeriesTest. Pokrywają one logikę, a nie ergonomię.",
+        "REQ-0001 i REQ-0002 są zaakceptowane (DEC-0006, DEC-0007) i dotyczą priorytetyzacji oraz świeżości danych na Home, a nie sterowania wykresem.",
+        "CURRENT_FOCUS.yaml: faza foundation, tryb główny caregiver, wysokie wagi dla readability i caregiver_speed, a human_approval zabrania AI zatwierdzania UX.",
+        "SAFETY_GUARDRAILS i DEC-0004 zakazują autonomicznego dawkowania; zgłoszenie deklaruje brak zmian logiki medycznej."
+      ],
+      "evidence_missing": [
+        "Brak obserwacji (product/research/observations jest pusty) i przebiegów testowych dotyczących odczytu historii, przesuwania, zoomu lub tooltipa; TESTRUN-2026-001, -002, -004 i -005 dotyczą bieżącej glikemii i projekcji trendu, nie wykresu.",
+        "Brak odtworzenia problemów: czytelność selektora na małych ekranach i przy dużej czcionce, kolizja suwaka z innymi elementami, kompletność sterowania bez gestów.",
+        "Brak danych, że opiekun lub lekarz faktycznie ma trudność z analizą 12h/24h; nie wiadomo, jak często użytkownicy używają zakresów i zoomu.",
+        "Brak sprawdzenia, które z 9 punktów są już spełnione (m.in. tooltip, zakresy 12h/24h, niezależne sterowanie wykresami); trzeba to potwierdzić w kodzie, a nie zakładać.",
+        "Brak testów UI Compose dla gestów i dostępności (TalkBack, skala czcionki); istniejące testy to logika bez interakcji dotykowej.",
+        "Brak wskazania priorytetu względem faz foundation i trybu caregiver; persona i moduł oznaczone jako „nie wiem”, a w treści OPIEKUN (primary) i LEKARZ (secondary)."
+      ],
+      "existing_capability_overlap": [
+        "Selektor zakresu na Home (HomeChartRangeOptions, HomeChartRangeSelectorBehavior) już istnieje; zakresy 1h–24h i pełnoekranowa historia z viewportem są w kodzie i testach logiki.",
+        "Obsługa gestów i viewport pełnoekranowy (FullScreenHistoryViewportTest) istnieją, ale ich ergonomia nie jest zwalidowana.",
+        "VALIDATED_CAPABILITIES.md nie zawiera żadnej capability dotyczącej wykresu ani historii; wynik PASS dla bieżącej glikemii nie dowodzi czytelności wykresu i nie tworzy wymagania.",
+        "REQ-0001 i REQ-0002 pozostają niezależne; zgłoszenie nie powinno ich rozszerzać, tylko ich nie pogarszać (aktualna glikemia ma pozostać najważniejsza)."
+      ],
+      "proposed_requirement": "Nie tworzyć jeszcze wymagania UX. Najpierw dodać do TEST_RESEARCH_BACKLOG zaplanowany przebieg badawczy „analiza historii glikemii” dla opiekuna (opcjonalnie lekarza): zadanie 3h/12h/24h, wskazanie punktu z tooltipem, przejście do pełnego ekranu, na małym ekranie, przy powiększonej czcionce i bez gestów wielodotykowych. Zapisać wynik jako obserwacje. Dopiero z potwierdzonych problemów (np. brak sterowania bez gestów, kolizja elementów) wyprowadzić wąskie wymagania kandydujące, a warianty UX i rekomendacje przedstawić jako propozycję do decyzji człowieka. Żadnych zmian logiki medycznej ani rekomendacji leczenia.",
+      "user_value": "Potencjalnie wysoka dla opiekuna: szybka i bezbłędna ocena przebiegu glikemii (np. wcześniejsze epizody niskiej glikemii) oraz dostępność dla osób, które nie mogą używać gestów wielodotykowych. Wartość jest hipotetyczna, bo nie ma jeszcze obserwacji potwierdzających problem. Aspekt dostępności bez gestów może być realną luką, ale też wymaga potwierdzenia w kodzie.",
+      "counterargument": "Zgłoszenie jest zbyt szerokie i opiera się na ogólnym odczuciu „wymaga poprawy”. Mieści 9 różnych tematów, z których część już istnieje. Wyprodukowanie 2 wariantów UX bez obserwacji użytkowników to projektowanie na ślepo, a zmiany w sterowaniu wykresem niosą ryzyko pogorszenia czytelności bieżącej glikemii oraz regresji gestów i tooltipa. W fazie foundation (DEC-0005: bez zmian UI produkcyjnego w fazie 1) przebudowa interakcji wykresu może odciągnąć uwagę od priorytetów REQ-0001/REQ-0002. Brak dowodu, że opiekunowie mają z tym problem.",
+      "simpler_alternative": "Zamiast projektować warianty UX, wykonać jednorazowy przegląd istniejącej implementacji i krótki przebieg testowy na małym ekranie z dużą czcionką, rejestrując konkretne usterki jako obserwacje lub bugi. Jeśli okaże się, że brakuje tylko przycisków zoom/przesuwania jako alternatywy dla gestów, wyodrębnić tę jedną, małą potrzebę dostępności jako osobne zgłoszenie. Reszta (selektor, tooltip, 12h/24h) wymaga najwyżej drobnych poprawek błędów, nie nowego wymagania.",
+      "safety_impact": "LOW",
+      "estimated_scope": "MEDIUM",
+      "proposed_priority": "P2",
+      "recommended_decision": "HOLD",
+      "reasoning_summary": "Nie ma dowodu na realny problem produktowy: brak obserwacji i przebiegów testowych dotyczących wykresu, a część zakresu już istnieje w kodzie i testach logiki. Zgłoszenie jest szerokie, a faza foundation i DEC-0005 ograniczają zmiany UI. Rekomendacja doradcza: HOLD do czasu zaplanowanego badania interakcji z wykresem (mały ekran, duża czcionka, brak gestów) i wyodrębnienia węższych kandydatów, np. dostępność bez gestów. Zmiana nie dotyka logiki medycznej i nie dopuszcza dawkowania ani rekomendacji leczenia. Decyzję podejmuje człowiek.",
+      "governance_notes": [],
+      "generated_at": "2026-10-16T11:27:28Z"
     }
   ]
 }
