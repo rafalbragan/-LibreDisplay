@@ -498,6 +498,58 @@ class RealLibreLinkUpClientTest {
         assertEquals(listOf("patient-1", "patient-1"), http.graphPatientIds)
     }
 
+    @Test
+    fun getConnections_usesShortLivedCache_andAvoidsDuplicateRequest() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(listOf(Response.success(json("""
+                {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+            """))))
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        val first = client.getConnections()
+        val second = client.getConnections()
+
+        assertEquals(1, http.connectionsCalls)
+        assertEquals(first, second)
+        assertEquals("patient-1", second.first().patientId)
+    }
+
+    @Test
+    fun importSession_invalidatesConnectionsCache_andFetchesFreshConnections() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-2","firstName":"Tata"}]}
+                    """))
+                )
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+        val exported = client.exportSession()
+        assertNotNull(exported)
+
+        val first = client.getConnections()
+        client.importSession(exported!!)
+        val second = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-1", first.first().patientId)
+        assertEquals("patient-2", second.first().patientId)
+    }
+
     private class FakeHttp(
         val loginResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),
         val connectionsResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),

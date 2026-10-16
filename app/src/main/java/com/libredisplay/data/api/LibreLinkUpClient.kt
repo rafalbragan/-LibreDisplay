@@ -12,7 +12,10 @@ import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.diagnostics.DiagnosticStatus
 import com.google.gson.JsonParser
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import java.security.MessageDigest
+import java.time.Duration
 import java.time.Instant
 import java.util.Base64
 import java.util.concurrent.atomic.AtomicLong
@@ -37,11 +40,18 @@ class RetrofitLibreLinkUpClient(
     private val apiBaseUrlOverride: String? = LibreLinkUpConfig.baseUrlOverrideOrNull()
 ) : LibreLinkUpClient, AuthCapableLibreLinkUpClient {
 
+    private companion object {
+        val CONNECTIONS_CACHE_TTL: Duration = Duration.ofSeconds(30)
+    }
+
     private var session: LibreLinkUpSession? = null
     private var patientId: String? = null
     private var requestedRegion: String = initialRegion.uppercase()
     private var lastCredentials: LoginRequest? = null
     private val loginAttemptCounter = AtomicLong(0)
+    private val connectionsMutex = Mutex()
+    @Volatile private var cachedConnections: List<LibreConnectionPerson> = emptyList()
+    @Volatile private var cachedConnectionsAt: Instant? = null
 
     override suspend fun login(email: String, password: String) {
         login(email, password, requestedRegion)
@@ -57,30 +67,51 @@ class RetrofitLibreLinkUpClient(
             redirectCount = 0
         )
         patientId = null
+        invalidateConnectionsCache()
     }
 
     override suspend fun getConnections(): List<LibreConnectionPerson> {
-        val activeSession = session ?: throw LibreLinkUpException("Brak aktywnej sesji LibreLinkUp")
-        val connectionsBody = executeJsonStep(step = "CONNECTIONS") {
-            http.getConnections(activeSession.baseUrl, activeSession.token, activeSession.accountIdHash)
-        }
-
-        val persons = extractConnectionPersons(connectionsBody)
-        DiagnosticLogger.logInfo(
-            "LibreLinkUpClient",
-            "CONNECTIONS PARSED count=${persons.size}"
-        )
-        persons.forEachIndexed { index, person ->
+        freshCachedConnections()?.let { cached ->
             DiagnosticLogger.logInfo(
                 "LibreLinkUpClient",
-                "PERSON FOUND index=$index name=${person.displayName} patientIdPrefix=${person.patientId.take(6)}"
+                "CONNECTIONS CACHE HIT count=${cached.size}"
             )
+            return cached
         }
-        if (persons.isEmpty()) {
-            throw NonRetryableLibreLinkUpException("Nie znaleziono aktywnych osób w LibreLinkUp.")
+
+        return connectionsMutex.withLock {
+            freshCachedConnections()?.let { cached ->
+                DiagnosticLogger.logInfo(
+                    "LibreLinkUpClient",
+                    "CONNECTIONS CACHE HIT after-wait count=${cached.size}"
+                )
+                return@withLock cached
+            }
+
+            val activeSession = session ?: throw LibreLinkUpException("Brak aktywnej sesji LibreLinkUp")
+            val connectionsBody = executeJsonStep(step = "CONNECTIONS") {
+                http.getConnections(activeSession.baseUrl, activeSession.token, activeSession.accountIdHash)
+            }
+
+            val persons = extractConnectionPersons(connectionsBody)
+            DiagnosticLogger.logInfo(
+                "LibreLinkUpClient",
+                "CONNECTIONS PARSED count=${persons.size}"
+            )
+            persons.forEachIndexed { index, person ->
+                DiagnosticLogger.logInfo(
+                    "LibreLinkUpClient",
+                    "PERSON FOUND index=$index name=${person.displayName} patientIdPrefix=${person.patientId.take(6)}"
+                )
+            }
+            if (persons.isEmpty()) {
+                throw NonRetryableLibreLinkUpException("Nie znaleziono aktywnych osób w LibreLinkUp.")
+            }
+            cachedConnections = persons
+            cachedConnectionsAt = Instant.now()
+            DiagnosticStatus.setGetConnections("OK")
+            persons
         }
-        DiagnosticStatus.setGetConnections("OK")
-        return persons
     }
 
     override suspend fun getLatestReading(patientId: String?): GlucoseReading? {
@@ -209,6 +240,7 @@ class RetrofitLibreLinkUpClient(
     override fun clearSession() {
         session = null
         patientId = null
+        invalidateConnectionsCache()
     }
 
     override fun exportSession(): PersistedLibreLinkUpSession? {
@@ -233,6 +265,20 @@ class RetrofitLibreLinkUpClient(
             baseUrl = session.baseUrl,
             tokenExpiresAtEpochSeconds = session.tokenExpiresAtEpochSeconds
         )
+        invalidateConnectionsCache()
+    }
+
+    private fun freshCachedConnections(now: Instant = Instant.now()): List<LibreConnectionPerson>? {
+        val cachedAt = cachedConnectionsAt ?: return null
+        if (cachedConnections.isEmpty()) return null
+        val age = Duration.between(cachedAt, now)
+        if (age.isNegative || age > CONNECTIONS_CACHE_TTL) return null
+        return cachedConnections
+    }
+
+    private fun invalidateConnectionsCache() {
+        cachedConnections = emptyList()
+        cachedConnectionsAt = null
     }
 
     private suspend fun performLogin(
