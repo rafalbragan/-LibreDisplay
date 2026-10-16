@@ -37,6 +37,7 @@ import java.util.concurrent.atomic.AtomicLong
 
 class MonitoringViewModel(application: Application) : AndroidViewModel(application) {
 
+
     private val app = application as LibreDisplayApp
     private val settingsRepository = app.settingsRepository
     private val glucoseRepository = app.glucoseRepository
@@ -273,7 +274,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 }
                 transitionState(ConnectionState.Connected)
                 val dashboardState = _uiState.value.applyDashboardSnapshot(snapshotOrNull)
-                val readingMissing = dashboardState.reading == null
+                val freshness = currentReadingFreshness(dashboardState.reading)
                 _uiState.update {
                     dashboardState.copy(
                     isLoading = false,
@@ -282,7 +283,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     retryCooldownSecondsRemaining = authCooldownSeconds(),
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = if (readingMissing) {
+                    dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
                         DataConnectionState.Stale(snapshotOrNull.reading.timestamp, 0)
                     } else {
                         DataConnectionState.Live
@@ -290,10 +291,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = snapshotOrNull.reading.timestamp,
-                    isDataStale = readingMissing,
+                    isDataStale = freshness != ReadingFreshness.FRESH,
                     consecutivePollingFailures = 0,
                     nextPollingRetryAt = null,
-                    staleInfoMessage = if (readingMissing) staleNoDataMessage(snapshotOrNull.reading.timestamp) else null
+                    staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(snapshotOrNull.reading.timestamp)
                     )
                 }
                 startPolling()
@@ -429,7 +430,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             try {
                 glucoseRepository.loadLatestMonitoringSnapshotFromLocal(normalized)?.let { localSnapshot ->
                     // Ignore a stale result if the user switched again while we were loading.
-                    if (_uiState.value.selectedPatientId != normalized) return@launch
+                    if (!shouldApplyPersonSwitchResult(normalized, _uiState.value.selectedPatientId)) return@launch
                     _uiState.update {
                         it.applyDashboardSnapshot(localSnapshot).copy(
                             isLoading = false,
@@ -438,7 +439,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         )
                     }
                 }
-                if (_uiState.value.selectedPatientId == normalized &&
+                if (shouldApplyPersonSwitchResult(normalized, _uiState.value.selectedPatientId) &&
                     _uiState.value.connectionState == ConnectionState.Connected
                 ) {
                     pollOnce(force = true, source = "person-switch")
@@ -451,7 +452,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     error,
                     "Person switch failed for ${normalized.take(6)}"
                 )
-                if (_uiState.value.selectedPatientId == normalized) {
+                if (shouldApplyPersonSwitchResult(normalized, _uiState.value.selectedPatientId)) {
                     _uiState.update { it.copy(isLoading = false) }
                 }
             }
@@ -492,7 +493,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=success")
                     transitionState(ConnectionState.Connected)
                     val dashboardState = _uiState.value.applyDashboardSnapshot(monitoringSnapshot)
-                    val readingMissing = dashboardState.reading == null
+                    val freshness = currentReadingFreshness(dashboardState.reading)
                     _uiState.update {
                         dashboardState.copy(
                         isLoading = false,
@@ -500,7 +501,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         canRetry = false,
                         lastUpdatedAt = Instant.now(),
                         authenticationState = AuthenticationState.Authenticated,
-                        dataConnectionState = if (readingMissing) {
+                        dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
                             DataConnectionState.Stale(monitoringSnapshot.reading.timestamp, 0)
                         } else {
                             DataConnectionState.Live
@@ -508,10 +509,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         pollingStatus = PollingStatus.Active,
                         lastSuccessfulFetchAt = Instant.now(),
                         lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                        isDataStale = readingMissing,
+                        isDataStale = freshness != ReadingFreshness.FRESH,
                         consecutivePollingFailures = 0,
                         nextPollingRetryAt = null,
-                        staleInfoMessage = if (readingMissing) staleNoDataMessage(monitoringSnapshot.reading.timestamp) else null
+                        staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(monitoringSnapshot.reading.timestamp)
                         )
                     }
                     startPolling()
@@ -636,7 +637,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 failureStartAt = null
                 retryJob?.cancel()
                 val dashboardState = _uiState.value.applyDashboardSnapshot(monitoringSnapshot)
-                val readingMissing = dashboardState.reading == null
+                val freshness = currentReadingFreshness(dashboardState.reading)
                 _uiState.value = dashboardState.copy(
                     isLoading = false,
                     errorMessage = null,
@@ -644,7 +645,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     isPolling = true,
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = if (readingMissing) {
+                    dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
                         DataConnectionState.Stale(monitoringSnapshot.reading.timestamp, 0)
                     } else {
                         DataConnectionState.Live
@@ -652,10 +653,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                    isDataStale = readingMissing,
+                    isDataStale = freshness != ReadingFreshness.FRESH,
                     consecutivePollingFailures = 0,
                     nextPollingRetryAt = null,
-                    staleInfoMessage = if (readingMissing) staleNoDataMessage(monitoringSnapshot.reading.timestamp) else null
+                    staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(monitoringSnapshot.reading.timestamp)
                 )
             }.onFailure { throwable ->
                 if (throwable is CancellationException) {
@@ -946,29 +947,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         if (selected.patientId != selectedPatientId) {
             settingsRepository.saveSelectedPatientId(selected.patientId)
         }
-        val hideStaleReading = shouldDisplayReadingAsNoData(snapshot.reading)
-        if (hideStaleReading) {
-            DiagnosticLogger.logWarning(
-                "MonitoringViewModel",
-                "READING SUPPRESSED reason=stale-without-history patientIdPrefix=${selected.patientId.take(6)} timestamp=${snapshot.reading.timestamp}"
-            )
-        }
-        val baseState = if (hideStaleReading) {
-            copy(
-                reading = null,
-                currentGlucose = "",
-                currentTimestamp = "",
-                minutesAgo = null,
-                trend = null,
-                min12h = null,
-                max12h = null,
-                historyPointCount = 0,
-                historyStatus = HistoryStatus.Empty
-            )
-        } else {
-            withReading(snapshot.reading)
-        }
-        return baseState.copy(
+        return withReading(snapshot.reading).copy(
             availablePersons = persons,
             selectedPatientId = selected.patientId,
             selectedPersonFirstName = selected.firstName,
@@ -978,12 +957,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             labHbA1cPercent = hba1cSettings.labHbA1cPercent,
             labHbA1cDate = hba1cSettings.labHbA1cDate,
             targetHbA1cPercent = hba1cSettings.targetHbA1cPercent,
-            historyStatus = if (hideStaleReading || snapshot.reading.history.isEmpty()) HistoryStatus.Empty else HistoryStatus.Available
+            historyStatus = if (snapshot.reading.history.isEmpty()) HistoryStatus.Empty else HistoryStatus.Available
         )
-    }
-
-    private fun staleNoDataMessage(lastReadingAt: Instant): String {
-        return "Brak aktualnych danych dla wybranej osoby. Ostatni zapis: ${PolishDateTimeFormatter.formatUserFacing(lastReadingAt)}"
     }
 
     private fun handleRateLimitFailure(throwable: Throwable) {
@@ -1118,6 +1093,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         )
     }
 
+    private fun staleNoDataMessage(lastReadingAt: Instant): String {
+        return "Brak aktualnych danych dla wybranej osoby. Ostatni poprawny pomiar: ${PolishDateTimeFormatter.formatUserFacing(lastReadingAt)}"
+    }
+
     private fun staleMessage(lastSuccessfulFetchAt: Instant?): String {
         if (lastSuccessfulFetchAt == null) return "Brak polaczenia - brak ostatniej udanej aktualizacji"
         val minutes = Duration.between(lastSuccessfulFetchAt, Instant.now()).toMinutes().coerceAtLeast(0)
@@ -1136,14 +1115,25 @@ private fun String?.isRateLimitMessage(): Boolean {
 
 private class FetchInProgressException : RuntimeException("Fetch already in progress")
 
-internal fun shouldDisplayReadingAsNoData(
-    reading: com.libredisplay.data.model.GlucoseReading,
-    now: Instant = Instant.now(),
-    staleMinutesThreshold: Long = 30L
-): Boolean {
-    val age = Duration.between(reading.timestamp, now)
-    if (age.isNegative) return false
-    val hasReliableHistory = reading.history.size >= 2
-    return !hasReliableHistory && age.toMinutes() >= staleMinutesThreshold
+private const val CURRENT_READING_STALE_MINUTES: Long = 30L
+
+internal enum class ReadingFreshness {
+    MISSING,
+    STALE,
+    FRESH
 }
 
+internal fun currentReadingFreshness(
+    reading: com.libredisplay.data.model.GlucoseReading?,
+    now: Instant = Instant.now(),
+    staleMinutesThreshold: Long = CURRENT_READING_STALE_MINUTES
+): ReadingFreshness {
+    if (reading == null) return ReadingFreshness.MISSING
+    val age = Duration.between(reading.timestamp, now)
+    if (age.isNegative) return ReadingFreshness.FRESH
+    return if (age.toMinutes() >= staleMinutesThreshold) ReadingFreshness.STALE else ReadingFreshness.FRESH
+}
+
+internal fun shouldApplyPersonSwitchResult(expectedPatientId: String, currentSelectedPatientId: String?): Boolean {
+    return expectedPatientId == currentSelectedPatientId
+}
