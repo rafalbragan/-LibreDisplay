@@ -76,7 +76,7 @@ implementation:
   source_inbox_id: INBOX-GH-000025
   source_inbox_issue_number: 25
   source_inbox_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/25
-  implementation_status: AGENT_ASSIGNED
+  implementation_status: PR_READY
   validation_state: PENDING
   implementation_issue:
     number: 31
@@ -387,5 +387,10 @@ implementation:
         state_reason: null
         pinned_comment: null
     updated_at: '2026-10-16T12:11:33Z'
-  implementation_pr: {}
+  implementation_pr:
+    number: 33
+    url: https://github.com/rafalbragan/-LibreDisplay/pull/33
+    head_ref: feature/req-0004-home-monitoring-chart-nav
+    state: open
+    updated_at: '2026-10-16T13:34:57Z'
   copilot_handoff_allowed: true
