@@ -2,6 +2,72 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.2 - 2026-10-16
+
+### PL
+
+#### Added
+- Dodano kanoniczne wymaganie `REQ-0004` dla zaakceptowanego redesignu nawigacji wykresu Home/Monitoring oraz rekord implementacji `IMP-REQ-0004`.
+- Dodano zakres `1h` dla historii Monitoring oraz mini-nawigator z widocznym oknem zakresu i przesuwaniem okna.
+- Dodano testy dla zakresow `1h/3h/6h/12h/24h` oraz detekcji powrotu widoku do najnowszych danych.
+
+#### Changed
+- Full-screen Monitoring uzywa teraz mini-nawigatora z draggable window zamiast samego suwaka oraz pokazuje przycisk `Wroc do najnowszych danych`, gdy uzytkownik jest poza najnowszym oknem.
+- Zakresy selektora historii Monitoring zostaly zawężone do zaakceptowanego scope: `1h`, `3h`, `6h`, `12h`, `24h`.
+- Wersja aplikacji: `2.16.1` (`versionCode 45`) -> `2.16.2` (`versionCode 46`).
+
+#### Fixed
+- Uporzadkowano mapowanie `TimeRange` i modele coverage po dodaniu `LAST_1_HOUR`, aby uniknac bledow kompilacji i regresji osi czasu.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
+
+### EN
+
+#### Added
+- Added canonical requirement `REQ-0004` for the accepted Home/Monitoring chart-navigation redesign and implementation record `IMP-REQ-0004`.
+- Added `1h` range support in Monitoring history and a mini navigator with a visible draggable viewport window.
+- Added tests for the `1h/3h/6h/12h/24h` selector scope and latest-window return detection.
+
+#### Changed
+- Full-screen Monitoring now uses a mini navigator with a draggable window (not only a slider) and shows `Wroc do najnowszych danych` when viewing older data.
+- Monitoring history selector scope is constrained to the accepted range set: `1h`, `3h`, `6h`, `12h`, `24h`.
+- App version: `2.16.1` (`versionCode 45`) -> `2.16.2` (`versionCode 46`).
+
+#### Fixed
+- Completed `TimeRange` and coverage mapping for `LAST_1_HOUR` to avoid compile-time and timeline regressions.
+
+#### Tests
+- `python scripts/product/product_cli.py validate` - PASS
+- `python scripts/product/product_cli.py summary` - PASS
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew assembleDebugAndroidTest` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
+
 ## 2.16.1 - 2026-09-02
 
 ### PL

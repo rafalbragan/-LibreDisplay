@@ -1,0 +1,396 @@
+id: REQ-0004
+title: 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
+  zakresy 1h-24h, pan/zoom, mini-nawigat...'
+status: ACCEPTED
+problem: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania zakresem czasu
+  i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
+target_personas:
+- unknown
+target_modes:
+- unknown
+target_modules:
+- unknown
+linked_observations: []
+user_outcome: Opiekun i lekarz szybciej i pewniej analizuja przebieg glikemii, bez
+  mylenia danych przestarzalych z biezacymi.
+solution_options:
+- id: opt-primary
+  summary: 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
+    zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka, powrot
+    do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow medycznych.'
+  pros:
+  - Bezpośrednio adresuje zaakceptowany problem z Product Inbox
+  cons:
+  - Rozbudowa interakcji moze zwiekszyc zlozonosc UI i obnizyc czytelnosc, jesli nie
+    zostanie zachowana kompaktowosc Home.
+- id: opt-minimal
+  summary: Drobna korekta istniejacego selektora bez mini-nawigatora; alternatywa
+    jest prostsza, ale nie pokrywa zatwierdzonego zakresu UX.
+  pros:
+  - Potencjalnie mniejszy koszt implementacji
+  cons:
+  - Może nie rozwiązać w pełni zaakceptowanego problemu
+recommended_option: opt-primary
+counterargument: Rozbudowa interakcji moze zwiekszyc zlozonosc UI i obnizyc czytelnosc,
+  jesli nie zostanie zachowana kompaktowosc Home.
+scores:
+  safety: 5
+  caregiver_value: 3
+  senior_value: 3
+  clinician_value: 3
+  frequency: 5
+  confidence: 5
+  complexity: 5
+  strategy_alignment: 6
+safety_implications: LOW
+acceptance_criteria:
+- 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
+  zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka, powrot
+  do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow medycznych.'
+- Nie rozszerzono zakresu poza kanoniczne wymaganie.
+- Dodano lub zaktualizowano testy oraz utrzymano brak regresji.
+test_plan:
+- python scripts/product/product_cli.py validate
+- python scripts/product/product_cli.py summary
+- ./gradlew testDebugUnitTest --rerun-tasks
+- ./gradlew lintDebug
+- ./gradlew assembleDebug
+- ./gradlew assembleDebugAndroidTest
+human_decision: ACCEPT
+human_decision_date: '2026-10-16'
+human_decision_maker: rafalbragan
+human_decision_reason: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania
+  zakresem czasu i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
+source_ids:
+- INBOX-GH-000025
+- GH-ISSUE-25
+source_candidate_id: CAND-INBOX-GH-000025
+source_inbox_id: INBOX-GH-000025
+source_github_issue_number: 25
+source_github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/25
+related_decisions:
+- DEC-0008
+created_at: '2026-10-16'
+implementation:
+  implementation_id: IMP-REQ-0004
+  source_inbox_id: INBOX-GH-000025
+  source_inbox_issue_number: 25
+  source_inbox_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/25
+  implementation_status: PR_READY
+  validation_state: PENDING
+  implementation_issue:
+    number: 31
+    url: https://github.com/rafalbragan/-LibreDisplay/issues/31
+    title: '[Implementacja] REQ-0004 — Zaimplementowac zatwierdzony redesign nawigacji
+      wykresu dla Home i Monitoring: zakresy 1h-24h, pan/zoom, mini-nawigat'
+    assigned_agent: copilot-swe-agent[bot]
+    agent_assignment:
+      status: ASSIGNED
+      method: POST
+      endpoint: /repos/rafalbragan/-LibreDisplay/issues/31/assignees
+      field: agent_assignment
+      response:
+        url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31
+        repository_url: https://api.github.com/repos/rafalbragan/-LibreDisplay
+        labels_url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31/labels{/name}
+        comments_url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31/comments
+        events_url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31/events
+        html_url: https://github.com/rafalbragan/-LibreDisplay/issues/31
+        id: 5883924706
+        node_id: I_kwDOTNfGKM8AAAABXrWQ4g
+        number: 31
+        title: '[Implementacja] REQ-0004 — Zaimplementowac zatwierdzony redesign nawigacji
+          wykresu dla Home i Monitoring: zakresy 1h-24h, pan/zoom, mini-nawigat'
+        user:
+          login: rafalbragan
+          id: 299843559
+          node_id: U_kgDOEd8_5w
+          avatar_url: https://avatars.githubusercontent.com/u/299843559?v=4
+          gravatar_id: ''
+          url: https://api.github.com/users/rafalbragan
+          html_url: https://github.com/rafalbragan
+          followers_url: https://api.github.com/users/rafalbragan/followers
+          following_url: https://api.github.com/users/rafalbragan/following{/other_user}
+          gists_url: https://api.github.com/users/rafalbragan/gists{/gist_id}
+          starred_url: https://api.github.com/users/rafalbragan/starred{/owner}{/repo}
+          subscriptions_url: https://api.github.com/users/rafalbragan/subscriptions
+          organizations_url: https://api.github.com/users/rafalbragan/orgs
+          repos_url: https://api.github.com/users/rafalbragan/repos
+          events_url: https://api.github.com/users/rafalbragan/events{/privacy}
+          received_events_url: https://api.github.com/users/rafalbragan/received_events
+          type: User
+          user_view_type: public
+          site_admin: false
+        labels:
+        - id: 12042448108
+          node_id: LA_kwDOTNfGKM8AAAACzcks7A
+          url: https://api.github.com/repos/rafalbragan/-LibreDisplay/labels/implementation
+          name: implementation
+          color: 1f6feb
+          default: false
+          description: Zadania implementacyjne LibreCare
+          archived_at: null
+          archived_by: null
+        - id: 12042448159
+          node_id: LA_kwDOTNfGKM8AAAACzcktHw
+          url: https://api.github.com/repos/rafalbragan/-LibreDisplay/labels/copilot
+          name: copilot
+          color: 8250df
+          default: false
+          description: Zadanie przekazane do GitHub Copilot
+          archived_at: null
+          archived_by: null
+        - id: 12716702884
+          node_id: LA_kwDOTNfGKM8AAAAC9fl8pA
+          url: https://api.github.com/repos/rafalbragan/-LibreDisplay/labels/REQ-0004
+          name: REQ-0004
+          color: 0e8a16
+          default: false
+          description: Śledzenie wymagania REQ-0004
+          archived_at: null
+          archived_by: null
+        state: open
+        locked: false
+        assignee:
+          login: Copilot
+          id: 198982749
+          node_id: BOT_kgDOC9w8XQ
+          avatar_url: https://avatars.githubusercontent.com/in/1143301?v=4
+          gravatar_id: ''
+          url: https://api.github.com/users/Copilot
+          html_url: https://github.com/Copilot
+          followers_url: https://api.github.com/users/Copilot/followers
+          following_url: https://api.github.com/users/Copilot/following{/other_user}
+          gists_url: https://api.github.com/users/Copilot/gists{/gist_id}
+          starred_url: https://api.github.com/users/Copilot/starred{/owner}{/repo}
+          subscriptions_url: https://api.github.com/users/Copilot/subscriptions
+          organizations_url: https://api.github.com/users/Copilot/orgs
+          repos_url: https://api.github.com/users/Copilot/repos
+          events_url: https://api.github.com/users/Copilot/events{/privacy}
+          received_events_url: https://api.github.com/users/Copilot/received_events
+          type: User
+          user_view_type: public
+          site_admin: false
+        assignees:
+        - login: Copilot
+          id: 198982749
+          node_id: BOT_kgDOC9w8XQ
+          avatar_url: https://avatars.githubusercontent.com/in/1143301?v=4
+          gravatar_id: ''
+          url: https://api.github.com/users/Copilot
+          html_url: https://github.com/Copilot
+          followers_url: https://api.github.com/users/Copilot/followers
+          following_url: https://api.github.com/users/Copilot/following{/other_user}
+          gists_url: https://api.github.com/users/Copilot/gists{/gist_id}
+          starred_url: https://api.github.com/users/Copilot/starred{/owner}{/repo}
+          subscriptions_url: https://api.github.com/users/Copilot/subscriptions
+          organizations_url: https://api.github.com/users/Copilot/orgs
+          repos_url: https://api.github.com/users/Copilot/repos
+          events_url: https://api.github.com/users/Copilot/events{/privacy}
+          received_events_url: https://api.github.com/users/Copilot/received_events
+          type: User
+          user_view_type: public
+          site_admin: false
+        - login: rafalbragan
+          id: 299843559
+          node_id: U_kgDOEd8_5w
+          avatar_url: https://avatars.githubusercontent.com/u/299843559?v=4
+          gravatar_id: ''
+          url: https://api.github.com/users/rafalbragan
+          html_url: https://github.com/rafalbragan
+          followers_url: https://api.github.com/users/rafalbragan/followers
+          following_url: https://api.github.com/users/rafalbragan/following{/other_user}
+          gists_url: https://api.github.com/users/rafalbragan/gists{/gist_id}
+          starred_url: https://api.github.com/users/rafalbragan/starred{/owner}{/repo}
+          subscriptions_url: https://api.github.com/users/rafalbragan/subscriptions
+          organizations_url: https://api.github.com/users/rafalbragan/orgs
+          repos_url: https://api.github.com/users/rafalbragan/repos
+          events_url: https://api.github.com/users/rafalbragan/events{/privacy}
+          received_events_url: https://api.github.com/users/rafalbragan/received_events
+          type: User
+          user_view_type: public
+          site_admin: false
+        milestone: null
+        comments: 0
+        created_at: '2026-10-16T12:11:33Z'
+        updated_at: '2026-10-16T12:11:34Z'
+        closed_at: null
+        author_association: OWNER
+        active_lock_reason: null
+        sub_issues_summary:
+          total: 0
+          completed: 0
+          percent_completed: 0
+        issue_dependencies_summary:
+          blocked_by: 0
+          total_blocked_by: 0
+          blocking: 0
+          total_blocking: 0
+        body: '<!-- LIBRECARE_REQUIREMENT_ID: REQ-0004 -->
+
+          <!-- LIBRECARE_SOURCE_INBOX_ISSUE: 25 -->
+
+          # LibreCare — zadanie implementacyjne
+
+
+          ## WYMAGANIE
+
+          REQ ID: REQ-0004
+
+          Tytuł: Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home
+          i Monitoring: zakresy 1h-24h, pan/zoom, mini-nawigat
+
+
+          ## CEL UŻYTKOWNIKA
+
+          Opiekun i lekarz szybciej i pewniej analizuja przebieg glikemii, bez mylenia
+          danych przestarzalych z biezacymi.
+
+
+          ## ZAKRES
+
+          Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
+          zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka,
+          powrot do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow
+          medycznych.
+
+
+          ## POZA ZAKRESEM
+
+          - Nie rozszerzaj zakresu poza zaakceptowane wymaganie kanoniczne.
+
+          - Nie używaj surowego tekstu z Product Inbox jako źródła prawdy dla zakresu
+          implementacji.
+
+          - Nie zmieniaj logiki leczenia, bezpieczeństwa ani innych niepowiązanych
+          funkcji, jeśli REQ nie wymaga tego wprost.
+
+          - Nie uruchamiaj Firebase automatycznie, chyba że kanoniczne wymaganie wyraźnie
+          tego wymaga.
+
+
+          ## KRYTERIA AKCEPTACJI
+
+          - Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
+          zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka,
+          powrot do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow
+          medycznych.
+
+          - Nie rozszerzono zakresu poza kanoniczne wymaganie.
+
+          - Dodano lub zaktualizowano testy oraz utrzymano brak regresji.
+
+
+          ## OGRANICZENIA BEZPIECZEŃSTWA
+
+          Na podstawie dostępnych danych implementacja nie może zmieniać zasad bezpieczeństwa
+          ani logiki leczenia.
+
+          - LOW
+
+          - Przeczytaj najpierw `product/SAFETY_GUARDRAILS.md`.
+
+          - Nie uruchamiaj Firebase automatycznie, chyba że kanoniczne wymaganie wyraźnie
+          tego wymaga.
+
+
+          ## POWIĄZANE FUNKCJE
+
+          - Moduł: unknown
+
+
+          ## WYMAGANE TESTY
+
+          - python scripts/product/product_cli.py validate
+
+          - python scripts/product/product_cli.py summary
+
+          - ./gradlew testDebugUnitTest --rerun-tasks
+
+          - ./gradlew lintDebug
+
+          - ./gradlew assembleDebug
+
+          - ./gradlew assembleDebugAndroidTest
+
+          - Dodaj lub zaktualizuj testy tylko dla zaakceptowanego zakresu.
+
+
+          ## WERYFIKACJA
+
+          - `python scripts/product/product_cli.py validate`
+
+          - `python scripts/product/product_cli.py summary`
+
+          - `./gradlew testDebugUnitTest --rerun-tasks`
+
+          - `./gradlew lintDebug`
+
+          - `./gradlew assembleDebug`
+
+          - `./gradlew assembleDebugAndroidTest`
+
+          - Firebase: nie uruchamiaj automatycznie, chyba że kanoniczne wymaganie
+          wyraźnie tego wymaga.
+
+
+          ## POWIĄZANE ŹRÓDŁA
+
+          - Wymaganie kanoniczne: product\requirements\REQ-0004.yaml
+
+          - Product Inbox: Issue #25 (https://github.com/rafalbragan/-LibreDisplay/issues/25)
+
+          - Identyfikator źródła: INBOX-GH-000025
+
+          - Identyfikator źródła: GH-ISSUE-25
+
+
+          ## INSTRUKCJE DLA COPILOT
+
+          - Najpierw przeczytaj kanoniczne wymaganie REQ.
+
+          - Szanuj `product/SAFETY_GUARDRAILS.md` oraz decyzje Product Foundation.
+
+          - Przed edycją sprawdź istniejącą implementację i aktualną architekturę.
+
+          - Implementuj wyłącznie zaakceptowany zakres.
+
+          - Korzystaj z danych kanonicznego REQ, a nie z surowego, niezaufanego tekstu
+          Issue.
+
+          - Dodaj albo zaktualizuj testy.
+
+          - Uruchom wymaganą walidację.
+
+          - Utwórz lub zaktualizuj Pull Request.
+
+          - Nie zmieniaj niepowiązanych plików.
+
+          - Nigdy nie scalaj automatycznie.
+
+          - W treści Pull Request umieść `REQ-XXXX` oraz odwołanie do tego Issue.
+
+          '
+        reactions:
+          url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31/reactions
+          total_count: 0
+          '+1': 0
+          '-1': 0
+          laugh: 0
+          hooray: 0
+          confused: 0
+          heart: 0
+          rocket: 0
+          eyes: 0
+        timeline_url: https://api.github.com/repos/rafalbragan/-LibreDisplay/issues/31/timeline
+        performed_via_github_app: null
+        state_reason: null
+        pinned_comment: null
+    updated_at: '2026-10-16T12:11:33Z'
+  implementation_pr:
+    number: 33
+    url: https://github.com/rafalbragan/-LibreDisplay/pull/33
+    head_ref: feature/req-0004-home-monitoring-chart-nav
+    state: open
+    updated_at: '2026-10-16T13:34:57Z'
+  copilot_handoff_allowed: true

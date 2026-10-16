@@ -1,0 +1,20 @@
+{
+  "id": "DEC-0008",
+  "date": "2026-10-16",
+  "subject": "Zaakceptowano REQ-0004 dotyczace redesignu nawigacji wykresow Home i Monitoring",
+  "status": "ACCEPTED",
+  "decision": "REQ-0004 zostaje przyjete do implementacji w zakresie UX nawigacji wykresu (1h/3h/6h/12h/24h, mini-nawigator, pan/zoom, wskazanie punktu, powrot do najnowszych danych), bez zmian logiki medycznej.",
+  "reason": "Issue #25 zostal zaakceptowany przez Product Ownera; zmiana poprawia ergonomie analizy historii glikemii dla opiekuna i lekarza.",
+  "evidence": [
+    "GitHub Issue #25",
+    "INBOX-GH-000025",
+    "REQ-0004",
+    "IMP-REQ-0004"
+  ],
+  "counterargument": "Rozbudowa interakcji moze zwiekszyc zlozonosc UI i ryzyko regresji gestow, dlatego wymagane sa testy regresyjne i kontrola czytelnosci Home.",
+  "revisit_condition": "Jesli testy uzytecznosci lub dane produkcyjne wykaza spadek czytelnosci, problemy dostepnosci lub regresje na malych ekranach.",
+  "related_requirements": [
+    "REQ-0004"
+  ]
+}
+

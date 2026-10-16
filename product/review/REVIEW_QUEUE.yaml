@@ -137,3 +137,33 @@ candidates:
     recommended_decision: ACCEPT
     classification: PRODUCT_PROBLEM
     applied_requirement_id: null
+  CAND-INBOX-GH-000025:
+    title: 'Inbox INBOX-GH-000025 #25'
+    persona: unknown
+    module: unknown
+    problem_or_opportunity: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania
+      zakresem czasu i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
+    proposed_requirement: 'Zaimplementowac zatwierdzony redesign nawigacji wykresu
+      dla Home i Monitoring: zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka,
+      powrot do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow medycznych.'
+    expected_user_value: Opiekun i lekarz szybciej i pewniej analizuja przebieg glikemii,
+      bez mylenia danych przestarzalych z biezacymi.
+    alternative: Drobna korekta istniejacego selektora bez mini-nawigatora; alternatywa
+      jest prostsza, ale nie pokrywa zatwierdzonego zakresu UX.
+    counterargument: Rozbudowa interakcji moze zwiekszyc zlozonosc UI i obnizyc czytelnosc,
+      jesli nie zostanie zachowana kompaktowosc Home.
+    safety_impact: LOW
+    proposed_priority: P1
+    human_decision: ACCEPT
+    source_ids:
+    - INBOX-GH-000025
+    - GH-ISSUE-25
+    inbox_id: INBOX-GH-000025
+    github_issue_number: 25
+    github_issue_url: https://github.com/rafalbragan/-LibreDisplay/issues/25
+    recommended_decision: ACCEPT
+    classification: PRODUCT_PROBLEM
+    applied_requirement_id: REQ-0004
+    human_decision_by: rafalbragan
+    human_decision_reason: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania
+      zakresem czasu i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
