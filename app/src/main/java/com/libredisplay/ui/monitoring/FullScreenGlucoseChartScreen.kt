@@ -282,7 +282,7 @@ internal fun FullScreenGlucoseChartScreen(
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
-                                Text("Wroc do najnowszych danych")
+                                Text("Wróć do najnowszych danych")
                             }
                         }
                     }
@@ -535,7 +535,7 @@ private fun FullScreenHistoryNavigator(
                 }
             }
             .semantics {
-                contentDescription = "Mini nawigator historii. Przeciagnij okno, aby przesunac zakres czasu."
+                contentDescription = "Mini nawigator historii. Przeciągnij okno, aby przesunąć zakres czasu."
             }
     ) {
         val geometry = computeHomeNavigatorGeometry(

@@ -32,9 +32,9 @@ All notable changes to LibreCare will be documented in this file.
 - No connected device/emulator available.
 
 #### Artifacts
-- `release-artifacts/LibreCare-2.16.2-debug.apk` (`23,891,942 B`)
-- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,754 B`)
-- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,403 B`)
+- `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
 
 ### EN
 
@@ -64,9 +64,9 @@ All notable changes to LibreCare will be documented in this file.
 - No connected device/emulator available.
 
 #### Artifacts
-- `release-artifacts/LibreCare-2.16.2-debug.apk` (`23,891,942 B`)
-- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,754 B`)
-- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,403 B`)
+- `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
 
 ## 2.16.1 - 2026-09-02
 

@@ -31,9 +31,9 @@
 - No connected device/emulator available.
 
 ### Artifacts
-- Debug APK: `release-artifacts/LibreCare-2.16.2-debug.apk` (`23,891,942 B`)
-- Release APK: `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,754 B`)
-- Release AAB: `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,403 B`)
+- Debug APK: `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- Release APK: `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- Release AAB: `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
 - Google Play Upload File: `release-artifacts/LibreCare-2.16.2-release.aab`
 
 ### Known Limitations
@@ -70,11 +70,12 @@
 - No connected device/emulator available.
 
 ### Artifacts
-- Debug APK: `release-artifacts/LibreCare-2.16.2-debug.apk` (`23,891,942 B`)
-- Release APK: `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,754 B`)
-- Release AAB: `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,403 B`)
+- Debug APK: `release-artifacts/LibreCare-2.16.2-debug.apk` (`24,706,331 B`)
+- Release APK: `release-artifacts/LibreCare-2.16.2-release.apk` (`3,695,748 B`)
+- Release AAB: `release-artifacts/LibreCare-2.16.2-release.aab` (`6,683,444 B`)
 - Google Play Upload File: `release-artifacts/LibreCare-2.16.2-release.aab`
 
 ### Known Limitations
 - No connected emulator/device was available, so connected UI tests were not executed.
+
 
