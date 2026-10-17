@@ -188,9 +188,9 @@
   "status": "READY_FOR_HUMAN_REVIEW",
   "created_at": "2026-10-17T10:12:02Z",
   "attempt_count": 0,
-  "last_ci_result": "UNKNOWN",
+  "last_ci_result": "PASS",
   "validation_state": "PENDING",
   "acceptance_test_ids": [],
   "ci_failures": [],
-  "updated_at": "2026-10-17T10:12:02Z"
+  "updated_at": "2026-10-17T10:18:03Z"
 }
