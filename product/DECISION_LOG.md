@@ -63,6 +63,27 @@ Decision statuses: `ACCEPTED` · `HOLD` · `REJECTED` · `SUPERSEDED`.
 - **Revisit condition:** Jesli testy ujawnia spadek czytelnosci lub problemy dostepnosci.
 - **Structured record:** `decisions/DEC-0008-accept-req0004-chart-navigation-redesign.json`.
 
+## D-0006 — ACCEPT zakresu analizy/projektu alarmow glikemii (Issue #28)
+- **Date:** 2026-10-17
+- **Status:** ACCEPTED
+- **Decision:** Product Owner akceptuje przygotowanie analizy technicznej, projektu rozwiazania,
+  wymagan bezpieczenstwa i scenariuszy testowych dla alarmow glikemii.
+- **Reason:** Obszar ma charakter safety-critical i wymaga formalnej analizy przyczyn,
+  zanim zostana wykonane zmiany zachowania alarmow.
+- **Revisit condition:** Po przedstawieniu raportu technicznego i pytań decyzyjnych do PO.
+- **Structured record:** `decisions/DEC-0009-accept-issue28-alert-analysis-design.json`.
+
+## D-0007 — HOLD implementacji zmian zachowania alarmow glikemii (Issue #28)
+- **Date:** 2026-10-17
+- **Status:** HOLD
+- **Decision:** Implementacja zmian produkcyjnego zachowania alarmow (wyzwalanie,
+  eskalacja, dzwiek/wibracja/TTS, reguly opoznien) pozostaje wstrzymana do osobnej
+  zgody Product Ownera.
+- **Reason:** Wymagane sa potwierdzone defekty, testy urzadzeniowe i kontrola ryzyka
+  przed wdrozeniem zmian safety-critical.
+- **Revisit condition:** Po formalnym ACCEPT zakresu implementacji przez PO.
+- **Structured record:** `decisions/DEC-0010-hold-issue28-alert-behavior-implementation.json`.
+
 ---
 
 Add new decisions above this line in reverse-chronological order, and mirror meaningful ones as

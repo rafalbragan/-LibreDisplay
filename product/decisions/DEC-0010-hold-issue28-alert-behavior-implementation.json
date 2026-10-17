@@ -1,0 +1,18 @@
+{
+  "id": "DEC-0010",
+  "date": "2026-10-17",
+  "subject": "Wstrzymano implementacje zmian zachowania alarmow glikemii do osobnej zgody PO",
+  "status": "HOLD",
+  "decision": "Wszelkie zmiany produkcyjnego zachowania alarmow glikemii (progi, dzwiek/wibracja/TTS, harmonogram, reguly wyzwalania i eskalacji) pozostaja HOLD do osobnej, jawnej decyzji Product Ownera.",
+  "reason": "Zakres #28 ma charakter safety-critical. Najpierw wymagane sa potwierdzenie przyczyn, testy urzadzeniowe i formalna decyzja wdrozeniowa.",
+  "evidence": [
+    "GitHub Issue #28",
+    "INBOX-GH-000028",
+    "CAND-INBOX-GH-000028",
+    "DEC-0009"
+  ],
+  "counterargument": "Opoznienie implementacji moze utrzymac obecne problemy alarmowe dluzej.",
+  "revisit_condition": "Po zatwierdzeniu przez PO planu implementacyjnego i zakresu rolloutu z kryteriami bezpieczenstwa.",
+  "related_requirements": []
+}
+

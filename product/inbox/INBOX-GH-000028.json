@@ -1,0 +1,16 @@
+{
+  "inbox_id": "INBOX-GH-000028",
+  "github_issue_number": 28,
+  "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/28",
+  "created_at": "2026-10-16T11:27:09Z",
+  "updated_at": "2026-10-16T11:27:09Z",
+  "submitted_by": "rafalbragan",
+  "type": "PROBLEM",
+  "persona": "OPIEKUN",
+  "module": "POWIADOMIENIA",
+  "raw_input": "Alarmy glikemii i czestotliwosc odswiezania wymagaja bezpiecznej analizy: dzwiek alarmu, kanaly Android, uprawnienia, dzialanie w tle, opoznienia i ograniczenia API.",
+  "why_it_matters": "Nieskuteczny alarm moze opoznic reakcje opiekuna na hipo/hiperglikemie i stworzyc safety gap.",
+  "context": "Zakres PO: ACCEPT dla analizy technicznej, projektu rozwiazania, wymagan bezpieczenstwa i scenariuszy testowych; HOLD dla implementacji zmian zachowania alarmow do osobnej zgody PO.",
+  "status": "HOLD"
+}
+
