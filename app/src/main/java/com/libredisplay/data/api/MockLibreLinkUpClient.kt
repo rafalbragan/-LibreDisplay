@@ -5,6 +5,7 @@ import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
+import com.libredisplay.data.demo.MikaSyntheticProfileGenerator
 import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.cos
@@ -16,6 +17,12 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
     private var selectedPatientId: String? = null
 
     private val persons = listOf(
+        LibreConnectionPerson(
+            patientId = MikaSyntheticProfileGenerator.MIKA_PATIENT_ID,
+            displayName = "Mika",
+            firstName = "Mika",
+            lastName = "DEMO"
+        ),
         LibreConnectionPerson(
             patientId = "demo-person-anna",
             displayName = "Anna Kowalska",
@@ -66,6 +73,9 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
         }
         val resolvedPatientId = patientId ?: selectedPatientId ?: persons.first().patientId
         selectedPatientId = resolvedPatientId
+        if (resolvedPatientId == MikaSyntheticProfileGenerator.MIKA_PATIENT_ID) {
+            return MikaSyntheticProfileGenerator.generate(now = Instant.now())
+        }
         val now = Instant.now().minusSeconds(5 * 60L)
         val pointsPerDay = 96 // 15-minute interval
         val totalPoints = 60 * pointsPerDay
