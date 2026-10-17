@@ -22,7 +22,7 @@ object MikaSyntheticProfileGenerator {
     private const val FIXED_SEED = 20261017L
 
     fun generate(now: Instant): GlucoseReading {
-        val anchorDate = LocalDate.ofInstant(now, ZoneOffset.UTC)
+        val anchorDate = now.atZone(ZoneOffset.UTC).toLocalDate()
         val end = anchorDate.atTime(23, 30).toInstant(ZoneOffset.UTC)
         val start = anchorDate.minusMonths(HISTORY_MONTHS).atStartOfDay().toInstant(ZoneOffset.UTC)
         val points = buildSequence(start = start, end = end)
