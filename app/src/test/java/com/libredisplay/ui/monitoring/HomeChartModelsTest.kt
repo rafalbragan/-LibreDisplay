@@ -39,6 +39,7 @@ class HomeChartModelsTest {
         val viewport = buildHomeChartViewport(samplePoints(now, 2), HomeChartRange.LAST_12_HOURS)!!
 
         assertTrue(viewport.effectiveDuration <= Duration.ofHours(2))
+        assertFalse(viewport.canPan)
     }
 
     @Test

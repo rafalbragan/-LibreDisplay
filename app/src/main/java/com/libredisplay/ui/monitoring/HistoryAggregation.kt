@@ -16,6 +16,7 @@ internal enum class TimeRange(val duration: Duration, val label: String, val sho
     LAST_1_DAY(Duration.ofDays(1), "Ostatni dzień", "1 dzień"),
     LAST_3_DAYS(Duration.ofDays(3), "Ostatnie 3 dni", "3 dni"),
     LAST_7_DAYS(Duration.ofDays(7), "Ostatnie 7 dni", "7 dni"),
+    LAST_14_DAYS(Duration.ofDays(14), "Ostatnie 14 dni", "14 dni"),
     LAST_30_DAYS(Duration.ofDays(30), "Ostatnie 30 dni", "30 dni"),
     LAST_90_DAYS(Duration.ofDays(90), "Ostatnie 90 dni", "90 dni"),
     LAST_365_DAYS(Duration.ofDays(365), "Ostatni rok", "365 dni")
@@ -192,7 +193,8 @@ internal fun chartModeForRange(range: TimeRange): String = when (range) {
     TimeRange.LAST_12_HOURS,
     TimeRange.LAST_24_HOURS,
     TimeRange.LAST_1_DAY,
-    TimeRange.LAST_7_DAYS -> "line"
+    TimeRange.LAST_7_DAYS,
+    TimeRange.LAST_14_DAYS -> "line"
     TimeRange.LAST_3_DAYS -> "aggregated"
     TimeRange.LAST_30_DAYS,
     TimeRange.LAST_90_DAYS,
@@ -203,7 +205,7 @@ internal fun TimeRangeState.toHistoryTimeRange(): TimeRange = when (presetRange)
     PresetTimeRange.LAST_12_HOURS -> TimeRange.LAST_12_HOURS
     PresetTimeRange.LAST_24_HOURS -> TimeRange.LAST_24_HOURS
     PresetTimeRange.LAST_7_DAYS -> TimeRange.LAST_7_DAYS
-    PresetTimeRange.LAST_14_DAYS -> TimeRange.LAST_30_DAYS
+    PresetTimeRange.LAST_14_DAYS -> TimeRange.LAST_14_DAYS
     PresetTimeRange.LAST_30_DAYS -> TimeRange.LAST_30_DAYS
     PresetTimeRange.LAST_90_DAYS -> TimeRange.LAST_90_DAYS
     PresetTimeRange.LAST_12_MONTHS -> TimeRange.LAST_365_DAYS
@@ -220,6 +222,7 @@ internal fun bucketSizeForRange(range: TimeRange): Duration = when (range) {
     TimeRange.LAST_1_DAY -> Duration.ofMinutes(10)
     TimeRange.LAST_3_DAYS -> Duration.ofHours(1)
     TimeRange.LAST_7_DAYS -> Duration.ofHours(3)
+    TimeRange.LAST_14_DAYS -> Duration.ofHours(6)
     TimeRange.LAST_30_DAYS -> Duration.ofDays(1)
     TimeRange.LAST_90_DAYS -> Duration.ofDays(1)
     TimeRange.LAST_365_DAYS -> Duration.ofDays(7)

@@ -138,6 +138,7 @@ internal fun TimeRange.toSelectedRangeLabel(): String = when (this) {
     TimeRange.LAST_1_DAY -> "1 dzień"
     TimeRange.LAST_3_DAYS -> "3 dni"
     TimeRange.LAST_7_DAYS -> "7 dni"
+    TimeRange.LAST_14_DAYS -> "14 dni"
     TimeRange.LAST_30_DAYS -> "30 dni"
     TimeRange.LAST_90_DAYS -> "90 dni"
     TimeRange.LAST_365_DAYS -> "rok"
