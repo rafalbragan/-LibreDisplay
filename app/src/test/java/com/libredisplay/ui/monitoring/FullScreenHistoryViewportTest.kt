@@ -30,6 +30,40 @@ class FullScreenHistoryViewportTest {
     }
 
     @Test
+    fun buildViewport_forOneHourWindowOnLongHistory_allowsPanning() {
+        val historyStart = Instant.parse("2026-08-01T00:00:00Z")
+        val historyEnd = historyStart.plus(Duration.ofHours(24))
+
+        val viewport = buildViewport(
+            selectedRangeStart = historyStart,
+            selectedRangeEnd = historyEnd,
+            requestedStartMillis = historyEnd.minus(Duration.ofHours(1)).toEpochMilli(),
+            requestedDurationMillis = Duration.ofHours(1).toMillis(),
+            minimumDuration = Duration.ofHours(1)
+        )
+
+        assertEquals(Duration.ofHours(1), viewport.duration)
+        assertTrue(viewport.canPan)
+    }
+
+    @Test
+    fun buildViewport_forOneHourWindowOnShortHistory_disablesPanning() {
+        val historyStart = Instant.parse("2026-08-01T00:00:00Z")
+        val historyEnd = historyStart.plus(Duration.ofMinutes(40))
+
+        val viewport = buildViewport(
+            selectedRangeStart = historyStart,
+            selectedRangeEnd = historyEnd,
+            requestedStartMillis = historyStart.toEpochMilli(),
+            requestedDurationMillis = Duration.ofHours(1).toMillis(),
+            minimumDuration = Duration.ofHours(1)
+        )
+
+        assertEquals(Duration.ofMinutes(40), viewport.duration)
+        assertTrue(!viewport.canPan)
+    }
+
+    @Test
     fun buildViewport_clampsToSelectedRange() {
         val start = Instant.parse("2026-08-01T00:00:00Z")
         val end = start.plus(Duration.ofDays(7))

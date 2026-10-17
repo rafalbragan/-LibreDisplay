@@ -106,41 +106,45 @@ internal fun FullScreenGlucoseChartScreen(
     val history = remember(detailedHistory, reading) {
         if (detailedHistory.isNotEmpty()) detailedHistory else reading?.let(::readingTimeline).orEmpty()
     }
-    val end = history.maxOfOrNull { it.timestamp } ?: Instant.now()
-    val start = end.minus(range.duration)
-    val visible = remember(history, start, end) {
-        history.filter { !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end) }
+    val fullRangeEnd = history.maxOfOrNull { it.timestamp } ?: Instant.now()
+    val fullRangeStart = history.minOfOrNull { it.timestamp } ?: fullRangeEnd.minus(range.duration)
+    val latestWindowStart = remember(fullRangeStart, fullRangeEnd, range) {
+        val candidate = fullRangeEnd.minus(range.duration)
+        if (candidate.isBefore(fullRangeStart)) fullRangeStart else candidate
     }
-    val zoomEnabled = range.duration >= Duration.ofDays(7)
     val minViewportDuration = remember(range) { minimumViewportDuration(range) }
 
-    LaunchedEffect(range, state.selectedPatientId, state.lastMeasurementTimestamp) {
-        viewModel.loadDetailedHistory(range)
+    LaunchedEffect(state.selectedPatientId, state.lastMeasurementTimestamp) {
+        // Full-screen navigator needs the whole accepted scope (up to 24h) to pan 1h/3h/6h/12h windows.
+        viewModel.loadDetailedHistory(TimeRange.LAST_24_HOURS)
     }
 
-    LaunchedEffect(range, state.selectedPatientId, end) {
-        viewportStartMillis = start.toEpochMilli()
+    LaunchedEffect(range, state.selectedPatientId, fullRangeEnd) {
+        viewportStartMillis = latestWindowStart.toEpochMilli()
         viewportDurationMillis = range.duration.toMillis()
     }
 
-    val viewport = remember(start, end, viewportStartMillis, viewportDurationMillis, minViewportDuration) {
+    val viewport = remember(fullRangeStart, fullRangeEnd, viewportStartMillis, viewportDurationMillis, minViewportDuration) {
         buildViewport(
-            selectedRangeStart = start,
-            selectedRangeEnd = end,
+            selectedRangeStart = fullRangeStart,
+            selectedRangeEnd = fullRangeEnd,
             requestedStartMillis = viewportStartMillis,
             requestedDurationMillis = viewportDurationMillis,
             minimumDuration = minViewportDuration
         )
     }
-    val viewportPoints = remember(visible, viewport) {
-        visible.filter { !it.timestamp.isBefore(viewport.start) && !it.timestamp.isAfter(viewport.end) }
+    val viewportPoints = remember(history, viewport) {
+        history.filter { !it.timestamp.isBefore(viewport.start) && !it.timestamp.isAfter(viewport.end) }
     }
+
+    val zoomEnabled = range.duration >= Duration.ofDays(7) || viewport.canPan
+    val navigatorEnabled = viewport.canPan
 
     // Coverage model: separates SELECTED range from AVAILABLE data.
     // 'currentTime' in key so countdown ticks locally.
-    val coverage = remember(visible, range, currentTime) {
+    val coverage = remember(viewportPoints, range, currentTime) {
         computeDataCoverage(
-            history = visible,
+            history = viewportPoints,
             selectedRange = range.duration,
             selectedRangeLabel = range.toSelectedRangeLabel(),
             now = currentTime
@@ -185,8 +189,8 @@ internal fun FullScreenGlucoseChartScreen(
         val updated = applyViewportTransform(
             currentStartMillis = viewport.start.toEpochMilli(),
             currentDurationMillis = viewport.duration.toMillis(),
-            selectedRangeStart = start,
-            selectedRangeEnd = end,
+            selectedRangeStart = fullRangeStart,
+            selectedRangeEnd = fullRangeEnd,
             zoomChange = zoomChange,
             panXPx = panChange.x,
             chartWidthPx = chartWidthPx,
@@ -266,19 +270,19 @@ internal fun FullScreenGlucoseChartScreen(
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    if (zoomEnabled) {
+                    if (navigatorEnabled) {
                         FullScreenHistoryNavigator(
                             viewport = viewport,
-                            selectedRangeStart = start,
-                            selectedRangeEnd = end,
+                            selectedRangeStart = fullRangeStart,
+                            selectedRangeEnd = fullRangeEnd,
                             onViewportChanged = { fraction ->
-                                viewportStartMillis = viewportStartForFraction(fraction, viewport, start, end)
+                                viewportStartMillis = viewportStartForFraction(fraction, viewport, fullRangeStart, fullRangeEnd)
                             }
                         )
-                        if (!isViewportAtLatest(viewport, start, end)) {
+                        if (!isViewportAtLatest(viewport, fullRangeStart, fullRangeEnd)) {
                             OutlinedButton(
                                 onClick = {
-                                    viewportStartMillis = end.toEpochMilli() - viewport.duration.toMillis()
+                                    viewportStartMillis = fullRangeEnd.toEpochMilli() - viewport.duration.toMillis()
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
