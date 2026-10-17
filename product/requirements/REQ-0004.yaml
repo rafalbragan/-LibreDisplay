@@ -388,9 +388,9 @@ implementation:
         pinned_comment: null
     updated_at: '2026-10-16T12:11:33Z'
   implementation_pr:
-    number: 33
-    url: https://github.com/rafalbragan/-LibreDisplay/pull/33
-    head_ref: feature/req-0004-home-monitoring-chart-nav
+    number: 38
+    url: https://github.com/rafalbragan/-LibreDisplay/pull/38
+    head_ref: fix/req-0004-fullscreen-navigator-gate-20261017
     state: open
-    updated_at: '2026-10-16T13:34:57Z'
+    updated_at: '2026-10-17T10:12:02Z'
   copilot_handoff_allowed: true

@@ -182,15 +182,15 @@
       "pinned_comment": null
     }
   },
-  "branch": "feature/req-0004-home-monitoring-chart-nav",
-  "pull_request_number": 33,
-  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/33",
+  "branch": "fix/req-0004-fullscreen-navigator-gate-20261017",
+  "pull_request_number": 38,
+  "pull_request_url": "https://github.com/rafalbragan/-LibreDisplay/pull/38",
   "status": "READY_FOR_HUMAN_REVIEW",
-  "created_at": "2026-10-16T13:34:57Z",
+  "created_at": "2026-10-17T10:12:02Z",
   "attempt_count": 0,
-  "last_ci_result": "PASS",
+  "last_ci_result": "UNKNOWN",
   "validation_state": "PENDING",
   "acceptance_test_ids": [],
   "ci_failures": [],
-  "updated_at": "2026-10-16T15:36:31Z"
+  "updated_at": "2026-10-17T10:12:02Z"
 }
