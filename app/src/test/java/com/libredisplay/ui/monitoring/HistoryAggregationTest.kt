@@ -90,7 +90,7 @@ class HistoryAggregationTest {
         assertEquals(TimeRange.LAST_12_HOURS, TimeRangeState.fromPreset(PresetTimeRange.LAST_12_HOURS).toHistoryTimeRange())
         assertEquals(TimeRange.LAST_24_HOURS, TimeRangeState.fromPreset(PresetTimeRange.LAST_24_HOURS).toHistoryTimeRange())
         assertEquals(TimeRange.LAST_7_DAYS, TimeRangeState.fromPreset(PresetTimeRange.LAST_7_DAYS).toHistoryTimeRange())
-        assertEquals(TimeRange.LAST_30_DAYS, TimeRangeState.fromPreset(PresetTimeRange.LAST_14_DAYS).toHistoryTimeRange())
+        assertEquals(TimeRange.LAST_14_DAYS, TimeRangeState.fromPreset(PresetTimeRange.LAST_14_DAYS).toHistoryTimeRange())
     }
 }
 
