@@ -71,6 +71,7 @@ import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.ui.theme.LibreCareColors
 import java.time.Duration
 import java.time.Instant
+import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlin.math.roundToLong
 
@@ -106,41 +107,56 @@ internal fun FullScreenGlucoseChartScreen(
     val history = remember(detailedHistory, reading) {
         if (detailedHistory.isNotEmpty()) detailedHistory else reading?.let(::readingTimeline).orEmpty()
     }
-    val end = history.maxOfOrNull { it.timestamp } ?: Instant.now()
-    val start = end.minus(range.duration)
-    val visible = remember(history, start, end) {
-        history.filter { !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end) }
+    val fullRangeEnd = history.maxOfOrNull { it.timestamp } ?: Instant.now()
+    val fullRangeStart = history.minOfOrNull { it.timestamp } ?: fullRangeEnd.minus(range.duration)
+    val latestWindowStart = remember(fullRangeStart, fullRangeEnd, range) {
+        val candidate = fullRangeEnd.minus(range.duration)
+        if (candidate.isBefore(fullRangeStart)) fullRangeStart else candidate
     }
-    val zoomEnabled = range.duration >= Duration.ofDays(7)
+    val availableHistorySpan = Duration.between(fullRangeStart, fullRangeEnd).coerceAtLeast(Duration.ZERO)
+    val rangeOptions = remember(availableHistorySpan) { historySelectableRanges(availableHistorySpan) }
     val minViewportDuration = remember(range) { minimumViewportDuration(range) }
 
-    LaunchedEffect(range, state.selectedPatientId, state.lastMeasurementTimestamp) {
-        viewModel.loadDetailedHistory(range)
+    LaunchedEffect(state.selectedPatientId, state.lastMeasurementTimestamp, range) {
+        val loadRange = if (range.duration > TimeRange.LAST_24_HOURS.duration) range else TimeRange.LAST_24_HOURS
+        viewModel.loadDetailedHistory(loadRange)
     }
 
-    LaunchedEffect(range, state.selectedPatientId, end) {
-        viewportStartMillis = start.toEpochMilli()
+    LaunchedEffect(range, state.selectedPatientId, fullRangeEnd) {
+        viewportStartMillis = latestWindowStart.toEpochMilli()
         viewportDurationMillis = range.duration.toMillis()
     }
 
-    val viewport = remember(start, end, viewportStartMillis, viewportDurationMillis, minViewportDuration) {
+    val viewport = remember(fullRangeStart, fullRangeEnd, viewportStartMillis, viewportDurationMillis, minViewportDuration) {
         buildViewport(
-            selectedRangeStart = start,
-            selectedRangeEnd = end,
+            selectedRangeStart = fullRangeStart,
+            selectedRangeEnd = fullRangeEnd,
             requestedStartMillis = viewportStartMillis,
             requestedDurationMillis = viewportDurationMillis,
             minimumDuration = minViewportDuration
         )
     }
-    val viewportPoints = remember(visible, viewport) {
-        visible.filter { !it.timestamp.isBefore(viewport.start) && !it.timestamp.isAfter(viewport.end) }
+    val viewportPoints = remember(history, viewport) {
+        history.filter { !it.timestamp.isBefore(viewport.start) && !it.timestamp.isAfter(viewport.end) }
+    }
+
+    val zoomEnabled = range.duration >= Duration.ofDays(7) || viewport.canPan
+    val navigatorEnabled = viewport.canPan
+    val temporalContext = remember(viewport, fullRangeStart, fullRangeEnd, state.isDataStale, state.reading) {
+        buildViewportTemporalContext(
+            viewport = viewport,
+            selectedRangeStart = fullRangeStart,
+            selectedRangeEnd = fullRangeEnd,
+            hasCurrentReading = state.reading != null,
+            isDataStale = state.isDataStale
+        )
     }
 
     // Coverage model: separates SELECTED range from AVAILABLE data.
     // 'currentTime' in key so countdown ticks locally.
-    val coverage = remember(visible, range, currentTime) {
+    val coverage = remember(viewportPoints, range, currentTime) {
         computeDataCoverage(
-            history = visible,
+            history = viewportPoints,
             selectedRange = range.duration,
             selectedRangeLabel = range.toSelectedRangeLabel(),
             now = currentTime
@@ -185,8 +201,8 @@ internal fun FullScreenGlucoseChartScreen(
         val updated = applyViewportTransform(
             currentStartMillis = viewport.start.toEpochMilli(),
             currentDurationMillis = viewport.duration.toMillis(),
-            selectedRangeStart = start,
-            selectedRangeEnd = end,
+            selectedRangeStart = fullRangeStart,
+            selectedRangeEnd = fullRangeEnd,
             zoomChange = zoomChange,
             panXPx = panChange.x,
             chartWidthPx = chartWidthPx,
@@ -223,13 +239,19 @@ internal fun FullScreenGlucoseChartScreen(
                 .verticalScroll(rememberScrollState()),
             verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            TimeRangeSelector(range = range, onRangeSelected = { range = it })
+            TimeRangeSelector(range = range, options = rangeOptions, onRangeSelected = { range = it })
 
              Column(modifier = Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(4.dp)) {
                  Text(coverage.sectionHeaderLabel, color = Color(0xFFCBD5E1), fontSize = 13.sp, fontWeight = FontWeight.SemiBold)
                  coverage.selectedRangeNote?.let { note ->
                      Text(note, color = Color(0xFF64748B), fontSize = 11.sp)
                  }
+                 Text(
+                     "${temporalContext.badge} · ${temporalContext.description}",
+                     color = temporalContext.color,
+                     fontSize = 11.sp,
+                     fontWeight = FontWeight.SemiBold
+                 )
                 Text(
                     if (zoomEnabled) "Przeciągnij po wykresie, aby podejrzeć punkt. Uszczypnij, aby przybliżyć, a potem przesuwaj suwak poniżej."
                     else "Przeciągnij po wykresie, aby podejrzeć punkt.",
@@ -250,6 +272,24 @@ internal fun FullScreenGlucoseChartScreen(
                         modifier = Modifier
                             .fillMaxWidth()
                             .onSizeChanged { chartWidthPx = it.width.toFloat() }
+                            .pointerInput(navigatorEnabled, viewport, chartWidthPx, minViewportDuration, fullRangeStart, fullRangeEnd) {
+                                if (!navigatorEnabled) return@pointerInput
+                                detectDragGestures { change, dragAmount ->
+                                    val updated = applyViewportTransform(
+                                        currentStartMillis = viewport.start.toEpochMilli(),
+                                        currentDurationMillis = viewport.duration.toMillis(),
+                                        selectedRangeStart = fullRangeStart,
+                                        selectedRangeEnd = fullRangeEnd,
+                                        zoomChange = 1f,
+                                        panXPx = dragAmount.x,
+                                        chartWidthPx = chartWidthPx,
+                                        minimumDuration = minViewportDuration
+                                    )
+                                    viewportStartMillis = updated.first
+                                    viewportDurationMillis = updated.second
+                                    change.consume()
+                                }
+                            }
                             .transformable(state = transformState, enabled = zoomEnabled)
                     ) {
                         GlucoseChart(
@@ -260,25 +300,71 @@ internal fun FullScreenGlucoseChartScreen(
                             selectedPoint = selectedPoint,
                             onPointSelected = { point -> selectedPoint = point },
                             onPointSelectionCleared = { selectedPoint = null },
+                            onChartDoubleTapped = { tapOffset ->
+                                val updated = zoomViewportAroundTap(
+                                    currentStartMillis = viewport.start.toEpochMilli(),
+                                    currentDurationMillis = viewport.duration.toMillis(),
+                                    selectedRangeStart = fullRangeStart,
+                                    selectedRangeEnd = fullRangeEnd,
+                                    tapXPx = tapOffset.x,
+                                    chartWidthPx = chartWidthPx,
+                                    minimumDuration = minViewportDuration
+                                )
+                                viewportStartMillis = updated.first
+                                viewportDurationMillis = updated.second
+                            },
                             chartHeight = if (isLandscape) 300.dp else 380.dp,
                             maxVisiblePoints = 1_500,
                             axisRightPaddingPx = 44f,
                             modifier = Modifier.fillMaxWidth()
                         )
                     }
-                    if (zoomEnabled) {
-                        FullScreenHistoryNavigator(
-                            viewport = viewport,
-                            selectedRangeStart = start,
-                            selectedRangeEnd = end,
-                            onViewportChanged = { fraction ->
-                                viewportStartMillis = viewportStartForFraction(fraction, viewport, start, end)
-                            }
-                        )
-                        if (!isViewportAtLatest(viewport, start, end)) {
+                    if (navigatorEnabled) {
+                        Row(
+                            modifier = Modifier.fillMaxWidth(),
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             OutlinedButton(
                                 onClick = {
-                                    viewportStartMillis = end.toEpochMilli() - viewport.duration.toMillis()
+                                    viewportStartMillis = shiftViewportByWindow(
+                                        viewport = viewport,
+                                        selectedRangeStart = fullRangeStart,
+                                        selectedRangeEnd = fullRangeEnd,
+                                        direction = -1
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("‹") }
+                            OutlinedButton(
+                                onClick = {
+                                    viewportStartMillis = fullRangeEnd.toEpochMilli() - viewport.duration.toMillis()
+                                },
+                                modifier = Modifier.weight(2f)
+                            ) { Text("Najnowsze") }
+                            OutlinedButton(
+                                onClick = {
+                                    viewportStartMillis = shiftViewportByWindow(
+                                        viewport = viewport,
+                                        selectedRangeStart = fullRangeStart,
+                                        selectedRangeEnd = fullRangeEnd,
+                                        direction = 1
+                                    )
+                                },
+                                modifier = Modifier.weight(1f)
+                            ) { Text("›") }
+                        }
+                        FullScreenHistoryNavigator(
+                            viewport = viewport,
+                            selectedRangeStart = fullRangeStart,
+                            selectedRangeEnd = fullRangeEnd,
+                            onViewportChanged = { fraction ->
+                                viewportStartMillis = viewportStartForFraction(fraction, viewport, fullRangeStart, fullRangeEnd)
+                            }
+                        )
+                        if (!isViewportAtLatest(viewport, fullRangeStart, fullRangeEnd)) {
+                            OutlinedButton(
+                                onClick = {
+                                    viewportStartMillis = fullRangeEnd.toEpochMilli() - viewport.duration.toMillis()
                                 },
                                 modifier = Modifier.fillMaxWidth()
                             ) {
@@ -421,7 +507,7 @@ internal fun FullScreenGlucoseChartScreen(
 
 @Composable
 @OptIn(ExperimentalLayoutApi::class)
-private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> Unit) {
+private fun TimeRangeSelector(range: TimeRange, options: List<TimeRange>, onRangeSelected: (TimeRange) -> Unit) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -429,7 +515,7 @@ private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> 
             .padding(horizontal = 4.dp, vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(6.dp)
     ) {
-        historySelectableRanges().forEach { candidate ->
+        options.forEach { candidate ->
             Column(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 modifier = Modifier
@@ -458,13 +544,99 @@ private fun TimeRangeSelector(range: TimeRange, onRangeSelected: (TimeRange) -> 
     HorizontalDivider(color = LibreCareColors.Surface, modifier = Modifier.padding(horizontal = 4.dp))
 }
 
-internal fun historySelectableRanges(): List<TimeRange> = listOf(
-    TimeRange.LAST_1_HOUR,
-    TimeRange.LAST_3_HOURS,
-    TimeRange.LAST_6_HOURS,
-    TimeRange.LAST_12_HOURS,
-    TimeRange.LAST_24_HOURS
+internal fun historySelectableRanges(availableSpan: Duration = TimeRange.LAST_24_HOURS.duration): List<TimeRange> {
+    val baseRanges = listOf(
+        TimeRange.LAST_1_HOUR,
+        TimeRange.LAST_3_HOURS,
+        TimeRange.LAST_6_HOURS,
+        TimeRange.LAST_12_HOURS,
+        TimeRange.LAST_24_HOURS
+    )
+    val extendedRanges = listOf(
+        TimeRange.LAST_7_DAYS,
+        TimeRange.LAST_14_DAYS,
+        TimeRange.LAST_30_DAYS,
+        TimeRange.LAST_90_DAYS,
+        TimeRange.LAST_365_DAYS
+    )
+    val safeSpan = if (availableSpan.isNegative) Duration.ZERO else availableSpan
+    return baseRanges + extendedRanges.filter { safeSpan >= it.duration }
+}
+
+internal data class ViewportTemporalContext(
+    val badge: String,
+    val description: String,
+    val color: Color
 )
+
+internal fun buildViewportTemporalContext(
+    viewport: HistoryViewport,
+    selectedRangeStart: Instant,
+    selectedRangeEnd: Instant,
+    hasCurrentReading: Boolean,
+    isDataStale: Boolean
+): ViewportTemporalContext {
+    if (!hasCurrentReading || isDataStale) {
+        return ViewportTemporalContext(
+            badge = "BRAK AKTUALNYCH DANYCH",
+            description = "Widok historyczny: dane wymagaja odswiezenia",
+            color = Color(0xFFF59E0B)
+        )
+    }
+    return if (isViewportAtLatest(viewport, selectedRangeStart, selectedRangeEnd)) {
+        ViewportTemporalContext(
+            badge = "TERAZ",
+            description = "Widok najnowszego zakresu",
+            color = LibreCareColors.AccentTeal
+        )
+    } else {
+        ViewportTemporalContext(
+            badge = "HISTORIA",
+            description = "Przegladasz starsze dane",
+            color = Color(0xFFCBD5E1)
+        )
+    }
+}
+
+internal fun shiftViewportByWindow(
+    viewport: HistoryViewport,
+    selectedRangeStart: Instant,
+    selectedRangeEnd: Instant,
+    direction: Int
+): Long {
+    val fullStartMillis = selectedRangeStart.toEpochMilli()
+    val fullEndMillis = selectedRangeEnd.toEpochMilli().coerceAtLeast(fullStartMillis + 1L)
+    val windowMillis = viewport.duration.toMillis().coerceAtLeast(1L)
+    val maxStartMillis = (fullEndMillis - windowMillis).coerceAtLeast(fullStartMillis)
+    val shift = (windowMillis * direction).toLong()
+    return (viewport.start.toEpochMilli() + shift).coerceIn(fullStartMillis, maxStartMillis)
+}
+
+internal fun zoomViewportAroundTap(
+    currentStartMillis: Long,
+    currentDurationMillis: Long,
+    selectedRangeStart: Instant,
+    selectedRangeEnd: Instant,
+    tapXPx: Float,
+    chartWidthPx: Float,
+    minimumDuration: Duration,
+    zoomFactor: Float = 1.6f
+): Pair<Long, Long> {
+    if (chartWidthPx <= 0f || !tapXPx.isFinite()) {
+        return currentStartMillis to currentDurationMillis
+    }
+    val fullStartMillis = selectedRangeStart.toEpochMilli()
+    val fullEndMillis = selectedRangeEnd.toEpochMilli().coerceAtLeast(fullStartMillis + 1L)
+    val fullDurationMillis = (fullEndMillis - fullStartMillis).coerceAtLeast(1L)
+    val minDurationMillis = minimumDuration.toMillis().coerceAtMost(fullDurationMillis).coerceAtLeast(1L)
+    val targetDurationMillis = (currentDurationMillis / zoomFactor).roundToLong().coerceIn(minDurationMillis, fullDurationMillis)
+    val anchorFraction = (tapXPx / chartWidthPx).coerceIn(0f, 1f)
+    val anchorMillis = currentStartMillis + (currentDurationMillis * anchorFraction).roundToLong()
+    val unclampedStart = anchorMillis - (targetDurationMillis * anchorFraction).roundToLong()
+    val maxStartMillis = (fullEndMillis - targetDurationMillis).coerceAtLeast(fullStartMillis)
+    val clampedStart = unclampedStart.coerceIn(fullStartMillis, maxStartMillis)
+    return clampedStart to targetDurationMillis
+}
 
 @Composable
 private fun FullScreenHistoryNavigator(
