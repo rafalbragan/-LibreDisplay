@@ -24,6 +24,7 @@ import com.libredisplay.data.repository.SettingsLoginStateStore
 import com.libredisplay.data.repository.SettingsRepository
 import com.libredisplay.data.storage.SecureStorage
 import com.libredisplay.diagnostics.DiagnosticLogger
+import com.libredisplay.diagnostics.DiagnosticStatus
 import com.libredisplay.sync.LibreDisplaySyncScheduler
 
 class LibreDisplayApp : Application() {
@@ -154,11 +155,18 @@ class LibreDisplayApp : Application() {
         val previous = Thread.getDefaultUncaughtExceptionHandler()
         Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
             runCatching {
+                val diagnosticSnapshot = DiagnosticStatus.snapshot()
                 DiagnosticLogger.logError(
                     "LibreCareApp",
                     "FATAL APP CRASH thread=${thread.name} exceptionClass=${throwable::class.java.name} message=${throwable.message.orEmpty()}"
                 )
                 DiagnosticLogger.logException("LibreCareApp", throwable, "FATAL APP CRASH stacktrace")
+                DiagnosticLogger.recordUnhandledException(
+                    throwable = throwable,
+                    threadName = thread.name,
+                    lastScreen = diagnosticSnapshot.lastScreen,
+                    lastOperation = diagnosticSnapshot.lastOperation
+                )
             }
             previous?.uncaughtException(thread, throwable)
         }

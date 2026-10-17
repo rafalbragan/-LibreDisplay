@@ -155,6 +155,21 @@ class MonitoringResponsiveUiTest {
     }
 
     @Test
+    fun landscapeWidth_largeFont_keepsCoreHomeElementsVisible() {
+        composeRule.setContent {
+            MonitoringHomeTestHost(
+                scenario = GlucoseScenario.STALE_DATA,
+                widthDp = 900,
+                fontScale = 1.4f
+            )
+        }
+
+        composeRule.onNodeWithTag(LibreCareTestTags.TOP_BAR_TITLE).assertIsDisplayed()
+        composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_VALUE).assertIsDisplayed()
+        composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_UNIT).assertIsDisplayed()
+    }
+
+    @Test
     fun glucoseValueRendering_handlesEntireQaRenderRange() {
         val supportedRenderRange = 1..600
         val readingState = mutableStateOf(sampleReading(value = supportedRenderRange.first, trend = GlucoseTrend.FLAT))

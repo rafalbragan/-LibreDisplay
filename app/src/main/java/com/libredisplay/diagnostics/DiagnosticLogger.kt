@@ -2,6 +2,7 @@ package com.libredisplay.diagnostics
 
 import android.content.Context
 import android.content.Intent
+import android.net.Uri
 import androidx.core.content.FileProvider
 import com.google.gson.JsonElement
 import com.google.gson.JsonParser
@@ -9,12 +10,14 @@ import com.libredisplay.BuildConfig
 import java.io.File
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.time.Instant
 import java.time.LocalDateTime
 import java.time.format.DateTimeFormatter
 
 object DiagnosticLogger {
     private const val DEFAULT_TAG = "LibreCare"
     private const val LOG_FILE_NAME = "librecare.log"
+    private const val CRASH_REPORT_FILE_NAME = "librecare-last-crash-report.log"
     private val formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss")
 
     @Volatile
@@ -139,7 +142,10 @@ object DiagnosticLogger {
     fun logFilePath(): String = getOrCreateLogFile()?.absolutePath.orEmpty()
 
     fun createShareIntent(context: Context): Intent? {
-        val file = getOrCreateLogFile() ?: return null
+        val file = getOrCreateShareLogFile() ?: return null
+        runCatching {
+            file.writeText(exportRedactedLog().ifBlank { "Brak wpisow diagnostycznych" }, Charsets.UTF_8)
+        }
         if (!file.exists()) return null
         val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
         return Intent(Intent.ACTION_SEND).apply {
@@ -150,6 +156,53 @@ object DiagnosticLogger {
         }
     }
 
+    fun exportRedactedLog(): String {
+        val raw = readAll()
+        if (raw.isBlank()) return ""
+        return sanitizeForExport(raw)
+    }
+
+    fun saveRedactedLogToUri(context: Context, uri: Uri): Result<Unit> {
+        val payload = exportRedactedLog().ifBlank { "Brak wpisow diagnostycznych" }
+        return runCatching {
+            context.contentResolver.openOutputStream(uri)?.use { output ->
+                output.write(payload.toByteArray(Charsets.UTF_8))
+                output.flush()
+            } ?: throw IllegalStateException("Nie mozna otworzyc pliku do zapisu")
+        }
+    }
+
+    fun readLastCrashReport(): String {
+        val file = getOrCreateCrashReportFile() ?: return ""
+        if (!file.exists()) return ""
+        return runCatching { file.readText(Charsets.UTF_8) }.getOrDefault("")
+    }
+
+    fun recordUnhandledException(
+        throwable: Throwable,
+        threadName: String,
+        lastScreen: String?,
+        lastOperation: String?
+    ) {
+        val reportFile = getOrCreateCrashReportFile() ?: return
+        val report = buildString {
+            appendLine("LibreCare crash report")
+            appendLine("eventTime=${Instant.now()}")
+            appendLine("versionName=${BuildConfig.VERSION_NAME}")
+            appendLine("versionCode=${BuildConfig.VERSION_CODE}")
+            appendLine("commitSha=${BuildConfig.COMMIT_SHA}")
+            appendLine("buildChannel=${BuildConfig.BUILD_CHANNEL}")
+            appendLine("thread=$threadName")
+            appendLine("exceptionType=${throwable::class.java.name}")
+            appendLine("message=${maskText(throwable.message.orEmpty())}")
+            appendLine("lastScreen=${sanitizeForExport(lastScreen.orEmpty())}")
+            appendLine("lastOperation=${sanitizeForExport(lastOperation.orEmpty())}")
+            appendLine("stackTrace=")
+            appendLine(sanitizeForExport(stackTraceOf(throwable)))
+        }
+        runCatching { reportFile.writeText(report, Charsets.UTF_8) }
+    }
+
     private fun append(level: String, tag: String, message: String) {
         val file = getOrCreateLogFile() ?: return
         val sanitizedTag = if (BuildConfig.DEBUG) tag else safeReleaseTag(tag)
@@ -158,6 +211,19 @@ object DiagnosticLogger {
         synchronized(this) {
             runCatching { file.appendText(line, Charsets.UTF_8) }
         }
+    }
+
+    private fun stackTraceOf(throwable: Throwable): String {
+        return StringWriter().also { writer ->
+            PrintWriter(writer).use { throwable.printStackTrace(it) }
+        }.toString()
+    }
+
+    private fun sanitizeForExport(message: String): String {
+        return maskText(message)
+            .replace(Regex("(?i)patientId(=|:|Prefix=)[A-Za-z0-9_-]+"), "patientId$1***")
+            .replace(Regex("(?i)(selectedPerson(Name|FullName)?=)[^\\n\\r]+"), "$1***")
+            .replace(Regex("(?i)(accountId=)[A-Za-z0-9_-]+"), "$1***")
     }
 
     private fun sanitizeForRelease(message: String): String {
@@ -186,6 +252,28 @@ object DiagnosticLogger {
         }
     }
 
+    private fun getOrCreateCrashReportFile(): File? {
+        val context = appContext ?: return null
+        val logsDir = context.getExternalFilesDir(null)?.resolve("logs") ?: return null
+        return logsDir.resolve(CRASH_REPORT_FILE_NAME).also {
+            runCatching {
+                it.parentFile?.mkdirs()
+                if (!it.exists()) it.createNewFile()
+            }
+        }
+    }
+
+    private fun getOrCreateShareLogFile(): File? {
+        val context = appContext ?: return null
+        val logsDir = context.getExternalFilesDir(null)?.resolve("logs") ?: return null
+        return logsDir.resolve("librecare-share.log").also {
+            runCatching {
+                it.parentFile?.mkdirs()
+                if (!it.exists()) it.createNewFile()
+            }
+        }
+    }
+
     private fun maskHeaders(headers: Map<String, String>): Map<String, String> {
         return headers.mapValues { (key, value) ->
             when {
@@ -200,6 +288,8 @@ object DiagnosticLogger {
         return input
             .replace(Regex("(?i)(\"password\"\\s*:\\s*\")[^\"]*(\")"), "$1***$2")
             .replace(Regex("(?i)(\"token\"\\s*:\\s*\")[^\"]*(\")"), "$1***$2")
+            .replace(Regex("(?i)(password|token|accessToken|refreshToken)\\s*(=|:)\\s*[^\\s,;]+"), "$1$2***")
+            .replace(Regex("(?i)(patientId|accountId|selectedPerson(Id|Name|FullName)?)\\s*(=|:)\\s*[^\\n\\r,;]+"), "$1$3***")
             .replace(Regex("(?i)Bearer\\s+[A-Za-z0-9._-]+"), "Bearer ***")
             .replace(Regex("(?i)(\"email\"\\s*:\\s*\")([^\"]*)(\")")) { match ->
                 val original = match.groupValues[2]

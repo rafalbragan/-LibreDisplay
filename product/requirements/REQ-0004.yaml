@@ -1,6 +1,6 @@
 id: REQ-0004
-title: 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
-  zakresy 1h-24h, pan/zoom, mini-nawigat...'
+title: 'Zaimplementowac Chart 2.0 dla Home i Monitoring: zakresy 1h-30d+, pan/zoom,
+  mini-nawigator, kontekst czasu TERAZ/HISTORIA i bezpieczne rozroznienie danych przestarzalych.'
 status: ACCEPTED
 problem: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania zakresem czasu
   i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
@@ -15,9 +15,9 @@ user_outcome: Opiekun i lekarz szybciej i pewniej analizuja przebieg glikemii, b
   mylenia danych przestarzalych z biezacymi.
 solution_options:
 - id: opt-primary
-  summary: 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
-    zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka, powrot
-    do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow medycznych.'
+  summary: 'Zaimplementowac Chart 2.0 dla Home i Monitoring: zakresy 1h/3h/6h/12h/24h
+    + 7d/14d/30d (oraz dluzej gdy dane na to pozwalaja), pan/zoom, zsynchronizowany
+    mini-nawigator, nawigacja strzalkami, powrot do najnowszych danych i kontekst TERAZ/HISTORIA/BRAK AKTUALNYCH DANYCH.'
   pros:
   - Bezpośrednio adresuje zaakceptowany problem z Product Inbox
   cons:
@@ -44,9 +44,11 @@ scores:
   strategy_alignment: 6
 safety_implications: LOW
 acceptance_criteria:
-- 'Zaimplementowac zatwierdzony redesign nawigacji wykresu dla Home i Monitoring:
-  zakresy 1h-24h, pan/zoom, mini-nawigator, tooltip z data/godzina/jednostka, powrot
-  do najnowszych danych, oraz sterowanie bez gestow, bez zmian progow medycznych.'
+- 'Zaimplementowac Chart 2.0 dla Home i Monitoring: zakresy 1h/3h/6h/12h/24h
+  oraz 7d/14d/30d+, pan jednym palcem, pinch-to-zoom, mini-nawigator oraz powrot do najnowszych danych.'
+- 'Nad wykresem zawsze widoczny jest rzeczywisty przedzial czasu oraz status TERAZ/HISTORIA/BRAK AKTUALNYCH DANYCH zgodny z viewportem i swiezoscia danych.'
+- 'Zmiana zakresu i gesty nie prezentuja historycznego pomiaru jako biezacej glikemii.'
+- 'Zakres ACCEPT nie obejmuje zmian zachowania alarmow (#28 HOLD pozostaje aktywny).'
 - Nie rozszerzono zakresu poza kanoniczne wymaganie.
 - Dodano lub zaktualizowano testy oraz utrzymano brak regresji.
 test_plan:
@@ -57,10 +59,11 @@ test_plan:
 - ./gradlew assembleDebug
 - ./gradlew assembleDebugAndroidTest
 human_decision: ACCEPT
-human_decision_date: '2026-10-16'
+human_decision_date: '2026-10-17'
 human_decision_maker: rafalbragan
-human_decision_reason: Home i Monitoring wymagaja spojnego, ergonomicznego sterowania
-  zakresem czasu i nawigacji wykresu bez utraty czytelnosci biezacej glikemii.
+human_decision_reason: Product Owner zatwierdzil iteracje rozwojowa Chart 2.0 z naciskiem
+  na interakcje, bezpieczny kontekst czasu i przygotowanie wersji testowej APK, bez
+  rozszerzania zakresu na zmiany alarmow.
 source_ids:
 - INBOX-GH-000025
 - GH-ISSUE-25
@@ -388,9 +391,9 @@ implementation:
         pinned_comment: null
     updated_at: '2026-10-16T12:11:33Z'
   implementation_pr:
-    number: 33
-    url: https://github.com/rafalbragan/-LibreDisplay/pull/33
-    head_ref: feature/req-0004-home-monitoring-chart-nav
+    number: 38
+    url: https://github.com/rafalbragan/-LibreDisplay/pull/38
+    head_ref: fix/req-0004-fullscreen-navigator-gate-20261017
     state: open
-    updated_at: '2026-10-16T13:34:57Z'
+    updated_at: '2026-10-17T10:12:02Z'
   copilot_handoff_allowed: true

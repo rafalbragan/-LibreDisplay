@@ -33,6 +33,9 @@ fun propertyOrEnv(name: String): String? {
             ?.takeIf { it.isNotEmpty() }
 }
 
+val commitSha = (propertyOrEnv("GIT_COMMIT_SHA") ?: "local").take(12)
+val buildChannel = (propertyOrEnv("LIBRECARE_BUILD_CHANNEL") ?: "TEST").uppercase()
+
 val releaseStoreFile = propertyOrEnv("RELEASE_STORE_FILE")
 val releaseStorePassword = propertyOrEnv("RELEASE_STORE_PASSWORD")
 val releaseKeyAlias = propertyOrEnv("RELEASE_KEY_ALIAS")
@@ -55,12 +58,14 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 46
-        versionName = "2.16.2"
+        versionCode = 47
+        versionName = "2.16.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
         buildConfigField("String", "LIBRE_PATIENT_ID", librePatientId.toBuildConfigString())
+        buildConfigField("String", "COMMIT_SHA", commitSha.toBuildConfigString())
+        buildConfigField("String", "BUILD_CHANNEL", buildChannel.toBuildConfigString())
     }
 
     signingConfigs {

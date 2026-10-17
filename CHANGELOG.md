@@ -2,6 +2,70 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.3 - 2026-10-17
+
+### PL
+
+#### Added
+- Dodano akcje diagnostyczne: `Zapisz log do pliku` (SAF) oraz raport ostatniej awarii z kontekstem (ekran/operacja, build, commit).
+- Dodano metadane builda w aplikacji: `COMMIT_SHA` i `BUILD_CHANNEL` oraz ich prezentacje w ekranie `O aplikacji`.
+- Dodano testy regresyjne: `DiagnosticLoggerExportTest` oraz `GlucoseChartGestureInteractionTest`.
+
+#### Changed
+- Home Chart 2.0: przewijanie jednym palcem przesuwa viewport, double-tap wykonuje zoom, dodano strzalki i `Najnowsze`, a wejscie do pelnego ekranu ma jawny przycisk `Pelny ekran`.
+- Wykres wybiera punkt tylko przez long-press + drag (zamiast zwyklego drag), co usuwa konflikt gestow z przewijaniem historii.
+- Ekran `O aplikacji` pokazuje historie wersji i odroznia buildy testowe/stabilne.
+- Wersja aplikacji: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+
+#### Fixed
+- Ograniczono ryzyko prezentacji nieaktualnego odczytu jako biezacej glikemii: stale dane pokazuja stan `Brak aktualnych danych`.
+- Udostepnianie logow wysyla zredagowany (zanonimizowany) eksport.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew connectedDebugAndroidTest` - FAIL (`HomeInstrumentedUiTest`: `NoSuchMethodException: android.hardware.input.InputManager.getInstance` na urzadzeniu `SM-S948B - 17`).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,924,701 B`)
+- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,754 B`)
+- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,721,080 B`)
+
+### EN
+
+#### Added
+- Added diagnostics actions: `Save log to file` (SAF) and persistent last-crash report with context (screen/operation, build, commit).
+- Added build metadata in app: `COMMIT_SHA` and `BUILD_CHANNEL`, surfaced in the `About` screen.
+- Added regression tests: `DiagnosticLoggerExportTest` and `GlucoseChartGestureInteractionTest`.
+
+#### Changed
+- Home Chart 2.0: one-finger drag pans viewport, double-tap zooms, added arrow navigation and `Latest`, and made fullscreen entry explicit via `Fullscreen` button.
+- Chart point selection now uses long-press + drag (instead of plain drag) to resolve gesture conflicts.
+- `About` now shows version history and distinguishes test/stable builds.
+- App version: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+
+#### Fixed
+- Reduced risk of showing stale measurement as current glucose: stale state now renders `No current data`.
+- Log sharing now exports a redacted payload.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew connectedDebugAndroidTest` - FAIL (`HomeInstrumentedUiTest`: `NoSuchMethodException: android.hardware.input.InputManager.getInstance` on device `SM-S948B - 17`).
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,924,701 B`)
+- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,754 B`)
+- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,721,080 B`)
+
 ## 2.16.2 - 2026-10-16
 
 ### PL

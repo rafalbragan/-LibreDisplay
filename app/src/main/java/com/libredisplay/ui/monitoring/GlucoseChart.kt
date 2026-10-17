@@ -2,6 +2,7 @@ package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -482,6 +483,7 @@ fun GlucoseChart(
     onPointSelected: ((GlucoseHistoryPoint) -> Unit)? = null,
     onPointSelectionCleared: (() -> Unit)? = null,
     onChartTapped: (() -> Unit)? = null,
+    onChartDoubleTapped: ((Offset) -> Unit)? = null,
     chartHeight: Dp = 260.dp,
     maxVisiblePoints: Int = 300,
     maxYAxisLabels: Int = 6,
@@ -549,8 +551,12 @@ fun GlucoseChart(
                 canvasWidth = it.width.toFloat()
                 canvasHeight = it.height.toFloat()
             }
-            .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected, onChartTapped) {
-                detectTapGestures { tapOffset ->
+            .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected, onChartTapped, onChartDoubleTapped) {
+                detectTapGestures(
+                    onDoubleTap = { tapOffset ->
+                        onChartDoubleTapped?.invoke(tapOffset)
+                    }
+                ) { tapOffset ->
                     val match = findNearestHistoryPointMatch(
                         points = renderedPoints,
                         canvasWidth = canvasWidth,
@@ -583,7 +589,7 @@ fun GlucoseChart(
                 }
             }
             .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected) {
-                detectDragGestures(
+                detectDragGesturesAfterLongPress(
                     onDragStart = { offset ->
                         val selectedReading = findNearestHistoryPoint(
                             points = renderedPoints,
@@ -623,7 +629,7 @@ fun GlucoseChart(
                         axisTopPaddingPx = axisTopPaddingPx,
                         axisRightPaddingPx = axisRightPaddingPx,
                         axisBottomPaddingPx = axisBottomPaddingPx
-                    ) ?: return@detectDragGestures
+                    ) ?: return@detectDragGesturesAfterLongPress
                     onPointSelected?.invoke(selectedReading)
                     change.consume()
                 }

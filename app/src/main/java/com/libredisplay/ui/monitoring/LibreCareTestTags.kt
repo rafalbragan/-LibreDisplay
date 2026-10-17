@@ -18,6 +18,10 @@ internal object LibreCareTestTags {
     const val HOME_CHART_SELECTED_LABEL = "home.chart.selectedLabel"
     const val HOME_CHART_NAVIGATOR = "home.chart.navigator"
     const val HOME_CHART_RANGE_SELECTOR = "home.chart.rangeSelector"
+    const val HOME_CHART_FULLSCREEN_BUTTON = "home.chart.fullscreenButton"
+    const val HOME_CHART_NAV_LEFT = "home.chart.navLeft"
+    const val HOME_CHART_NAV_RIGHT = "home.chart.navRight"
+    const val HOME_CHART_NAV_LATEST = "home.chart.navLatest"
     const val FUTURES_SCREEN = "futures.screen"
 
     // Debug-only: TEST / DEMO SCENARIO selector
