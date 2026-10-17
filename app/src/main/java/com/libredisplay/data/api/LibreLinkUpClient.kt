@@ -105,6 +105,13 @@ class RetrofitLibreLinkUpClient(
                     "PERSON FOUND index=$index name=${person.displayName} patientIdPrefix=${person.patientId.take(6)}"
                 )
             }
+            if (!isSameSession(activeSession, session)) {
+                DiagnosticLogger.logWarning(
+                    "LibreLinkUpClient",
+                    "CONNECTIONS RESULT DROPPED reason=session changed during request"
+                )
+                throw LibreLinkUpException("Sesja zostala zmieniona podczas pobierania listy osob LibreLinkUp")
+            }
             if (persons.isEmpty()) {
                 throw NonRetryableLibreLinkUpException("Nie znaleziono aktywnych osób w LibreLinkUp.")
             }
@@ -280,6 +287,13 @@ class RetrofitLibreLinkUpClient(
     private fun invalidateConnectionsCache() {
         cachedConnections = emptyList()
         cachedConnectionsAt = null
+    }
+
+    private fun isSameSession(expected: LibreLinkUpSession, current: LibreLinkUpSession?): Boolean {
+        if (current == null) return false
+        return expected.token == current.token &&
+            expected.accountIdHash == current.accountIdHash &&
+            expected.baseUrl == current.baseUrl
     }
 
     private suspend fun performLogin(

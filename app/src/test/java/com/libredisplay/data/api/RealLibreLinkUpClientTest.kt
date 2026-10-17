@@ -651,6 +651,50 @@ class RealLibreLinkUpClientTest {
         assertEquals("patient-1", persons.first().patientId)
     }
 
+    @Test
+    fun getConnections_whenSessionChangesDuringRequest_dropsStaleResult_andFetchesFreshOnNextCall() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"token-1"},"user":{"id":"user-1"}}}
+                    """)),
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"token-2"},"user":{"id":"user-2"}}}
+                    """))
+                )
+            ),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-old","firstName":"Old"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-new","firstName":"New"}]}
+                    """))
+                )
+            )
+        )
+        lateinit var client: RetrofitLibreLinkUpClient
+        client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        http.onGetConnections = { client.clearSession() }
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpException")
+        } catch (_: LibreLinkUpException) {
+        }
+
+        http.onGetConnections = null
+        client.login("a@b.com", "secret", "EU")
+        val persons = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-new", persons.first().patientId)
+    }
+
     private class FakeHttp(
         val loginResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),
         val connectionsResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),
@@ -659,6 +703,7 @@ class RealLibreLinkUpClientTest {
         var loginCalls = 0
         var connectionsCalls = 0
         var graphCalls = 0
+        var onGetConnections: (() -> Unit)? = null
         val loginBaseUrls = mutableListOf<String>()
         val graphTokens = mutableListOf<String>()
         val graphAccountIds = mutableListOf<String>()
@@ -672,6 +717,7 @@ class RealLibreLinkUpClientTest {
 
         override suspend fun getConnections(baseUrl: String, token: String, accountIdHash: String): Response<JsonObject> {
             connectionsCalls += 1
+            onGetConnections?.invoke()
             return connectionsResponses.removeFirst()
         }
 
