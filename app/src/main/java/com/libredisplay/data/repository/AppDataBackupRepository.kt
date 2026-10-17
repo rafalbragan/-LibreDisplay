@@ -73,7 +73,9 @@ class AppDataBackupRepository(
         val sizeBytes: Long,
         val lastModifiedEpochMillis: Long?,
         val persons: Int,
-        val readings: Int
+        val readings: Int,
+        val restorable: Boolean,
+        val validationMessage: String?
     )
 
     data class StagedRestore(
@@ -167,14 +169,24 @@ class AppDataBackupRepository(
 
     suspend fun automaticBackupInfo(): AutomaticBackupInfo {
         val text = store.read()
-        val bundle = text?.let { runCatching { BackupCodec.decode(it) }.getOrNull() }
+        val decodeResult = text?.let { runCatching { BackupCodec.decode(it) } }
+        val bundle = decodeResult?.getOrNull()
+        val validationMessage = when {
+            !store.exists() -> null
+            text.isNullOrBlank() -> "Plik kopii jest pusty."
+            decodeResult?.isFailure == true -> "Plik kopii nie daje się odczytać."
+            bundle != null && bundle.readings.isEmpty() -> "Plik zapisany, ale brak odczytów do przywrócenia."
+            else -> null
+        }
         return AutomaticBackupInfo(
             exists = store.exists(),
             absolutePath = store.backupFile.absolutePath,
             sizeBytes = store.sizeBytes(),
             lastModifiedEpochMillis = store.lastModifiedEpochMillis(),
             persons = bundle?.persons?.size ?: 0,
-            readings = bundle?.readings?.size ?: 0
+            readings = bundle?.readings?.size ?: 0,
+            restorable = bundle != null && bundle.readings.isNotEmpty(),
+            validationMessage = validationMessage
         )
     }
 
@@ -250,16 +262,34 @@ class AppDataBackupRepository(
             includeSettings = includeConfiguration,
             includeSession = includeConfiguration
         )
+        val previous = loadCurrentBundleOrNull()
+        if (previous != null && previous.readings.isNotEmpty() && bundle.readings.isEmpty()) {
+            DiagnosticLogger.logWarning(
+                "AppDataBackupRepository",
+                "AUTO BACKUP SKIPPED reason=prevent-empty-overwrite previousReadings=${previous.readings.size} newReadings=0"
+            )
+            return BackupSummary(
+                livePersons = previous.persons.size,
+                liveReadings = previous.readings.size,
+                patientSettings = previous.patientSettings.size
+            )
+        }
         store.write(BackupCodec.encode(bundle))
+        val info = automaticBackupInfo()
         DiagnosticLogger.logInfo(
             "AppDataBackupRepository",
-            "AUTO BACKUP WRITTEN persons=${bundle.persons.size} readings=${bundle.readings.size} path=${store.backupFile.absolutePath}"
+            "AUTO BACKUP WRITTEN persons=${bundle.persons.size} readings=${bundle.readings.size} restorable=${info.restorable} path=${store.backupFile.absolutePath}"
         )
         return BackupSummary(
             livePersons = bundle.persons.size,
             liveReadings = bundle.readings.size,
             patientSettings = bundle.patientSettings.size
         )
+    }
+
+    private fun loadCurrentBundleOrNull(): BackupBundle? {
+        val text = store.read() ?: return null
+        return runCatching { BackupCodec.decode(text) }.getOrNull()
     }
 
     /** Copies the automatic backup (creating it when missing) to a user chosen destination. */
