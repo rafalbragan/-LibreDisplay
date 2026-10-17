@@ -46,6 +46,7 @@ fun SettingsMainScreen(
     onNavigateToAccount: () -> Unit,
     onNavigateToDataPrivacy: () -> Unit,
     onNavigateToStatistics: () -> Unit,
+    onNavigateToFeatures: () -> Unit,
     onNavigateToAppearance: () -> Unit,
     onNavigateToAdvanced: () -> Unit,
     onNavigateToRetention: () -> Unit,
@@ -153,6 +154,11 @@ fun SettingsMainScreen(
             HorizontalDivider(modifier = Modifier.padding(vertical = 8.dp))
 
             SettingsSectionHeader("APLIKACJA")
+            SettingsRow(
+                title = "Funkcje i historia wersji",
+                subtitle = "Status funkcji, wydania i ograniczenia",
+                onClick = onNavigateToFeatures
+            )
             SettingsRow(
                 title = "O aplikacji",
                 subtitle = "Wersja i informacje",

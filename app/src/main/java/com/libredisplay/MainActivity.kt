@@ -21,6 +21,7 @@ import com.libredisplay.diagnostics.UiAuditCaptureResult
 import com.libredisplay.diagnostics.UiAuditCaptureContext
 import com.libredisplay.diagnostics.UiAuditExporter
 import com.libredisplay.diagnostics.UiAuditStep
+import com.libredisplay.diagnostics.DiagnosticStatus
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.ui.monitoring.MonitoringScreen
 import com.libredisplay.ui.analytics.DataAnalysisScreen
@@ -29,6 +30,7 @@ import com.libredisplay.ui.privacy.PrivacyDataScreen
 import com.libredisplay.ui.restore.StartupRestoreHost
 import com.libredisplay.ui.settings.AboutScreen
 import com.libredisplay.ui.settings.DiagnosticScreen
+import com.libredisplay.ui.settings.FeaturesScreen
 import com.libredisplay.ui.settings.PollingFrequencyScreen
 import com.libredisplay.ui.settings.RetentionSettingsScreen
 import com.libredisplay.ui.settings.SettingsFocusSection
@@ -57,6 +59,7 @@ enum class AppScreen {
     Diagnostics,
     PrivacyData,
     About,
+    Features,
     Statistics,
     Retention,
     Polling
@@ -120,11 +123,17 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                 }
 
                 fun navigateTo(screen: AppScreen) {
+                    DiagnosticStatus.setLastOperation("navigateTo:${screen.name}")
                     navigationState = navigationState.navigateTo(screen)
                 }
 
                 fun navigateBack() {
+                    DiagnosticStatus.setLastOperation("navigateBack")
                     navigationState = navigationState.navigateBack()
+                }
+
+                LaunchedEffect(currentScreen) {
+                    DiagnosticStatus.setLastScreen(currentScreen.name)
                 }
 
                 if (showExitConfirmation) {
@@ -205,6 +214,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         UiAuditStep(AppScreen.Retention, "Ustawienia -> Retencja", "Główny -> Ustawienia -> Dane i prywatność -> Retencja", listOf("konsekwencje retencji", "czytelność opcji czasu", "ostrzeżenia")),
                         UiAuditStep(AppScreen.Polling, "Ustawienia -> Synchronizacja", "Główny -> Ustawienia -> Monitorowanie -> Synchronizacja", listOf("zrozumiałość wpływu na baterię", "zakres opcji", "opisy transferu")),
                         UiAuditStep(AppScreen.About, "Ustawienia -> O aplikacji", "Główny -> Ustawienia -> Aplikacja -> O aplikacji", listOf("dane wersji", "czytelność informacji", "spójność stylu")),
+                        UiAuditStep(AppScreen.Features, "Ustawienia -> Funkcje i historia", "Główny -> Ustawienia -> Aplikacja -> Funkcje i historia wersji", listOf("statusy funkcji", "powiązania z issue", "spójność historii wersji")),
                         UiAuditStep(AppScreen.Diagnostics, "Ustawienia -> Zaawansowane -> Diagnostyka", "Główny -> Ustawienia -> Zaawansowane -> Diagnostyka", listOf("narzędzia logów", "bezpieczeństwo danych", "czy akcje są czytelne")),
                         UiAuditStep(AppScreen.Statistics, "Ustawienia -> Statystyki", "Główny -> Ustawienia -> Statystyki", listOf("użyteczność metryk", "braki danych", "czytelność liczb"))
                     )
@@ -231,6 +241,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         AppScreen.Diagnostics,
                         AppScreen.PrivacyData,
                         AppScreen.About,
+                        AppScreen.Features,
                         AppScreen.Statistics,
                         AppScreen.Retention,
                         AppScreen.Polling -> AppNavigationState(listOf(AppScreen.Monitoring, AppScreen.Settings, screen))
@@ -410,6 +421,7 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 onNavigateToAccount = { navigateTo(AppScreen.SettingsAccount) },
                                 onNavigateToDataPrivacy = { navigateTo(AppScreen.PrivacyData) },
                                 onNavigateToStatistics = { navigateTo(AppScreen.Statistics) },
+                                onNavigateToFeatures = { navigateTo(AppScreen.Features) },
                                 onNavigateToAppearance = { navigateTo(AppScreen.About) },
                                 onNavigateToAdvanced = { navigateTo(AppScreen.Diagnostics) },
                                 onNavigateToRetention = { navigateTo(AppScreen.Retention) },
@@ -498,6 +510,13 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                         AboutScreen(
                             onNavigateBack = { navigateBack() },
                             onNavigateToStatistics = { navigateTo(AppScreen.Statistics) }
+                        )
+                    }
+
+                    AppScreen.Features -> {
+                        BackHandler { navigateBack() }
+                        FeaturesScreen(
+                            onNavigateBack = { navigateBack() }
                         )
                     }
 

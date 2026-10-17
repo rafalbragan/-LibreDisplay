@@ -4,6 +4,8 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -33,6 +35,8 @@ import androidx.compose.ui.unit.dp
 import com.libredisplay.data.repository.SettingsRepository
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.diagnostics.DiagnosticStatus
+import java.time.LocalDateTime
+import java.time.format.DateTimeFormatter
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -41,9 +45,27 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
     val snapshot by DiagnosticStatus.flow().collectAsState()
     val tokenDiagnostics = remember { SettingsRepository(context).tokenDiagnostics() }
     var logText by remember { mutableStateOf("") }
+    var statusMessage by remember { mutableStateOf<String?>(null) }
+    var lastCrashReport by remember { mutableStateOf("") }
+
+    val saveLogLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.CreateDocument("text/plain")
+    ) { uri ->
+        if (uri == null) {
+            statusMessage = "Zapis anulowany"
+        } else {
+            val result = DiagnosticLogger.saveRedactedLogToUri(context, uri)
+            statusMessage = if (result.isSuccess) {
+                "Log zapisany do pliku"
+            } else {
+                "Nie udalo sie zapisac logu: ${result.exceptionOrNull()?.message.orEmpty()}"
+            }
+        }
+    }
 
     fun refresh() {
         logText = DiagnosticLogger.readAll()
+        lastCrashReport = DiagnosticLogger.readLastCrashReport()
     }
 
     LaunchedEffect(Unit) { refresh() }
@@ -79,8 +101,12 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
                     Text("Ostatni błąd: ${snapshot.lastError}")
                     Text("Znaleziono zapisany token: ${if (tokenDiagnostics.tokenPresent) "tak" else "nie"}")
                     Text("Źródło tokena: ${tokenDiagnostics.source}")
+                    Text("Ostatni ekran: ${snapshot.lastScreen}")
+                    Text("Ostatnia operacja: ${snapshot.lastOperation}")
                 }
             }
+
+            statusMessage?.let { Text(it) }
 
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = { refresh() }, modifier = Modifier.weight(1f)) { Text("Pokaż log") }
@@ -102,12 +128,30 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
                 }, modifier = Modifier.weight(1f)) { Text("Udostępnij") }
             }
 
+            OutlinedButton(
+                onClick = {
+                    val timestamp = DateTimeFormatter.ofPattern("yyyyMMdd-HHmmss").format(LocalDateTime.now())
+                    saveLogLauncher.launch("LibreCare-diagnostics-$timestamp.log")
+                },
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                Text("Zapisz log do pliku")
+            }
+
             Text("Plik logu: ${DiagnosticLogger.logFilePath()}")
             Card(modifier = Modifier.fillMaxWidth()) {
                 Text(
                     text = if (logText.isBlank()) "Brak wpisów diagnostycznych" else logText,
                     modifier = Modifier.padding(16.dp)
                 )
+            }
+            if (lastCrashReport.isNotBlank()) {
+                Card(modifier = Modifier.fillMaxWidth()) {
+                    Text(
+                        text = "Ostatni raport awarii:\n$lastCrashReport",
+                        modifier = Modifier.padding(16.dp)
+                    )
+                }
             }
         }
     }

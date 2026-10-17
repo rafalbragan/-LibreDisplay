@@ -14,7 +14,9 @@ data class DiagnosticSnapshot(
     val lastHttpCode: Int? = null,
     val lastError: String = "Brak",
     val pollingStatus: String = "Zatrzymane",
-    val lastWarning: String = "Brak"
+    val lastWarning: String = "Brak",
+    val lastScreen: String = "Brak",
+    val lastOperation: String = "Brak"
 )
 
 object DiagnosticStatus {
@@ -58,6 +60,14 @@ object DiagnosticStatus {
 
     fun setWarning(warning: String) {
         update { copy(lastWarning = warning.ifBlank { "Brak" }) }
+    }
+
+    fun setLastScreen(screen: String) {
+        update { copy(lastScreen = screen.ifBlank { "Brak" }) }
+    }
+
+    fun setLastOperation(operation: String) {
+        update { copy(lastOperation = operation.ifBlank { "Brak" }) }
     }
 
     fun setRequest(step: String, url: String, method: String) {

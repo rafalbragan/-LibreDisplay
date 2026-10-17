@@ -61,6 +61,11 @@ fun AboutScreen(
         ) {
             Text("LibreCare", fontSize = 28.sp)
             Text("Wersja ${BuildConfig.VERSION_NAME} (${BuildConfig.VERSION_CODE})", fontSize = 14.sp)
+            Text("Commit: ${BuildConfig.COMMIT_SHA}", fontSize = 12.sp)
+            Text("Kanał builda: ${BuildConfig.BUILD_CHANNEL}", fontSize = 12.sp)
+            if (BuildConfig.BUILD_CHANNEL.contains("TEST", ignoreCase = true)) {
+                Text("INTEGRATION TEST", fontSize = 12.sp)
+            }
             Text("Zrodlo danych: LibreLinkUp", fontSize = 13.sp)
             Text(
                 "LibreCare nie jest wyrobem medycznym i nie zastepuje porady lekarza.",
@@ -91,6 +96,14 @@ fun AboutScreen(
             ) {
                 Text("Licencje open source")
             }
+
+            Text("Historia wersji", fontSize = 16.sp)
+            FeatureCatalog.versionHistory().forEach { entry ->
+                Text(
+                    "${entry.versionName} (${entry.versionCode}) • ${entry.releaseType}\nNowe: ${entry.newFeatures.joinToString("; ")}\nPoprawki: ${entry.fixedIssues.joinToString("; ")}\nOgraniczenia: ${entry.knownLimitations.joinToString("; ")}",
+                    fontSize = 12.sp
+                )
+            }
         }
     }
 
@@ -112,4 +125,5 @@ fun AboutScreen(
         )
     }
 }
+
 

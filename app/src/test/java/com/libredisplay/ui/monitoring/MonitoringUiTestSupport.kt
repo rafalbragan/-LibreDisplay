@@ -189,6 +189,7 @@ internal fun SettingsScreenshotHost(widthDp: Int, fontScale: Float) {
                 onNavigateToAccount = {},
                 onNavigateToDataPrivacy = {},
                 onNavigateToStatistics = {},
+                onNavigateToFeatures = {},
                 onNavigateToAppearance = {},
                 onNavigateToAdvanced = {},
                 onNavigateToRetention = {},
