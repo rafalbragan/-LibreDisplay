@@ -14,6 +14,7 @@ import com.libredisplay.data.demo.DemoScenarioController
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.data.repository.CredentialsSnapshot
+import com.libredisplay.data.repository.SelectedPersonGraphException
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.diagnostics.DiagnosticStatus
 import com.libredisplay.service.RefreshController
@@ -298,9 +299,6 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     )
                 }
                 startPolling()
-                viewModelScope.launch(viewModelExceptionHandler) {
-                    glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.APP_START)
-                }
             }.onFailure { throwable ->
                 glucoseRepository.resetSession()
                 if (throwable is LibreLinkUpHttpException && throwable.statusCode in setOf(401, 403)) {
@@ -413,16 +411,20 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 )
             }
         _uiState.update { current ->
-            current.copy(
+            current.withClearedReading(
+                staleMessage = "Ladowanie danych dla wybranej osoby. Ostatni pomiar moze byc niedostepny.",
+                keepLoading = true
+            ).copy(
                 selectedPatientId = normalized,
                 selectedPersonFirstName = selectedPerson.firstName,
                 selectedPersonLastName = selectedPerson.lastName,
                 selectedPersonFullName = selectedPerson.displayName.ifBlank { current.selectedPersonFullName },
-                selectedPersonName = selectedPerson.displayName.ifBlank { current.selectedPersonName },
-                isLoading = true,
-                historyStatus = HistoryStatus.Loading
+                selectedPersonName = selectedPerson.displayName.ifBlank { current.selectedPersonName }
             )
         }
+        _detailedHistory.value = emptyList()
+        _homeHistory.value = emptyList()
+        _homeDataSpan.value = Duration.ZERO
         // Cancel any in-flight person switch so rapidly tapping between people cannot leave two
         // coroutines racing to overwrite the dashboard state (previously a crash source).
         personSwitchJob?.cancel()
@@ -453,7 +455,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     "Person switch failed for ${normalized.take(6)}"
                 )
                 if (shouldApplyPersonSwitchResult(normalized, _uiState.value.selectedPatientId)) {
-                    _uiState.update { it.copy(isLoading = false) }
+                    _uiState.update {
+                        it.withClearedReading(
+                            staleMessage = "Brak aktualnych danych dla wybranej osoby. Sprobuj ponownie pozniej.",
+                            keepLoading = false
+                        )
+                    }
                 }
             }
         }
@@ -664,6 +671,18 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     return@onFailure
                 }
                 DiagnosticLogger.logException("MonitoringViewModel", throwable, "Polling failed source=$source")
+                if (throwable is SelectedPersonGraphException) {
+                    _uiState.update {
+                        it.withClearedReading(
+                            staleMessage = "Brak aktualnych danych dla wybranej osoby. Pokazujemy bezpieczny stan bez odczytu.",
+                            keepLoading = false
+                        )
+                    }
+                    _detailedHistory.value = emptyList()
+                    _homeHistory.value = emptyList()
+                    _homeDataSpan.value = Duration.ZERO
+                    return@onFailure
+                }
                 if (throwable.isRateLimit()) {
                     handleRateLimitFailure(throwable)
                     return@onFailure
@@ -1137,3 +1156,28 @@ internal fun currentReadingFreshness(
 internal fun shouldApplyPersonSwitchResult(expectedPatientId: String, currentSelectedPatientId: String?): Boolean {
     return expectedPatientId == currentSelectedPatientId
 }
+
+internal fun MonitoringUiState.withClearedReading(
+    staleMessage: String,
+    keepLoading: Boolean
+): MonitoringUiState {
+    val connection = lastSuccessfulFetchAt?.let { DataConnectionState.Stale(it, consecutivePollingFailures) }
+        ?: DataConnectionState.Offline(null)
+    return copy(
+        reading = null,
+        currentGlucose = "",
+        currentTimestamp = "",
+        minutesAgo = null,
+        trend = null,
+        min12h = null,
+        max12h = null,
+        historyPointCount = 0,
+        historyStatus = if (keepLoading) HistoryStatus.Loading else HistoryStatus.Empty,
+        isLoading = keepLoading,
+        lastMeasurementTimestamp = null,
+        isDataStale = true,
+        dataConnectionState = connection,
+        staleInfoMessage = staleMessage
+    )
+}
+
