@@ -1,0 +1,25 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="LibreCare Emulator-Only Recovery Scenario" type="GradleRunConfiguration" factoryName="Gradle">
+    <ExternalSystemSettings>
+      <option name="externalProjectPath" value="$PROJECT_DIR$" />
+      <option name="taskNames">
+        <list>
+          <option value=":app:connectedDebugAndroidTest" />
+        </list>
+      </option>
+      <option name="scriptParameters" value="-PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest" />
+      <option name="env">
+        <map>
+          <entry key="ANDROID_SERIAL" value="emulator-5554" />
+          <entry key="ALLOW_PHYSICAL_DEVICE_OPS" value="false" />
+        </map>
+      </option>
+    </ExternalSystemSettings>
+    <ExternalSystemDebugServerProcess>true</ExternalSystemDebugServerProcess>
+    <ExternalSystemReattachDebugProcess>true</ExternalSystemReattachDebugProcess>
+    <DebugAllEnabled>false</DebugAllEnabled>
+    <RunAsTest>false</RunAsTest>
+    <method v="2" />
+  </configuration>
+</component>
+
