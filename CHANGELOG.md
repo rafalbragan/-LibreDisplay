@@ -10,6 +10,8 @@ All notable changes to LibreCare will be documented in this file.
 - Dodano pre-execution gate (task graph) dla zadan device-mutating oraz wymuszenie jawnego wyboru targetu po serialu przy wielu urzadzeniach.
 - Dodano dokument autoryzacji dedykowanego urzadzenia testowego: `docs/device-safety-authorization.md`.
 - Dodano raport audytu backupu (metadane + integralnosc bez payloadu medycznego): `docs/backup-audit-2026-10-18.md`.
+- Dodano workflow CI `Device Safety Policy Check` z regułami blokującymi niedozwolone operacje ADB na fizycznych urządzeniach.
+- Dodano współdzieloną konfigurację uruchamiania emulator-only: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
 
 #### Changed
 - Ochrona fizycznych urzadzen rozszerzona o allowliste seriali (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
@@ -20,6 +22,9 @@ All notable changes to LibreCare will be documented in this file.
 
 #### Tests
 - `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, brak autoryzacji fizycznego targetu)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests ...GlucoseChartPerformanceTest` - PASS (długa historia)
 
 #### Artifacts
 - Bez zmian artefaktow binarnych (hardening procesu i dokumentacji).
@@ -30,6 +35,8 @@ All notable changes to LibreCare will be documented in this file.
 - Added a pre-execution task-graph gate for device-mutating tasks and explicit serial targeting when multiple devices are connected.
 - Added dedicated test-device authorization guide: `docs/device-safety-authorization.md`.
 - Added backup audit report (metadata + integrity only, no medical payload): `docs/backup-audit-2026-10-18.md`.
+- Added CI workflow `Device Safety Policy Check` to block disallowed ADB operations on physical devices.
+- Added shared emulator-only run configuration: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
 
 #### Changed
 - Physical-device protection now includes a serial allowlist (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
@@ -40,6 +47,9 @@ All notable changes to LibreCare will be documented in this file.
 
 #### Tests
 - `./gradlew verifySafeDeviceGate` - FAIL (expected, physical target not authorized)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests ...GlucoseChartPerformanceTest` - PASS (long history)
 
 #### Artifacts
 - No binary artifact changes (process/documentation hardening only).

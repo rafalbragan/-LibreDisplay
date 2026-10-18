@@ -41,6 +41,15 @@
 - Physical target now requires all of: explicit serial target + allowlist + explicit authorization.
 - `installAndRun` and `removeApp` now force `adb -s <serial>`.
 - Authorization procedure: `docs/device-safety-authorization.md`.
+- CI policy workflow added: `.github/workflows/device-safety-policy.yml`.
+- Policy script added: `scripts/ci/device-safety-policy-check.sh`.
+- Shared emulator-only run config added: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
+
+## Emulator Validation
+- `verifySafeDeviceGate` PASS with `-PdeviceSerial=emulator-5554`.
+- Instrumentation scenario PASS on emulator (`MonitoringRecoveryScenarioInstrumentedTest`).
+- Focused unit tests PASS for recovery, Mika no-future timestamps, DEMO isolation, alert suppression.
+- Chart long-history performance smoke test PASS (`GlucoseChartPerformanceTest`, 18-month equivalent dataset).
 
 ## Artifacts
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`

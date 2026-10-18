@@ -15,6 +15,9 @@
 - Instrumentation tests: PASS (`MonitoringRecoveryScenarioInstrumentedTest`, SM-S948B)
 - Safety gate: PASS (blocks physical device by default; explicit override required)
 - Safety gate v2: PASS (pre-execution task-graph validation, explicit serial target required when ambiguous)
+- CI policy-check workflow: PASS (`Device safety policy` check on PR)
+- Emulator-only recovery scenario: PASS (`MonitoringRecoveryScenarioInstrumentedTest`)
+- Chart 2.0 long-history performance smoke test: PASS (`GlucoseChartPerformanceTest`)
 
 ## Scope Assessment
 - Mika no-future timestamp requirement: **PASS**.

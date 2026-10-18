@@ -23,6 +23,8 @@
 - Guard dziala przed wykonaniem taskow (walidacja task graph), wymaga serial-targetingu przy wielu urzadzeniach i stale blokuje serial PO `R5GL1397F1M`.
 - `installAndRun` i `removeApp` wymuszaja `adb -s <serial>`.
 - Dodano instrukcje autoryzacji dedykowanego urzadzenia: `docs/device-safety-authorization.md`.
+- Dodano CI policy-check: `.github/workflows/device-safety-policy.yml` + `scripts/ci/device-safety-policy-check.sh`.
+- Dodano wspoldzielona konfiguracje emulator-only dla scenariusza recovery: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
 
 ### Testy
 - `./gradlew clean` - PASS
@@ -35,6 +37,9 @@
 - `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, fizyczne urzadzenie bez autoryzacji)
 - `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (oczekiwane, jawny override)
 - Backup audit (read-only) - PASS (`docs/backup-audit-2026-10-18.md`)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests com.libredisplay.ui.monitoring.GlucoseChartPerformanceTest` - PASS
 
 ### Artefakty
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`
@@ -70,6 +75,8 @@
 - The guard now runs before task execution (task-graph validation), requires explicit serial targeting in multi-device scenarios, and permanently blocks PO serial `R5GL1397F1M`.
 - `installAndRun` and `removeApp` now enforce `adb -s <serial>`.
 - Added dedicated test-device authorization guide: `docs/device-safety-authorization.md`.
+- Added CI policy-check: `.github/workflows/device-safety-policy.yml` + `scripts/ci/device-safety-policy-check.sh`.
+- Added shared emulator-only recovery run configuration: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
 
 ### Tests
 - `./gradlew clean` - PASS
@@ -82,6 +89,9 @@
 - `./gradlew verifySafeDeviceGate` - FAIL (expected, physical device without authorization)
 - `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (expected, explicit override)
 - Backup audit (read-only) - PASS (`docs/backup-audit-2026-10-18.md`)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests com.libredisplay.ui.monitoring.GlucoseChartPerformanceTest` - PASS
 
 ### Artifacts
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`
