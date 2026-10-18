@@ -12,7 +12,8 @@
 - Debug output metadata: `2.16.6-debug`, versionCode 50, minSdk 26. Existing debug suffix is preserved.
 - The dirty main checkout was not used as implementation base or reset/stashed/rebased/overwritten. No integration branch was reused.
 - Final source fingerprint: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-20261018\release-artifacts\p0-evidence\source-final-start.csv`. **Zero source changes** during final clean build and emulator run.
-- Git commit/push outcome: pending final handoff; only the dedicated branch may be pushed. No direct master push, merge or auto-merge.
+- Implementation commit: `b060549198f5198df2a591778e910fe750ac1d8f`, pushed only to `origin/fix/p0-person-recovery-20261018`; remote SHA independently matched. Implementation commit diff: 18 files, 1,380 insertions, 46 deletions. Subsequent changes are documentation-only verification metadata; exact final tip is reported in the handoff.
+- GitHub Actions query on the implementation SHA returned no runs (`[]`); no green CI claim is made for it. No PR was created, merged or configured for auto-merge. No direct master push.
 
 ## Summary / architecture review
 
@@ -129,6 +130,8 @@ Branding search covers LibreDisplay / LIBREDISPLAY / libredisplay (case-insensit
 
 Existing .gitignore excludes build/, APK, AAB, JKS, keystore and local.properties. Only explicitly selected source/tests/docs/reports may be committed. Local generated APK, screenshots/logs/source fingerprints and transient validation TSV are not staged. Main checkout and other PRs remain untouched. Final branch commit/push and exact remote HEAD must be verified in the handoff; no merge or auto-merge.
 
+Commit/push verification succeeded for the implementation SHA above. Post-commit tracked working tree was clean; only local `release-artifacts/p0-evidence/` and `validation-p0.tsv` remained untracked. `git diff --cached --check` reported only extra blank lines at EOF in new tests/docs; these cosmetic warnings were retained rather than modifying fingerprinted test inputs after execution. No generated binary or private signing file is in the commit.
+
 Main-worktree status comparison after implementation: **0 differences**. Expected source/doc scope (all relative to the absolute P0 worktree above):
 
 - `app/build.gradle.kts`
@@ -153,5 +156,6 @@ Main-worktree status comparison after implementation: **0 differences**. Expecte
 Remaining risks: unavailable signed release/Play evidence; exact Samsung attribution; controlled-fixture lifecycle exclusions; incomplete dark/scaled/accessibility/landscape/tooltip/full-history UI acceptance; known backup durability/account-isolation limitations from the read-only audit. Mika and pinch zoom are not implemented or accepted by this P0 branch.
 
 [Mandatory PASS / FAIL / NOT APPLICABLE checklist](quality-review-report-2.16.6.md). **Overall completion remains blocked while mandatory FAIL items remain.**
+
 
 

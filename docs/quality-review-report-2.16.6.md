@@ -174,7 +174,7 @@ Screenshots under `final-p0/p0-evidence/`: `inactive-no-data.png`, `active-resto
 | Rename user-facing legacy names | NOT APPLICABLE | No new user-facing legacy name; app label is LibreCare |
 | Final git status / focused diff review | PASS | Recorded in final handoff; generated evidence deliberately not staged |
 | Ignore build/, APK, AAB, JKS, keystore, local.properties | PASS | Existing .gitignore covers all patterns |
-| Commit source/tests/docs/reports and branch-only push | FAIL | Final Git outcome must be recorded after commit/push; not a readiness claim |
+| Commit source/tests/docs/reports and branch-only push | PASS | b060549198f5198df2a591778e910fe750ac1d8f pushed to dedicated P0 branch; exact remote match verified; subsequent metadata-only tip in final handoff |
 | Do not commit generated APK/AAB | PASS | Explicit source/docs staging only |
 | No main-worktree overwrite/stash/reset/rebase | PASS | Separate P0 worktree; protected main preserved |
 | No merge / auto-merge / direct master push | PASS | Dedicated branch only; human merge required |
@@ -189,4 +189,6 @@ Screenshots under `final-p0/p0-evidence/`: `inactive-no-data.png`, `active-resto
 ## Remaining risks
 
 Exact Samsung exception attribution, signed release artifacts, Google Play app-signing/upload certificates and code availability are unverified. No historical data recovery is attempted or promised; uninstall cannot be treated as an update path. Synthetic process tests exclude boot receiver and production service behavior. Full visual/accessibility/chart-gesture acceptance is incomplete. Local screenshots/logs are not uploaded automatically. Only human review can authorize merge or release.
+
+GitHub Actions returned no runs for the implementation SHA; local tests are not relabeled as CI results. New-file EOF blank-line warnings remain cosmetic and documented. No PR was created or merged. **PR NOT MERGED — awaiting Product Owner review.**
 
