@@ -29,7 +29,7 @@ class RealLibreLinkUpClientTest {
     }
 
     @Test
-    fun loginMissingToken_isNonRetryable() = runTest {
+    fun loginMissingToken_isDecodingFailure_withoutRetry() = runTest {
         val http = FakeHttp(
             loginResponses = ArrayDeque(listOf(Response.success(json("""
                 {"status":0,"data":{"user":{"id":"user-1"}}}
@@ -39,8 +39,8 @@ class RealLibreLinkUpClientTest {
 
         try {
             client.login("a@b.com", "secret", "EU")
-            fail("Expected NonRetryableLibreLinkUpException")
-        } catch (_: NonRetryableLibreLinkUpException) {
+            fail("Expected LibreResponseDecodingException")
+        } catch (_: LibreResponseDecodingException) {
         }
         assertEquals(1, http.loginCalls)
     }

@@ -100,8 +100,11 @@ object GlucoseMetricsCalculator {
         }
 
         fun pct(duration: Duration): Int {
-            if (covered.isZero) return 0
-            return ((duration.toMillis().toDouble() / covered.toMillis().toDouble()) * 100.0)
+            // API instants can have finer precision than Room's millisecond timestamps.
+            // A nonzero Duration may still convert to a zero denominator here.
+            val coveredMillis = covered.toMillis()
+            if (coveredMillis <= 0L) return 0
+            return ((duration.toMillis().toDouble() / coveredMillis.toDouble()) * 100.0)
                 .roundToInt()
                 .coerceIn(0, 100)
         }
@@ -129,6 +132,11 @@ object GlucoseMetricsCalculator {
             return SensorActivity(0.0, Duration.ZERO, Duration.ZERO, 0, "NO_DATA")
         }
         val total = Duration.between(periodStart, periodEnd)
+        val totalMillis = total.toMillis()
+        // Positive sub-millisecond API/Room intervals still have no measurable coverage.
+        if (totalMillis <= 0L) {
+            return SensorActivity(0.0, Duration.ZERO, total, 0, "NO_DATA")
+        }
         if (readings.size < 2) {
             return SensorActivity(0.0, Duration.ZERO, total, 0, "LOW")
         }
@@ -145,7 +153,7 @@ object GlucoseMetricsCalculator {
             covered += delta
         }
 
-        val pct = (covered.toMillis().toDouble() / total.toMillis().toDouble() * 100.0).coerceIn(0.0, 100.0)
+        val pct = (covered.toMillis().toDouble() / totalMillis.toDouble() * 100.0).coerceIn(0.0, 100.0)
         val status = when {
             pct >= 75.0 -> "HIGH"
             pct >= 65.0 -> "MEDIUM"

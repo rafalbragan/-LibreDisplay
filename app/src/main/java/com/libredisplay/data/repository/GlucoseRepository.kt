@@ -1,6 +1,7 @@
 package com.libredisplay.data.repository
 
 import com.libredisplay.data.api.LibreLinkUpClient
+import com.libredisplay.data.api.MissingGlucoseMeasurementException
 import com.libredisplay.data.api.MockLibreLinkUpClient
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
 import com.libredisplay.data.model.AppSettings
@@ -9,6 +10,7 @@ import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.diagnostics.DiagnosticLogger
+import kotlinx.coroutines.CancellationException
 import java.time.Duration
 
 data class GlucoseSnapshot(
@@ -82,7 +84,8 @@ class GlucoseRepository(
         }
         val hasSession = authRepository.ensureSessionFromStorageOnly()
         if (!hasSession) {
-            return loadLatestMonitoringSnapshotFromLocal(preferredPatientId ?: settings.selectedPatientId)
+            // The caller loads cache separately; cache cannot prove a live authenticated session.
+            return null
         }
         return fetchMonitoringSnapshotFromClient(productionClient, preferredPatientId, settings.selectedPatientId)
     }
@@ -134,10 +137,11 @@ class GlucoseRepository(
 
         val reading = runCatching { client.getLatestReading(selectedPerson.patientId) }
             .getOrElse { throwable ->
+                if (throwable is CancellationException) throw throwable
                 DiagnosticLogger.logException("GlucoseRepository", throwable, "Graph fetch failed for selected person")
-                throw SelectedPersonGraphException(selectedPerson, throwable)
+                throw SelectedPersonGraphException(selectedPerson, throwable, persons)
             }
-            ?: throw SelectedPersonGraphException(selectedPerson, NoSuchElementException("Brak danych dla wybranej osoby"))
+            ?: throw SelectedPersonGraphException(selectedPerson, MissingGlucoseMeasurementException(), persons)
 
         DiagnosticLogger.logInfo(
             "GlucoseRepository",
@@ -241,7 +245,8 @@ internal fun selectPersonForSnapshot(
 
 class SelectedPersonGraphException(
     val selectedPerson: LibreConnectionPerson,
-    cause: Throwable
+    cause: Throwable,
+    val persons: List<LibreConnectionPerson> = listOf(selectedPerson)
 ) : RuntimeException("Nie udało się pobrać danych dla: ${selectedPerson.displayName}", cause)
 
 class NoActivePersonsException(message: String) : RuntimeException(message)
