@@ -11,6 +11,12 @@ val mainActivity = ".MainActivity"
 
 fun isWindows(): Boolean = System.getProperty("os.name").contains("Windows", ignoreCase = true)
 
+data class ConnectedAndroidDevice(
+    val serial: String,
+    val state: String,
+    val isEmulator: Boolean
+)
+
 fun runAndCapture(vararg command: String): String {
     val output = java.io.ByteArrayOutputStream()
     exec {
@@ -20,6 +26,96 @@ fun runAndCapture(vararg command: String): String {
         isIgnoreExitValue = true
     }
     return output.toString().trim()
+}
+
+fun adbCommand(vararg args: String): Array<String> {
+    val localPropertiesFile = rootProject.file("local.properties")
+    val sdkDir = if (localPropertiesFile.exists()) {
+        java.util.Properties().apply {
+            localPropertiesFile.inputStream().use { load(it) }
+        }.getProperty("sdk.dir")
+    } else {
+        null
+    }
+    val adbName = if (isWindows()) "adb.exe" else "adb"
+    val adbFromSdk = sdkDir
+        ?.let { java.io.File(it, "platform-tools/$adbName") }
+        ?.takeIf { it.exists() }
+        ?.absolutePath
+    val executable = adbFromSdk ?: "adb"
+    return arrayOf(executable, *args)
+}
+
+fun parseConnectedDevices(devicesOutput: String): List<ConnectedAndroidDevice> {
+    return devicesOutput
+        .lineSequence()
+        .drop(1)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .map { line ->
+            val parts = line.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val serial = parts.getOrNull(0).orEmpty()
+            val state = parts.getOrNull(1).orEmpty()
+            val isEmulator = serial.startsWith("emulator-")
+            ConnectedAndroidDevice(serial = serial, state = state, isEmulator = isEmulator)
+        }
+        .filter { it.serial.isNotBlank() && it.state.isNotBlank() }
+        .toList()
+}
+
+fun requireSafeDeviceTask(taskPath: String) {
+    val allowPhysical = (findProperty("allowPhysicalDeviceOps") as? String)
+        ?.equals("true", ignoreCase = true) == true ||
+        (System.getenv("ALLOW_PHYSICAL_DEVICE_OPS") ?: "")
+            .equals("true", ignoreCase = true)
+
+    val devicesOutput = runCatching { runAndCapture(*adbCommand("devices", "-l")) }
+        .getOrElse { error ->
+            throw GradleException(
+                "Blocked $taskPath: cannot verify connected Android devices (adb unavailable or failed: ${error.message})."
+            )
+        }
+
+    if (!devicesOutput.contains("List of devices attached", ignoreCase = true)) {
+        throw GradleException(
+            "Blocked $taskPath: adb output is not trusted for device detection. Output: $devicesOutput"
+        )
+    }
+
+    val connected = parseConnectedDevices(devicesOutput)
+    val physical = connected.filter { it.state == "device" && !it.isEmulator }
+    if (physical.isNotEmpty() && !allowPhysical) {
+        val serials = physical.joinToString(",") { it.serial }
+        throw GradleException(
+            "Blocked $taskPath: physical device(s) detected [$serials]. " +
+                "Use emulator/dedicated test device, or explicitly override with -PallowPhysicalDeviceOps=true."
+        )
+    }
+}
+
+tasks.register("verifySafeDeviceGate") {
+    group = "verification"
+    description = "Runs physical-device safety gate check without installing or uninstalling anything."
+    doLast {
+        requireSafeDeviceTask(path)
+        println("SAFE DEVICE GATE: PASS (no unauthorized physical-device operations allowed).")
+    }
+}
+
+allprojects {
+    tasks.configureEach {
+        val isRiskyDeviceTask =
+            (name.startsWith("connected") && name.endsWith("AndroidTest")) ||
+                name.startsWith("install") ||
+                name.startsWith("uninstall") ||
+                name == "installAndRun" ||
+                name == "removeApp"
+        if (isRiskyDeviceTask) {
+            doFirst {
+                requireSafeDeviceTask(path)
+            }
+        }
+    }
 }
 
 tasks.register("checkEnvironment") {

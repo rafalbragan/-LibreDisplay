@@ -9,6 +9,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Added
 - Dodano profil DEMO `Mika` z deterministyczna historia glikemii (~18 miesiecy) aktywowany w buildzie testowym przez `ENABLE_MIKA_DEMO_PROFILE=true`.
 - Dodano stale oznaczenie UI: `MIKA - DANE SYMULOWANE / DEMO` na ekranach Home/Monitoring.
+- Dodano fail-closed gate dla taskow `connected*AndroidTest` / `install*` / `uninstall*`, blokujacy operacje na fizycznych urzadzeniach bez jawnej autoryzacji.
 
 #### Changed
 - Wersja aplikacji: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
@@ -26,6 +27,8 @@ All notable changes to LibreCare will be documented in this file.
 - `./gradlew assembleRelease` - PASS
 - `./gradlew bundleRelease` - PASS
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
+- `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, fizyczne urzadzenie bez autoryzacji)
+- `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (oczekiwane, jawny override)
 
 #### Artifacts
 - `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)
@@ -37,6 +40,7 @@ All notable changes to LibreCare will be documented in this file.
 #### Added
 - Added DEMO profile `Mika` with deterministic synthetic glucose history (~18 months), enabled in test builds with `ENABLE_MIKA_DEMO_PROFILE=true`.
 - Added persistent UI label: `MIKA - DANE SYMULOWANE / DEMO` on Home/Monitoring.
+- Added a fail-closed guard for `connected*AndroidTest` / `install*` / `uninstall*` tasks, blocking physical-device operations without explicit authorization.
 
 #### Changed
 - App version: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
@@ -54,6 +58,8 @@ All notable changes to LibreCare will be documented in this file.
 - `./gradlew assembleRelease` - PASS
 - `./gradlew bundleRelease` - PASS
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
+- `./gradlew verifySafeDeviceGate` - FAIL (expected, physical device without authorization)
+- `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (expected, explicit override)
 
 #### Artifacts
 - `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)

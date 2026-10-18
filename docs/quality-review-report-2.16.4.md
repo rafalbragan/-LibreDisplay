@@ -4,6 +4,7 @@
 - Mika synthetic timeline safety: **improved** (no future points).
 - DEMO isolation from LIVE logic: **improved** (source policy + alarm suppression + sync/backup guards).
 - Crash-recovery scenario validation on device: **added**.
+- Physical-device protection for destructive test/install tasks: **added**.
 
 ## Verification Results
 - Unit tests: PASS
@@ -12,6 +13,7 @@
 - Release build: PASS
 - Release bundle: PASS
 - Instrumentation tests: PASS (`MonitoringRecoveryScenarioInstrumentedTest`, SM-S948B)
+- Safety gate: PASS (blocks physical device by default; explicit override required)
 
 ## Scope Assessment
 - Mika no-future timestamp requirement: **PASS**.
@@ -28,4 +30,8 @@
 ## Risks and Gaps
 - Persisted explicit `isSynthetic` schema column is still missing; behavior relies on source markers and patient ID policy.
 - Full Google Sign-In and Drive E2E validation remains pending.
+
+## RCA Reference
+- `docs/incident-rca-2026-10-18-physical-device-app-removal.md`
+
 

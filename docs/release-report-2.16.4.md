@@ -3,6 +3,7 @@
 ## Summary
 - Finalized pre-install corrections for DEMO Mika safety and release hardening.
 - Kept Google Sign-In and Google Drive backup as separate **IN PROGRESS** scope.
+- Added incident hardening for physical-device safety (Gradle gate + RCA report).
 
 ## Architecture Review (EXISTS / INCOMPLETE / MISSING)
 - ViewModels: **EXISTS** (`MonitoringViewModel` enforces DEMO data as non-LIVE and safe messaging).
@@ -30,6 +31,7 @@
 - `assembleRelease` PASS
 - `bundleRelease` PASS
 - Connected scenario test PASS (`MonitoringRecoveryScenarioInstrumentedTest` on SM-S948B)
+- Safety gate check FAIL/PASS as designed (`verifySafeDeviceGate` without/with explicit override)
 
 ## Artifacts
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`
@@ -40,4 +42,8 @@
 - Google Sign-In still requires production OAuth setup by Product Owner.
 - Google Drive encrypted backup/restore flow not yet completed.
 - Domain model still lacks explicit persisted `isSynthetic` field (current release uses source/prefix policy).
+
+## Incident RCA
+- `docs/incident-rca-2026-10-18-physical-device-app-removal.md`
+- Non-invasive preserved-data check found local backup file: `C:\Users\SG0216827\IdeaProjects\LibreDisplay\docs\LibreCare-live-backup-1787331718332.json`.
 
