@@ -2,6 +2,56 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.6 - 2026-10-18 — P0 candidate / NOT RELEASE READY
+
+### PL
+
+#### Added
+- Testy prawdziwej Activity, wyboru osoby przez UI i ponownego uruchomienia procesu na jawnie wskazanym emulatorze.
+- Audyt GitHub oraz audyty podpisu i ciągłości historii tylko do odczytu: `docs/p0-independent-audit-2026-10-18.md`.
+
+#### Changed
+- Wybór osoby jest zapisywany dopiero po poprawnym pobraniu jej danych; przełącznik pozostaje dostępny podczas ładowania.
+- Wersja bazowa `2.16.2` (46) → kandydat `2.16.6` (50), powyżej zaobserwowanego lokalnego kodu 49. Dostępność kodu w Google Play niepotwierdzona.
+
+#### Fixed
+- Zabezpieczono trzy odtworzone ścieżki `Cannot round NaN value`: rozkład zakresów, aktywność czujnika i współrzędne osi wykresu. Obliczenia czasu nie dzielą przez zero po utracie precyzji API/Room lub konwersji timestampu do Float.
+- Oddzielono dane i wyniki asynchroniczne kolejnych osób; brak graphData nie usuwa poprawnej sesji i nie blokuje wyboru innej osoby po restarcie.
+
+#### Tests
+- Regresje precyzji czasu, wyjątku parsera, anulowania, braku danych, starego pomiaru, wyścigu przełączeń oraz trzech ścieżek restartu procesu.
+- Test procesu izoluje BootReceiver na emulatorze i przywraca jego stan; nie obejmuje autostartu ani uruchomienia bez instrumentacji.
+- Dokładne wyniki, ograniczenia i checklista: `docs/release-report-2.16.6.md`, `docs/quality-review-report-2.16.6.md`.
+
+#### Artifacts
+- Lokalny APK debug i dowody emulatora: `release-artifacts/`; szczegóły w raporcie wydania.
+- Release APK/AAB: brak konfiguracji podpisu w worktree, bez importowania sekretów. Brak pliku do Google Play.
+- Nie publikowano artefaktów. Zgodność certyfikatu Google Play i dokładny stack trace Samsunga pozostają niepotwierdzone.
+
+### EN
+
+#### Added
+- Real-Activity UI selection and distinct-process restart regressions, restricted to an explicitly verified emulator.
+- Independent GitHub, read-only signing and historical-continuity audit.
+
+#### Changed
+- Persist only successfully fetched selections; keep person switching available during loading.
+- Base `2.16.2` (46) → candidate `2.16.6` (50), above observed local code 49; Play availability is unverified.
+
+#### Fixed
+- Three reproduced `Cannot round NaN value` paths: range distribution, sensor activity and chart-axis coordinates. Time calculations avoid zero division after API/Room precision loss or timestamp-to-Float conversion.
+- Cross-person stale results and failed-selection startup dead end; retain the session for recoverable graph failures.
+
+#### Tests
+- Precision, parser failure, cancellation, no/stale-data UI, in-flight switching and three distinct-process restart paths.
+- Process tests isolate BootReceiver on the emulator and restore its state; boot autostart and uninstrumented startup are not covered.
+- Exact results and limitations are recorded in the release and quality reports for 2.16.6.
+
+#### Artifacts
+- Local debug APK and emulator evidence under `release-artifacts/`; see the release report for paths and sizes.
+- Release APK/AAB: signing configuration unavailable in the worktree; secrets were not imported. No Google Play upload file.
+- No publishing. Google Play certificate compatibility and attribution to the exact Samsung crash remain unverified.
+
 ## 2.16.2 - 2026-10-16
 
 ### PL

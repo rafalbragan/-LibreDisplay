@@ -9,6 +9,7 @@ import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.LibreConnectionPerson
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.diagnostics.DiagnosticLogger
+import kotlinx.coroutines.CancellationException
 import java.time.Duration
 
 data class GlucoseSnapshot(
@@ -134,10 +135,11 @@ class GlucoseRepository(
 
         val reading = runCatching { client.getLatestReading(selectedPerson.patientId) }
             .getOrElse { throwable ->
+                if (throwable is CancellationException) throw throwable
                 DiagnosticLogger.logException("GlucoseRepository", throwable, "Graph fetch failed for selected person")
-                throw SelectedPersonGraphException(selectedPerson, throwable)
+                throw SelectedPersonGraphException(selectedPerson, throwable, persons)
             }
-            ?: throw SelectedPersonGraphException(selectedPerson, NoSuchElementException("Brak danych dla wybranej osoby"))
+            ?: throw SelectedPersonGraphException(selectedPerson, NoSuchElementException("Brak danych dla wybranej osoby"), persons)
 
         DiagnosticLogger.logInfo(
             "GlucoseRepository",
@@ -241,7 +243,8 @@ internal fun selectPersonForSnapshot(
 
 class SelectedPersonGraphException(
     val selectedPerson: LibreConnectionPerson,
-    cause: Throwable
+    cause: Throwable,
+    val persons: List<LibreConnectionPerson> = listOf(selectedPerson)
 ) : RuntimeException("Nie udało się pobrać danych dla: ${selectedPerson.displayName}", cause)
 
 class NoActivePersonsException(message: String) : RuntimeException(message)

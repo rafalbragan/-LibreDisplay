@@ -14,6 +14,7 @@ import com.libredisplay.data.demo.DemoScenarioController
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.data.repository.CredentialsSnapshot
+import com.libredisplay.data.repository.SelectedPersonGraphException
 import com.libredisplay.diagnostics.DiagnosticLogger
 import com.libredisplay.diagnostics.DiagnosticStatus
 import com.libredisplay.service.RefreshController
@@ -44,6 +45,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     private val connectMutex = Mutex()
     private val fetchMutex = Mutex()
     private var personSwitchJob: Job? = null
+    private var selectionGeneration = 0L
     private val attemptCounter = AtomicLong(0)
     private val backoffPolicy = PollingBackoffPolicy()
     private val connectivityProvider = AndroidConnectivityStatusProvider(application.applicationContext)
@@ -114,6 +116,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     fun onScreenVisible(refreshNonce: Int) {
         if (lastRefreshNonce == refreshNonce) return
         lastRefreshNonce = refreshNonce
+        selectionGeneration += 1
         reloadSettings()
         reconcileRateLimitState()
         bootstrapUsingPersistedTokenOnly()
@@ -136,12 +139,14 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
      * smaller window currently rendered).
      */
     private fun refreshHomeDataSpan() {
+        val generation = selectionGeneration
         val patientId = _uiState.value.selectedPatientId ?: run {
             _homeDataSpan.value = Duration.ZERO
             return
         }
         viewModelScope.launch(viewModelExceptionHandler) {
             val range = glucoseSyncRepository.loadStoredRange(patientId)
+            if (generation != selectionGeneration || _uiState.value.selectedPatientId != patientId) return@launch
             _homeDataSpan.value = if (range == null) {
                 Duration.ZERO
             } else {
@@ -154,6 +159,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         target: MutableStateFlow<List<GlucoseHistoryPoint>>,
         duration: Duration
     ) {
+        val generation = selectionGeneration
         val patientId = _uiState.value.selectedPatientId ?: run {
             target.value = emptyList()
             return
@@ -164,6 +170,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         val start = end.minus(duration)
         viewModelScope.launch(viewModelExceptionHandler) {
             val local = glucoseSyncRepository.loadHistory(patientId, start, end)
+            if (generation != selectionGeneration || _uiState.value.selectedPatientId != patientId) return@launch
             val currentPoint = _uiState.value.reading?.takeIf {
                 !it.timestamp.isBefore(start) && !it.timestamp.isAfter(end)
             }?.let {
@@ -240,16 +247,18 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun bootstrapUsingPersistedTokenOnly() {
         val settings = settingsRepository.loadSettings()
+        val generation = selectionGeneration
         if (!settings.isConfigured()) {
             transitionState(ConnectionState.Idle)
             return
         }
         viewModelScope.launch {
             val localSnapshot = glucoseRepository.loadLatestMonitoringSnapshotFromLocal(settings.selectedPatientId)
+            if (generation != selectionGeneration) return@launch
             if (localSnapshot != null) {
                 transitionState(ConnectionState.Connected)
                 _uiState.update {
-                    it.applyDashboardSnapshot(localSnapshot).copy(
+                    it.applyDashboardSnapshot(localSnapshot, persistSelection = false).copy(
                         isLoading = false,
                         errorMessage = null,
                         canRetry = false,
@@ -266,6 +275,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             runCatching {
                 glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull()
             }.onSuccess { snapshotOrNull ->
+                if (generation != selectionGeneration) return@onSuccess
                 if (snapshotOrNull == null) {
                     transitionState(ConnectionState.Disconnected)
                     _uiState.update { it.copy(canRetry = true, errorMessage = "Kliknij \"Polacz z LibreLinkUp\", aby wykonac pojedyncza probe logowania.") }
@@ -295,6 +305,15 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.APP_START)
                 }
             }.onFailure { throwable ->
+                if (throwable is CancellationException) throw throwable
+                if (generation != selectionGeneration) return@onFailure
+                if (throwable is SelectedPersonGraphException &&
+                    throwable.findHttpStatusCode() !in setOf(401, 403, 429, 430)
+                ) {
+                    handleSelectedPersonFailure(throwable)
+                    startPolling()
+                    return@onFailure
+                }
                 glucoseRepository.resetSession()
                 if (throwable is LibreLinkUpHttpException && throwable.statusCode in setOf(401, 403)) {
                     transitionState(ConnectionState.AuthenticationRequired)
@@ -397,21 +416,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             "MonitoringViewModel",
             "PERSON SWITCH old=${previous?.take(6) ?: "none"} new=${normalized.take(6)}"
         )
-        runCatching { settingsRepository.saveSelectedPatientId(normalized) }
-            .onFailure { throwable ->
-                DiagnosticLogger.logException(
-                    "MonitoringViewModel",
-                    throwable,
-                    "Failed to persist selected person ${normalized.take(6)}"
-                )
-            }
+        // A choice is durable only after a successful snapshot, never before its graph request.
+        selectionGeneration += 1
+        clearHistoryFlows()
         _uiState.update { current ->
-            current.copy(
+            current.clearPersonReading().copy(
                 selectedPatientId = normalized,
                 selectedPersonFirstName = selectedPerson.firstName,
                 selectedPersonLastName = selectedPerson.lastName,
-                selectedPersonFullName = selectedPerson.displayName.ifBlank { current.selectedPersonFullName },
-                selectedPersonName = selectedPerson.displayName.ifBlank { current.selectedPersonName },
+                selectedPersonFullName = selectedPerson.displayName,
+                selectedPersonName = selectedPerson.displayName,
                 isLoading = true,
                 historyStatus = HistoryStatus.Loading
             )
@@ -424,18 +438,23 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 glucoseRepository.loadLatestMonitoringSnapshotFromLocal(normalized)?.let { localSnapshot ->
                     // Ignore a stale result if the user switched again while we were loading.
                     if (_uiState.value.selectedPatientId != normalized) return@launch
-                    _uiState.update {
-                        it.applyDashboardSnapshot(localSnapshot).copy(
-                            isLoading = false,
-                            isDataStale = true,
-                            staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
-                        )
+                    // A local fallback is not a result for the explicitly requested person.
+                    if (localSnapshot.selectedPerson.patientId == normalized) {
+                        _uiState.update {
+                            it.applyDashboardSnapshot(localSnapshot, persistSelection = false).copy(
+                                isLoading = false,
+                                isDataStale = true,
+                                staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
+                            )
+                        }
                     }
                 }
                 if (_uiState.value.selectedPatientId == normalized &&
                     _uiState.value.connectionState == ConnectionState.Connected
                 ) {
                     pollOnce(force = true, source = "person-switch")
+                } else if (_uiState.value.selectedPatientId == normalized) {
+                    _uiState.update { it.copy(isLoading = false, historyStatus = HistoryStatus.Empty) }
                 }
             } catch (cancellation: CancellationException) {
                 throw cancellation
@@ -458,6 +477,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private fun runManualConnect(snapshot: CredentialsSnapshot, trigger: String) {
         viewModelScope.launch(viewModelExceptionHandler) {
+            val generation = selectionGeneration
             if (!connectMutex.tryLock()) {
                 DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN SINGLE-FLIGHT WAITING")
                 return@launch
@@ -483,6 +503,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 runCatching {
                     performSingleManualFetch(snapshot = snapshot, trigger = trigger, priorState = priorState)
                 }.onSuccess { monitoringSnapshot ->
+                    if (generation != selectionGeneration) return@onSuccess
                     DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=success")
                     transitionState(ConnectionState.Connected)
                     _uiState.update {
@@ -504,6 +525,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     startPolling()
                 }.onFailure { throwable ->
+                    if (generation != selectionGeneration) return@onFailure
                     if (throwable is CancellationException) {
                         _uiState.value = _uiState.value.copy(isLoading = false)
                         return@onFailure
@@ -522,6 +544,11 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     }
 
                     DiagnosticLogger.logException("MonitoringViewModel", throwable, "Connection attempt failed")
+                    if (throwable is SelectedPersonGraphException && throwable.findHttpStatusCode() !in setOf(401, 403)) {
+                        handleSelectedPersonFailure(throwable)
+                        startPolling()
+                        return@onFailure
+                    }
                     DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
                     stopPollingInternal("manual retry required")
                     val cooldown = authCooldownSeconds()
@@ -569,6 +596,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
     private suspend fun pollOnce(force: Boolean, source: String) {
         if (_uiState.value.connectionState != ConnectionState.Connected) return
+        val generation = selectionGeneration
 
         val lockedRemaining = activeRateLimitRemainingSeconds()
         if (!force && lockedRemaining > 0) {
@@ -579,7 +607,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             return
         }
 
-        if (!fetchMutex.tryLock()) {
+        if (source == "person-switch") {
+            // Do not drop an explicit switch behind an older polling request.
+            fetchMutex.lock()
+        } else if (!fetchMutex.tryLock()) {
             DiagnosticLogger.logWarning("MonitoringViewModel", "FETCH SKIPPED reason=already running")
             DiagnosticLogger.logWarning("MonitoringViewModel", "POLLING SKIPPED reason=fetch already in progress")
             return
@@ -587,6 +618,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
         DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT ENTER")
         try {
+            if (generation != selectionGeneration) return
             val now = Instant.now()
             val nextRetryAt = _uiState.value.nextPollingRetryAt
             if (!force && nextRetryAt != null && now.isBefore(nextRetryAt)) {
@@ -613,6 +645,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             runCatching {
                 glucoseRepository.fetchMonitoringSnapshot(preferredPatientId = selectedId)
             }.onSuccess { monitoringSnapshot ->
+                if (generation != selectionGeneration) return@onSuccess
                 val previousFailures = _uiState.value.consecutivePollingFailures
                 val downtime = failureStartAt?.let { Duration.between(it, Instant.now()).seconds.coerceAtLeast(0) } ?: 0L
                 if (previousFailures > 0) {
@@ -640,13 +673,17 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     staleInfoMessage = null
                 )
             }.onFailure { throwable ->
+                if (generation != selectionGeneration) return@onFailure
                 if (throwable is CancellationException) {
-                    _uiState.value = _uiState.value.copy(isLoading = false)
-                    return@onFailure
+                    throw throwable
                 }
                 DiagnosticLogger.logException("MonitoringViewModel", throwable, "Polling failed source=$source")
                 if (throwable.isRateLimit()) {
                     handleRateLimitFailure(throwable)
+                    return@onFailure
+                }
+                if (throwable is SelectedPersonGraphException && throwable.findHttpStatusCode() !in setOf(401, 403)) {
+                    handleSelectedPersonFailure(throwable)
                     return@onFailure
                 }
                 when (PollingFailureClassifier.classify(throwable)) {
@@ -917,15 +954,17 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun MonitoringUiState.applyDashboardSnapshot(snapshot: MonitoringSnapshot): MonitoringUiState {
+    private fun MonitoringUiState.applyDashboardSnapshot(
+        snapshot: MonitoringSnapshot,
+        persistSelection: Boolean = true
+    ): MonitoringUiState {
         val persons = snapshot.persons
         DiagnosticLogger.logInfo("PERSON", "Available people loaded")
         DiagnosticLogger.logInfo("MonitoringViewModel", "PERSONS LOADED count=${persons.size}")
-        val selected = persons.firstOrNull { it.patientId == snapshot.selectedPerson.patientId }
-            ?: persons.firstOrNull()
-            ?: snapshot.selectedPerson
+        val selected = snapshot.selectedPerson
+        if (selected.patientId != selectedPatientId) clearHistoryFlows()
         val hba1cSettings = settingsRepository.loadHbA1cSettings(selected.patientId)
-        if (selected.patientId != selectedPatientId) {
+        if (persistSelection && settingsRepository.loadSettings().selectedPatientId != selected.patientId) {
             settingsRepository.saveSelectedPatientId(selected.patientId)
         }
         return withReading(snapshot.reading).copy(
@@ -1084,6 +1123,62 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         connectivityProvider.stop()
         super.onCleared()
     }
+
+    private fun clearHistoryFlows() {
+        _homeHistory.value = emptyList()
+        _detailedHistory.value = emptyList()
+        _homeDataSpan.value = Duration.ZERO
+    }
+
+    private fun handleSelectedPersonFailure(error: SelectedPersonGraphException) {
+        val person = error.selectedPerson
+        if (settingsRepository.loadSettings().selectedPatientId == person.patientId) {
+            settingsRepository.clearSelectedPatientId()
+        }
+        if (_uiState.value.selectedPatientId != person.patientId) clearHistoryFlows()
+        _uiState.update { current ->
+            val ownData = if (current.selectedPatientId == person.patientId) current else current.clearPersonReading()
+            ownData.copy(
+                availablePersons = error.persons,
+                selectedPatientId = person.patientId,
+                selectedPersonFirstName = person.firstName,
+                selectedPersonLastName = person.lastName,
+                selectedPersonFullName = person.displayName,
+                selectedPersonName = person.displayName,
+                isLoading = false,
+                errorMessage = null,
+                canRetry = false,
+                connectionState = ConnectionState.Connected,
+                authenticationState = AuthenticationState.Authenticated,
+                historyStatus = if (ownData.reading == null) HistoryStatus.Empty else ownData.historyStatus,
+                isDataStale = true,
+                dataConnectionState = ownData.reading?.let { DataConnectionState.Stale(it.timestamp, 0) }
+                    ?: DataConnectionState.Offline(null),
+                staleInfoMessage = "Brak aktualnych danych dla wybranej osoby."
+            )
+        }
+    }
+
+    private fun MonitoringUiState.clearPersonReading() = copy(
+        reading = null,
+        currentGlucose = "",
+        currentTimestamp = "",
+        minutesAgo = null,
+        trend = null,
+        min12h = null,
+        max12h = null,
+        historyPointCount = 0,
+        historyStatus = HistoryStatus.Empty,
+        lastMeasurementTimestamp = null,
+        lastSuccessfulFetchAt = null,
+        lastUpdatedAt = null,
+        dataConnectionState = null,
+        staleInfoMessage = null,
+        errorMessage = null,
+        labHbA1cPercent = null,
+        labHbA1cDate = null,
+        isDataStale = true
+    )
 }
 
 private fun String?.isRateLimitMessage(): Boolean {
