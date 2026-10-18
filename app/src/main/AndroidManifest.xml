@@ -24,6 +24,10 @@
         android:usesCleartextTraffic="false"
         tools:targetApi="31">
 
+        <meta-data
+            android:name="com.librecare.ENABLE_MIKA_DEMO_PROFILE"
+            android:value="${enableMikaDemoProfile}" />
+
         <activity
             android:name=".MainActivity"
             android:exported="true"

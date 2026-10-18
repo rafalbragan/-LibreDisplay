@@ -18,12 +18,13 @@ import kotlin.math.sin
 object MikaSyntheticProfileGenerator {
     const val MIKA_PATIENT_ID = "demo-person-mika"
     private const val SAMPLE_INTERVAL_MINUTES = 30L
+    private const val SAMPLE_INTERVAL_SECONDS = SAMPLE_INTERVAL_MINUTES * 60L
     private const val HISTORY_MONTHS = 18L
     private const val FIXED_SEED = 20261017L
 
     fun generate(now: Instant): GlucoseReading {
         val anchorDate = now.atZone(ZoneOffset.UTC).toLocalDate()
-        val end = anchorDate.atTime(23, 30).toInstant(ZoneOffset.UTC)
+        val end = alignToCompletedInterval(now)
         val start = anchorDate.minusMonths(HISTORY_MONTHS).atStartOfDay().toInstant(ZoneOffset.UTC)
         val points = buildSequence(start = start, end = end)
         val latest = points.last()
@@ -36,6 +37,11 @@ object MikaSyntheticProfileGenerator {
             stats = stats,
             historyHoursAvailable = HISTORY_MONTHS * 30.0 * 24.0
         )
+    }
+
+    private fun alignToCompletedInterval(now: Instant): Instant {
+        val epoch = now.epochSecond
+        return Instant.ofEpochSecond(epoch - (epoch % SAMPLE_INTERVAL_SECONDS))
     }
 
     private fun buildSequence(start: Instant, end: Instant): List<GlucoseHistoryPoint> {

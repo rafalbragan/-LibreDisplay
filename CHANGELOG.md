@@ -25,12 +25,12 @@ All notable changes to LibreCare will be documented in this file.
 - `./gradlew assembleDebug` - PASS
 - `./gradlew assembleRelease` - PASS
 - `./gradlew bundleRelease` - PASS
-- No connected device/emulator available.
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
 
 #### Artifacts
-- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,891,922 B`)
-- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,756 B`)
-- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,689,255 B`)
+- `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)
+- `release-artifacts/LibreCare-2.16.4-release.apk` (`3,695,803 B`)
+- `release-artifacts/LibreCare-2.16.4-release.aab` (`6,689,411 B`)
 
 ### EN
 
@@ -53,12 +53,12 @@ All notable changes to LibreCare will be documented in this file.
 - `./gradlew assembleDebug` - PASS
 - `./gradlew assembleRelease` - PASS
 - `./gradlew bundleRelease` - PASS
-- No connected device/emulator available.
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
 
 #### Artifacts
-- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,891,922 B`)
-- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,756 B`)
-- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,689,255 B`)
+- `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)
+- `release-artifacts/LibreCare-2.16.4-release.apk` (`3,695,803 B`)
+- `release-artifacts/LibreCare-2.16.4-release.aab` (`6,689,411 B`)
 
 ## 2.16.2 - 2026-10-16
 

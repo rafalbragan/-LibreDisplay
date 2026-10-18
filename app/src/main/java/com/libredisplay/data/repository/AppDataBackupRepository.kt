@@ -21,6 +21,7 @@ import com.libredisplay.data.backup.LocalBackupStore
 import com.libredisplay.data.backup.LocalReadingKey
 import com.libredisplay.data.backup.PersonDataCoverage
 import com.libredisplay.data.backup.RestorePlan
+import com.libredisplay.data.demo.DemoDataPolicy
 import com.libredisplay.data.local.GlucoseReadingDao
 import com.libredisplay.data.local.GlucoseReadingEntity
 import com.libredisplay.data.local.LibreDisplayDatabase
@@ -632,14 +633,14 @@ class AppDataBackupRepository(
     // ------------------------------------------------------------------ mapping
 
     private fun BackupBundle.withoutDemoContent(): BackupBundle = copy(
-        persons = persons.filterNot { it.patientId.startsWith(DEMO_PREFIX) },
+        persons = persons.filterNot { DemoDataPolicy.isDemoPatientId(it.patientId) },
         readings = readings
-            .filterNot { it.patientId.startsWith(DEMO_PREFIX) }
-            .filterNot { it.source.equals(DEMO_SOURCE, ignoreCase = true) },
-        patientSettings = patientSettings.filterNot { it.patientId.startsWith(DEMO_PREFIX) },
+            .filterNot { DemoDataPolicy.isDemoPatientId(it.patientId) }
+            .filterNot { DemoDataPolicy.isDemoSource(it.source) },
+        patientSettings = patientSettings.filterNot { DemoDataPolicy.isDemoPatientId(it.patientId) },
         settings = settings?.copy(
             appMode = if (settings.appMode == AppMode.DEMO.name) AppMode.NONE.name else settings.appMode,
-            selectedPatientId = settings.selectedPatientId?.takeIf { !it.startsWith(DEMO_PREFIX) }
+            selectedPatientId = settings.selectedPatientId?.takeIf { !DemoDataPolicy.isDemoPatientId(it) }
         )
     )
 
@@ -686,7 +687,7 @@ class AppDataBackupRepository(
     private fun AppSettings.toDto(): BackupSettingsDto = BackupSettingsDto(
         email = email,
         password = password,
-        selectedPatientId = selectedPatientId?.takeIf { !it.startsWith(DEMO_PREFIX) },
+        selectedPatientId = selectedPatientId?.takeIf { !DemoDataPolicy.isDemoPatientId(it) },
         region = region,
         regionMode = regionMode,
         customBaseUrl = customBaseUrl,
@@ -795,8 +796,7 @@ class AppDataBackupRepository(
     }.getOrNull()
 
     private companion object {
-        const val DEMO_PREFIX = "demo-person-"
-        const val DEMO_SOURCE = "DemoMode"
+        const val DEMO_PREFIX = DemoDataPolicy.DEMO_PATIENT_PREFIX
     }
 }
 

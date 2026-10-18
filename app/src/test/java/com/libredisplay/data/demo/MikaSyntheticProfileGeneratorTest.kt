@@ -31,5 +31,14 @@ class MikaSyntheticProfileGeneratorTest {
         assertTrue("expected <= 560 days", span.toDays() <= 560)
         assertTrue(reading.history.size > 20_000)
     }
+
+    @Test
+    fun generate_latestPointIsNotInFuture() {
+        val now = Instant.parse("2026-10-17T08:07:59Z")
+        val reading = MikaSyntheticProfileGenerator.generate(now)
+
+        assertTrue("latest timestamp must be <= now", !reading.timestamp.isAfter(now))
+        assertTrue("last history point must be <= now", !reading.history.last().timestamp.isAfter(now))
+    }
 }
 

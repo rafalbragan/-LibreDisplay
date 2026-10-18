@@ -11,6 +11,7 @@ import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
 import com.libredisplay.data.demo.DemoScenario
 import com.libredisplay.data.demo.DemoScenarioController
+import com.libredisplay.data.demo.DemoDataPolicy
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.data.model.MonitoringSnapshot
 import com.libredisplay.data.repository.CredentialsSnapshot
@@ -276,6 +277,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 transitionState(ConnectionState.Connected)
                 val dashboardState = _uiState.value.applyDashboardSnapshot(snapshotOrNull)
                 val freshness = currentReadingFreshness(dashboardState.reading)
+                val isDemoReading = DemoDataPolicy.isDemoPatientId(snapshotOrNull.selectedPerson.patientId)
                 _uiState.update {
                     dashboardState.copy(
                     isLoading = false,
@@ -284,7 +286,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     retryCooldownSecondsRemaining = authCooldownSeconds(),
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
+                    dataConnectionState = if (isDemoReading || freshness != ReadingFreshness.FRESH) {
                         DataConnectionState.Stale(snapshotOrNull.reading.timestamp, 0)
                     } else {
                         DataConnectionState.Live
@@ -292,10 +294,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = snapshotOrNull.reading.timestamp,
-                    isDataStale = freshness != ReadingFreshness.FRESH,
+                    isDataStale = isDemoReading || freshness != ReadingFreshness.FRESH,
                     consecutivePollingFailures = 0,
                     nextPollingRetryAt = null,
-                    staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(snapshotOrNull.reading.timestamp)
+                    staleInfoMessage = if (isDemoReading) {
+                        "Dane syntetyczne DEMO (Mika). Nie sa odczytem medycznym LIVE."
+                    } else if (freshness == ReadingFreshness.FRESH) {
+                        null
+                    } else {
+                        staleNoDataMessage(snapshotOrNull.reading.timestamp)
+                    }
                     )
                 }
                 startPolling()
@@ -501,6 +509,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     transitionState(ConnectionState.Connected)
                     val dashboardState = _uiState.value.applyDashboardSnapshot(monitoringSnapshot)
                     val freshness = currentReadingFreshness(dashboardState.reading)
+                    val isDemoReading = DemoDataPolicy.isDemoPatientId(monitoringSnapshot.selectedPerson.patientId)
                     _uiState.update {
                         dashboardState.copy(
                         isLoading = false,
@@ -508,7 +517,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         canRetry = false,
                         lastUpdatedAt = Instant.now(),
                         authenticationState = AuthenticationState.Authenticated,
-                        dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
+                        dataConnectionState = if (isDemoReading || freshness != ReadingFreshness.FRESH) {
                             DataConnectionState.Stale(monitoringSnapshot.reading.timestamp, 0)
                         } else {
                             DataConnectionState.Live
@@ -516,10 +525,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         pollingStatus = PollingStatus.Active,
                         lastSuccessfulFetchAt = Instant.now(),
                         lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                        isDataStale = freshness != ReadingFreshness.FRESH,
+                        isDataStale = isDemoReading || freshness != ReadingFreshness.FRESH,
                         consecutivePollingFailures = 0,
                         nextPollingRetryAt = null,
-                        staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(monitoringSnapshot.reading.timestamp)
+                        staleInfoMessage = if (isDemoReading) {
+                            "Dane syntetyczne DEMO (Mika). Nie sa odczytem medycznym LIVE."
+                        } else if (freshness == ReadingFreshness.FRESH) {
+                            null
+                        } else {
+                            staleNoDataMessage(monitoringSnapshot.reading.timestamp)
+                        }
                         )
                     }
                     startPolling()
@@ -645,6 +660,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 retryJob?.cancel()
                 val dashboardState = _uiState.value.applyDashboardSnapshot(monitoringSnapshot)
                 val freshness = currentReadingFreshness(dashboardState.reading)
+                val isDemoReading = DemoDataPolicy.isDemoPatientId(monitoringSnapshot.selectedPerson.patientId)
                 _uiState.value = dashboardState.copy(
                     isLoading = false,
                     errorMessage = null,
@@ -652,7 +668,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     isPolling = true,
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = if (freshness != ReadingFreshness.FRESH) {
+                    dataConnectionState = if (isDemoReading || freshness != ReadingFreshness.FRESH) {
                         DataConnectionState.Stale(monitoringSnapshot.reading.timestamp, 0)
                     } else {
                         DataConnectionState.Live
@@ -660,10 +676,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                    isDataStale = freshness != ReadingFreshness.FRESH,
+                    isDataStale = isDemoReading || freshness != ReadingFreshness.FRESH,
                     consecutivePollingFailures = 0,
                     nextPollingRetryAt = null,
-                    staleInfoMessage = if (freshness == ReadingFreshness.FRESH) null else staleNoDataMessage(monitoringSnapshot.reading.timestamp)
+                    staleInfoMessage = if (isDemoReading) {
+                        "Dane syntetyczne DEMO (Mika). Nie sa odczytem medycznym LIVE."
+                    } else if (freshness == ReadingFreshness.FRESH) {
+                        null
+                    } else {
+                        staleNoDataMessage(monitoringSnapshot.reading.timestamp)
+                    }
                 )
             }.onFailure { throwable ->
                 if (throwable is CancellationException) {

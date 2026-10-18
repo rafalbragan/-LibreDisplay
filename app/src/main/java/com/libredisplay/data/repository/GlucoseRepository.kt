@@ -3,6 +3,7 @@ package com.libredisplay.data.repository
 import com.libredisplay.data.api.LibreLinkUpClient
 import com.libredisplay.data.api.MockLibreLinkUpClient
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
+import com.libredisplay.data.demo.DemoDataPolicy
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseReading
@@ -153,7 +154,7 @@ class GlucoseRepository(
         localHistoryRepository?.upsertObservedPersons(persons, java.time.Instant.now())
         localHistoryRepository?.insertReadings(
             patientId = selectedPerson.patientId,
-            source = if (client === mockClient) "DemoMode" else "LibreLinkUp",
+            source = if (client === mockClient) DemoDataPolicy.SOURCE_DEMO else "LibreLinkUp",
             sourceAccountId = authRepository.currentAccountIdHash(),
             points = mergedPoints
         )

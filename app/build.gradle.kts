@@ -56,13 +56,14 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 47
-        versionName = "2.16.3"
+        versionCode = 48
+        versionName = "2.16.4"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
         buildConfigField("String", "LIBRE_PATIENT_ID", librePatientId.toBuildConfigString())
         buildConfigField("boolean", "ENABLE_MIKA_DEMO_PROFILE", enableMikaDemoProfile.toString())
+        manifestPlaceholders["enableMikaDemoProfile"] = enableMikaDemoProfile.toString()
     }
 
     signingConfigs {
