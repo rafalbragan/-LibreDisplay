@@ -2,6 +2,28 @@
 
 2026-10-18 — **NOT RELEASE READY / kandydat niewydany**
 
+## HTTP recovery follow-up — 2026-10-18
+
+### PL
+- Bez zmiany wersji: **2.16.6 / 50 → 2.16.6 / 50**. Kontynuacja wyłącznie w istniejącym PR #45; brak scalenia i publikacji.
+- Błędy 401/403, 429/430, 5xx i sieci są klasyfikowane również wewnątrz wyjątku pobierania danych osoby. Tylko jawny brak pomiaru jest stanem „brak danych”; błędna odpowiedź wymaga ręcznej próby.
+- Zachowano ostatni poprawny wybór, izolację historii i anulowanie. Błąd uwierzytelnienia unieważnia sesję, nie historię. Błąd tymczasowy lub limit nie usuwa poprawnej sesji. Odrzucone żądanie nie uruchamia ukrytego ponownego logowania.
+- Lokalna historia nie potwierdza aktywnej sesji. Nieprawidłowy czas pomiaru nie jest zastępowany bieżącym czasem. Limit i komunikat pozostają widoczne po ponownym otwarciu ekranu.
+- Testy: 105 celowanych i 578 pełnego zestawu JVM bez błędów; lint i debug APK zbudowane. Bieżące dowody emulatora i artefaktów: raport wydania.
+- Jawnie zgłoszony wcześniejszy incydent granicy wykonania: polecenie Gradle uruchomiono z chronionego checkoutu; pliki generowane lub ignorowane mogły się zmienić. Wynik „No tests found” nie jest dowodem RED. Wznowienie używa osobnego worktree i niezależnych kontroli ścieżki/HEAD przed każdym Gradle.
+- Release APK/AAB nadal zablokowane przez brak konfiguracji podpisu. Brak pliku do Google Play. PR #43 oceniono tylko do odczytu, bez zmian.
+
+### EN
+- Version unchanged: **2.16.6 / 50 → 2.16.6 / 50**. Follow-up only in existing PR #45; no merge or publication.
+- Classify wrapped authentication, rate-limit, server and network errors. Only an explicit missing measurement becomes no-data; malformed/unexpected responses require manual retry.
+- Preserve last-good selection, history isolation and cancellation. Authentication rejection invalidates sessions, not history; temporary/rate-limit failures preserve valid sessions. A rejected fetch does not perform a hidden re-login.
+- Cached history is not authentication proof. Invalid measurement timestamps are not replaced with the current time. Cooldown messages remain visible on screen re-entry.
+- Tests: 105 focused and 578 complete JVM tests passed; lint/debug assembly passed. Current emulator and artifact evidence is in the release report.
+- Explicit prior execution-boundary incident: Gradle ran from the protected checkout; generated or ignored files may have changed. “No tests found” is not RED evidence. Resumption uses a separate worktree and independent path/HEAD checks before every Gradle invocation.
+- Release APK/AAB remain blocked by missing signing configuration; no Play upload file. PR #43 was reviewed read-only and was not modified.
+
+The sections below retain the original P0 candidate history. Current follow-up evidence: [release report](../release-report-2.16.6.md) and [quality/read-only PR #43 review](../quality-review-report-2.16.6.md).
+
 ## PL
 
 ### Poprawki

@@ -2,6 +2,83 @@
 
 Date: 2026-10-18. **NOT RELEASE READY.** PASS below is scoped evidence, not Product Owner acceptance. FAIL can mean missing verification rather than an observed product defect. No mandatory FAIL is being waived.
 
+## Current HTTP follow-up / execution-boundary recovery
+
+This section supersedes historical paths/counts below for this follow-up only. Authorized root: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018`. Protected root: `C:\Users\SG0216827\IdeaProjects\LibreDisplay`.
+
+### Incident and review before implementation
+
+The previous execution-boundary incident included Gradle execution from the protected checkout. **Generated or ignored files there may have changed.** Tracked Git status cannot rule that out. No claim is made that the protected checkout was untouched across the incident. No reset, stash, cleanup or restoration of that checkout was attempted during resumption. The earlier **“No tests found” is invalid RED evidence**.
+
+Before changes, canonical path, Git toplevel, registered detached worktree and exact HEAD `e71d1d12473a151909d112d95e6d57f130578e9b` were checked against the authorized path, independently of terminal state. Remote master remained `5433f28b04442d5dfb2af9777801109bee730b35`. Every resumed Gradle invocation used a fresh helper process with explicit working directory, absolute wrapper path and fresh path/branch/HEAD assertions. No resumed clean or Gradle invocation in the protected checkout occurred. Boundary logs are in `build/p0-http-evidence/*-boundary.log` under the authorized root.
+
+| Affected area | Pre-change review |
+|---|---|
+| ViewModel startup/manual/poll/switch | EXISTS; INCOMPLETE: wrapper misclassification, redundant login, unguarded bootstrap, cancellation/retry lifecycle |
+| Repository/API/session | EXISTS; INCOMPLETE: cache returned as authenticated fetch, generic missing-measurement exception, invalid timestamp fabricated as now |
+| Typed causal-chain recovery | MISSING; added without changing background-service classifier policy |
+| Room/migration/history | EXISTS; no schema/migration change; existing per-person queries and cancellation reviewed |
+| Compose/navigation/charts | EXISTS; current ErrorPanel/switcher inspected; no screen, chart, navigation, calculation or gesture implementation changed |
+| Demo Mode/Privacy & Data/settings/statistics/widgets | EXISTS; existing consumers and tests reviewed; no behavior/configuration changes authorized here |
+| Backup safety | INCOMPLETE; independent PR #43 findings below; no backup code edited |
+
+### Reproduction and tests
+
+- Retained untracked `P0HttpRecoveryViewModelTest.kt` was reviewed in place, not deleted, replaced or moved. Test-only lifecycle cleanup was added because recurring ViewModel jobs prevented scheduler drainage. The first stopped worker was verified to belong to the authorized worktree; its harness failure is not RED.
+- Valid original RED: **41 discovered tests, 37 assertion failures, 0 errors/skips**, production sources unchanged. `build/p0-http-evidence/red-assertions.xml` retains exact assertion messages.
+- Additional RED: **65 tests / 3 failures** for cancellation loading, startup/person handoff and retry cleanup; **58 tests / 4 failures** for cooldown visibility after cache loading. Preserved as `red-edge-cases.xml` and `red-context-cooldown.xml`.
+- GREEN: **105 focused tests**: ViewModel 58, classifier 8, repository 3, auth 18, real client 18. XML retained in `build/p0-http-evidence/final-focused-xml/`.
+- Complete JVM GREEN: **578 tests, 0 failures/errors/skips**. An earlier full run had one obsolete expectation (missing login token as generic non-retryable); updated to require decoding failure and retain the one-login assertion.
+- Test transport is synthetic, with real Retrofit client, repository, ViewModel, in-memory Room and isolated settings. Coverage includes 401/403, 429/430, 500/503, timeout/IO, decoding/unexpected errors across startup/manual/poll/person-switch; cached data, expired tokens, obsolete success/account failure, actual cancellation, one-flight requests and one Retry-After retry.
+- Full build, exact dedicated-emulator evidence and artifacts are in the current section of the release report. Source fingerprints are retained in `build/p0-http-evidence/final-validated-source.csv`.
+
+### Independent read-only PR #43 review — HOLD
+
+Reviewed committed head **`1547badb7a1a9f87b290c04925638c6505db46d1`** against master **`5433f28b04442d5dfb2af9777801109bee730b35`**, not dirty local backup files. No PR #43 mutation, checkout rewrite or review submission was made.
+
+Exact diff: `AutomaticBackupWorker.kt` (+13/-3), `AppDataBackupRepository.kt` (+34/-4), `AppDataBackupRepositoryTest.kt` (+31). The two added regressions and strengthened ordinary-backup assertion are useful narrow mitigation evidence, not proof of disaster recovery.
+
+**Fix/clarify before merging this mitigation:**
+
+1. **Protection is not atomic with writing** (`AppDataBackupRepository.kt:259–277`). Reading the previous bundle, deciding and writing are separate operations. A concurrent empty and nonempty writer can both pass the check against an empty old file, then the empty write can replace the good current file. `LocalBackupStore.write` synchronization does not span this decision. Put the conditional replacement under the common writer boundary and add a deterministic race regression. This is incomplete coverage of a pre-existing overwrite risk, not a claim that PR #43 created concurrency.
+2. **`restorable` overstates what was validated** (`AppDataBackupRepository.kt:170–189`, mapping at 735–793). Decode plus a nonempty readings list does not prove rows survive `Instant.parse`/`mapNotNull`, person relationships, DEMO filtering or database restore. Invalid nonblank timestamps can be decoded but later discarded. Either validate the restore-relevant model or label the flag more narrowly; test decoded-but-unrestorable data.
+3. **Fallback metadata and shared file can disagree** (`automaticBackupInfo`, `createAutomaticBackup`, `automaticBackupFile`; `PrivacyDataScreen.kt:213`). `store.read()` can validate/recover `.previous` while the absolute path and share operation still reference corrupt current bytes. With an empty DB the new skip guard leaves current unrepaired. Add a corruption+fallback+empty-DB sharing regression and ensure the shared bytes are the validated bytes.
+
+**Inherited limitations / separate work, not new regressions attributed to this PR:**
+
+- `BackupCodec` writes a checksum but does not verify it on decode. `LocalBackupStore` uses temp write/rename and a copy fallback without fsync or a proven transactional current/previous replacement. Both blobs are identical in base/head: store `8421af9be8dd62a552f00ee427bfc58e363fc596`, codec `053e93e633be0c6cfb7b63bf0c63d6ab72e60244`.
+- One `.previous` generation is not a historical archive. Guard covers zero readings only, not partial-person or partial-history shrink. Legacy `exportToUri` writes the store through another path. No historical recovery guarantee follows.
+- Legacy REPLACE deletes in a transaction before re-staging/insertion in another transaction (`AppDataBackupRepository.kt:545–560`); mapping may skip invalid rows. Failure between these phases is not atomic rollback.
+- Backups contain sensitive configuration/session fields by design; app-private storage and fallback do not prove off-device durability or credential-safe sharing. No real backup, credential or patient data was accessed.
+- Worker logging now distinguishes file creation and readiness, but success of the worker is not proof of a successful restore. No new restore-roundtrip/fault-injection test was added by PR #43.
+
+**Independently verified Actions:** Android CI [39071955196](https://github.com/rafalbragan/-LibreDisplay/actions/runs/39071955196), Android Debug Build [39071955238](https://github.com/rafalbragan/-LibreDisplay/actions/runs/39071955238), Android APK Build [39071955224](https://github.com/rafalbragan/-LibreDisplay/actions/runs/39071955224), Implementation Automation [39071955217](https://github.com/rafalbragan/-LibreDisplay/actions/runs/39071955217) all report workflow success at the reviewed head. Downloaded CI XML independently contains **499 tests, 0 failures/errors/skips; 57 backup tests**. The optional release job's actual Gradle log says **BUILD FAILED: signing properties missing**, despite green workflow conclusion. No release APK or restore-readiness claim is inferred. PR #43 recommendation: **HOLD**, not REJECT of the useful narrow safeguard; correct the three directly related gaps before acceptance.
+
+### Current scoped compliance / remaining risks
+
+| Rule | Status | Evidence / limitation |
+|---|---|---|
+| Resume in separate canonical/registered worktree; fresh assertions before every Gradle | PASS | Saved boundary logs; explicit child process working directory; fail-closed expected detached HEAD |
+| Original protected-checkout execution boundary | FAIL (historical incident) | Explicitly disclosed; generated/ignored changes cannot be excluded or undone by Git status |
+| No resumed clean/protected Gradle/physical-device ADB | PASS | No clean invoked; only literal dedicated emulator serial; Samsung SM-S948B excluded |
+| Existing implementation/affected architecture and tests reviewed | PASS | Table above; actual parser/repository/ViewModel tests |
+| Root-cause code plus focused RED/GREEN and complete JVM tests | PASS | 105 focused / 578 full; original no-tests/harness failures excluded |
+| Preserve selection, history, cancellation, cache/session distinctions | PASS | Scoped regressions; not a production-account or complete background-service guarantee |
+| Polish user-facing error text, branding | PASS | LibreCare app label; technical `com.libredisplay`/class/DB legacy names intentionally preserved |
+| Room schema/migration and NFZ/medical/chart/DEMO changes | NOT APPLICABLE | None in this follow-up; existing migration reviewed/tested as reported |
+| Full UI/theme/scaling/accessibility/landscape acceptance | FAIL (release acceptance) | No new comprehensive manual visual acceptance; existing controlled UI suite is not equivalent |
+| Lint/debug build and dedicated emulator execution | PASS / see release report | Exact command/method results, harness qualification and paths recorded there |
+| Clean during recovery | NOT APPLICABLE | Explicit recovery restriction; not run |
+| Release APK/AAB and Google Play upload readiness | FAIL (release acceptance) | Both packaging tasks reached but signing unavailable; no key import, bypass or publication |
+| Version increase / changelog rewrite | NOT APPLICABLE | Approved minimal follow-up preserves 2.16.6/50 and existing CHANGELOG; bilingual notes/reports updated |
+| Source/tests/docs only; ignore binary/signing artifacts; exact remote head before push | PASS / delivery gate | Explicit allowlist and remote-SHA verification required; exact commit/Actions recorded in handoff |
+| PR #43 read-only; no merge/auto-merge/publication | PASS | Committed-blob/Actions review only |
+| Release notes, release/quality reports, artifacts and risks | PASS | Existing documents updated; absent release files explicitly identified |
+
+PR #45 assessment: the reproduced foreground HTTP recovery defects are repaired; **ACCEPT is limited to the tested P0 code follow-up after exact-head delivery/Actions checks**, not release approval or a merge action. Existing startup all-person sync and background-service policy remain separate from this foreground classifier; boot/autostart, real-account behavior, Samsung attribution and full UI acceptance remain outside controlled proof. Exact post-push Actions are independently checked in the handoff; earlier green runs must not substitute for the new head. Overall production/release completion remains blocked by the explicit FAIL items.
+
+## Historical original P0 review (retained)
+
 ## Summary / architecture
 
 The controlled P0 scenario passes on the real MainActivity, MonitoringViewModel, repository/parser, Room and encrypted settings. Seven instrumentation methods pass, including three distinct-process restoration paths. The final JVM suite contains **512 tests, 0 failures, 0 errors, 0 skipped**. Source fingerprints did not change during final build/UI validation.

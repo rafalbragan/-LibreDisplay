@@ -252,18 +252,21 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             transitionState(ConnectionState.Idle)
             return
         }
-        viewModelScope.launch {
+        viewModelScope.launch(viewModelExceptionHandler) {
+          fetchMutex.withLock {
+            if (generation != selectionGeneration) return@withLock
+            transitionState(ConnectionState.Connecting)
             val localSnapshot = glucoseRepository.loadLatestMonitoringSnapshotFromLocal(settings.selectedPatientId)
             if (generation != selectionGeneration) return@launch
             if (localSnapshot != null) {
-                transitionState(ConnectionState.Connected)
                 _uiState.update {
                     it.applyDashboardSnapshot(localSnapshot, persistSelection = false).copy(
                         isLoading = false,
                         errorMessage = null,
                         canRetry = false,
                         dataConnectionState = DataConnectionState.Stale(localSnapshot.reading.timestamp, 0),
-                        pollingStatus = PollingStatus.Active,
+                        authenticationState = null,
+                        pollingStatus = null,
                         lastSuccessfulFetchAt = localSnapshot.reading.timestamp,
                         lastMeasurementTimestamp = localSnapshot.reading.timestamp,
                         isDataStale = true,
@@ -272,13 +275,27 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 }
             }
 
+            val remaining = activeRateLimitRemainingSeconds()
+            if (remaining > 0) {
+                val retryAt = Instant.ofEpochMilli(rateLimitUntilEpochMillis)
+                transitionState(ConnectionState.Locked(retryAt, remaining.toInt()))
+                _uiState.update { it.copy(isLoading = false, isDataStale = true, canRetry = false,
+                    errorMessage = rateLimitMessage(remaining), retryCooldownSecondsRemaining = remaining,
+                    pollingStatus = PollingStatus.ServerUnavailable(retryAt), nextPollingRetryAt = null,
+                    dataConnectionState = it.reading?.let { reading -> DataConnectionState.Stale(reading.timestamp, 0) }
+                        ?: DataConnectionState.Offline(null),
+                    staleInfoMessage = "Limit zapytań LibreLinkUp. Wyświetlane dane nie są aktualizowane.") }
+                return@withLock
+            }
             runCatching {
                 glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull()
             }.onSuccess { snapshotOrNull ->
-                if (generation != selectionGeneration) return@onSuccess
                 if (snapshotOrNull == null) {
-                    transitionState(ConnectionState.Disconnected)
-                    _uiState.update { it.copy(canRetry = true, errorMessage = "Kliknij \"Polacz z LibreLinkUp\", aby wykonac pojedyncza probe logowania.") }
+                    handleAuthenticationRequired()
+                    return@onSuccess
+                }
+                if (generation != selectionGeneration) {
+                    transitionState(ConnectionState.Connected)
                     return@onSuccess
                 }
                 transitionState(ConnectionState.Connected)
@@ -305,32 +322,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     glucoseSyncRepository.syncAllPersons(com.libredisplay.data.repository.SyncReason.APP_START)
                 }
             }.onFailure { throwable ->
-                if (throwable is CancellationException) throw throwable
-                if (generation != selectionGeneration) return@onFailure
-                if (throwable is SelectedPersonGraphException &&
-                    throwable.findHttpStatusCode() !in setOf(401, 403, 429, 430)
-                ) {
-                    handleSelectedPersonFailure(throwable)
-                    startPolling()
-                    return@onFailure
-                }
-                glucoseRepository.resetSession()
-                if (throwable is LibreLinkUpHttpException && throwable.statusCode in setOf(401, 403)) {
-                    transitionState(ConnectionState.AuthenticationRequired)
-                    _uiState.update {
-                        it.copy(
-                            errorMessage = "Zapisany token zostal odrzucony. Kliknij \"Polacz z LibreLinkUp\".",
-                            canRetry = true,
-                            retryCooldownSecondsRemaining = authCooldownSeconds(),
-                            authenticationState = AuthenticationState.AuthenticationRequired,
-                            pollingStatus = PollingStatus.AuthenticationRequired("Sesja wymaga recznego ponownego polaczenia.")
-                        )
-                    }
-                } else {
-                    transitionState(ConnectionState.Disconnected)
-                    _uiState.update { it.copy(canRetry = true) }
-                }
+                handleMonitoringFailure(throwable, generation, CredentialsSnapshot.fromSettings(settings), restartPolling = true)
             }
+          }
         }
     }
 
@@ -450,7 +444,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     }
                 }
                 if (_uiState.value.selectedPatientId == normalized &&
-                    _uiState.value.connectionState == ConnectionState.Connected
+                    _uiState.value.connectionState in setOf(ConnectionState.Connected, ConnectionState.Connecting)
                 ) {
                     pollOnce(force = true, source = "person-switch")
                 } else if (_uiState.value.selectedPatientId == normalized) {
@@ -483,6 +477,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 return@launch
             }
             DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN SINGLE-FLIGHT ENTER")
+            if (!fetchMutex.tryLock()) {
+                connectMutex.unlock()
+                return@launch
+            }
             try {
                 val priorState = _uiState.value.connectionState
 
@@ -501,9 +499,12 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH START reason=$trigger")
 
                 runCatching {
-                    performSingleManualFetch(snapshot = snapshot, trigger = trigger, priorState = priorState)
+                    performSingleManualFetch(snapshot = snapshot)
                 }.onSuccess { monitoringSnapshot ->
-                    if (generation != selectionGeneration) return@onSuccess
+                    if (generation != selectionGeneration) {
+                        transitionState(ConnectionState.Connected)
+                        return@onSuccess
+                    }
                     DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=success")
                     transitionState(ConnectionState.Connected)
                     _uiState.update {
@@ -525,51 +526,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     }
                     startPolling()
                 }.onFailure { throwable ->
-                    if (generation != selectionGeneration) return@onFailure
                     if (throwable is CancellationException) {
-                        _uiState.value = _uiState.value.copy(isLoading = false)
-                        return@onFailure
+                        if (generation == selectionGeneration) {
+                            _uiState.update { it.copy(isLoading = false, connectionState = priorState) }
+                        }
+                        throw throwable
                     }
-
-                    if (throwable is FetchInProgressException) {
-                        _uiState.update { it.copy(isLoading = false) }
-                        return@onFailure
-                    }
-
-                    if (throwable.isRateLimit()) {
-                        DiagnosticLogger.logException("MonitoringViewModel", throwable, "Connection attempt failed (rate limited)")
-                        DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                        handleRateLimitFailure(throwable)
-                        return@onFailure
-                    }
-
-                    DiagnosticLogger.logException("MonitoringViewModel", throwable, "Connection attempt failed")
-                    if (throwable is SelectedPersonGraphException && throwable.findHttpStatusCode() !in setOf(401, 403)) {
-                        handleSelectedPersonFailure(throwable)
-                        startPolling()
-                        return@onFailure
-                    }
-                    DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                    stopPollingInternal("manual retry required")
-                    val cooldown = authCooldownSeconds()
-                    val nextState = classifyLoginFailure(throwable)
-                    transitionState(nextState)
-                    _uiState.update {
-                        it.copy(
-                        isLoading = false,
-                        errorMessage = humanReadableMessage(throwable, cooldown),
-                        canRetry = cooldown <= 0 && activeRateLimitRemainingSeconds() <= 0,
-                        retryCooldownSecondsRemaining = max(cooldown, activeRateLimitRemainingSeconds()),
-                        authenticationState = AuthenticationState.AuthenticationRequired,
-                        pollingStatus = PollingStatus.AuthenticationRequired("Wymagane reczne ponowne polaczenie."),
-                        isPolling = false
-                        )
-                    }
-                    DiagnosticLogger.logWarning("MonitoringViewModel", "RETRY BLOCKED reason=manual retry required")
-                    DiagnosticLogger.logWarning("MonitoringViewModel", "AUTO RETRY DISABLED")
-                    startCooldownCountdown()
+                    handleMonitoringFailure(throwable, generation, snapshot, restartPolling = true)
                 }
             } finally {
+                fetchMutex.unlock()
                 DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN SINGLE-FLIGHT EXIT")
                 DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN SINGLE-FLIGHT CLEAR")
                 if (connectMutex.isLocked) connectMutex.unlock()
@@ -595,11 +561,14 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun pollOnce(force: Boolean, source: String) {
-        if (_uiState.value.connectionState != ConnectionState.Connected) return
+        if (_uiState.value.connectionState != ConnectionState.Connected &&
+            !(source == "person-switch" && _uiState.value.connectionState == ConnectionState.Connecting)
+        ) return
         val generation = selectionGeneration
+        val credentials = CredentialsSnapshot.fromSettings(settingsRepository.loadSettings())
 
         val lockedRemaining = activeRateLimitRemainingSeconds()
-        if (!force && lockedRemaining > 0) {
+        if (lockedRemaining > 0) {
             DiagnosticLogger.logWarning(
                 "MonitoringViewModel",
                 "POLLING SKIPPED reason=rate limit active remainingSeconds=$lockedRemaining"
@@ -618,7 +587,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
 
         DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT ENTER")
         try {
-            if (generation != selectionGeneration) return
+            if (generation != selectionGeneration || _uiState.value.connectionState != ConnectionState.Connected ||
+                activeRateLimitRemainingSeconds() > 0
+            ) return
             val now = Instant.now()
             val nextRetryAt = _uiState.value.nextPollingRetryAt
             if (!force && nextRetryAt != null && now.isBefore(nextRetryAt)) {
@@ -643,7 +614,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
             DiagnosticLogger.logInfo("DATA", "Refreshing glucose data for person: $selectedName / ${selectedId ?: "unknown"}")
             DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH START reason=$source")
             runCatching {
-                glucoseRepository.fetchMonitoringSnapshot(preferredPatientId = selectedId)
+                glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull(preferredPatientId = selectedId)
+                    ?: throw com.libredisplay.data.api.LibreAuthenticationException("Sesja wymaga ponownego połączenia.")
             }.onSuccess { monitoringSnapshot ->
                 if (generation != selectionGeneration) return@onSuccess
                 val previousFailures = _uiState.value.consecutivePollingFailures
@@ -672,44 +644,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     nextPollingRetryAt = null,
                     staleInfoMessage = null
                 )
+                if (pollingJob?.isActive != true) startPolling()
             }.onFailure { throwable ->
-                if (generation != selectionGeneration) return@onFailure
-                if (throwable is CancellationException) {
-                    throw throwable
-                }
-                DiagnosticLogger.logException("MonitoringViewModel", throwable, "Polling failed source=$source")
-                if (throwable.isRateLimit()) {
-                    handleRateLimitFailure(throwable)
-                    return@onFailure
-                }
-                if (throwable is SelectedPersonGraphException && throwable.findHttpStatusCode() !in setOf(401, 403)) {
-                    handleSelectedPersonFailure(throwable)
-                    return@onFailure
-                }
-                when (PollingFailureClassifier.classify(throwable)) {
-                    PollingFailureType.AUTHENTICATION_REQUIRED -> {
-                        transitionState(ConnectionState.AuthenticationRequired)
-                        _uiState.update {
-                            it.copy(
-                                isLoading = false,
-                                canRetry = true,
-                                errorMessage = "Sesja wygasla lub zostala odrzucona. Kliknij \"Polacz z LibreLinkUp\".",
-                                authenticationState = AuthenticationState.AuthenticationRequired,
-                                pollingStatus = PollingStatus.AuthenticationRequired("Wymagane reczne ponowne polaczenie."),
-                                isDataStale = true,
-                                staleInfoMessage = staleMessage(it.lastSuccessfulFetchAt)
-                            )
-                        }
-                        stopPollingInternal("authentication required")
-                    }
-
-                    PollingFailureType.TRANSIENT_NETWORK,
-                    PollingFailureType.SERVER_UNAVAILABLE,
-                    PollingFailureType.RESPONSE_DECODING,
-                    PollingFailureType.UNKNOWN -> {
-                        handleTransientPollingFailure(throwable)
-                    }
-                }
+                handleMonitoringFailure(throwable, generation, credentials, restartPolling = false)
             }
         } finally {
             DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT EXIT")
@@ -718,10 +655,11 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         }
     }
 
-    private fun handleTransientPollingFailure(throwable: Throwable) {
+    private fun handleTransientPollingFailure(failure: MonitoringFailure) {
+        val throwable = failure.original
         val failures = (_uiState.value.consecutivePollingFailures + 1).coerceAtLeast(1)
         if (failureStartAt == null) failureStartAt = Instant.now()
-        val retryAfter = (throwable as? LibreLinkUpHttpException)?.retryAfterSeconds?.toLong()
+        val retryAfter = failure.http?.retryAfterSeconds?.toLong()
         val delaySeconds = backoffPolicy.nextDelaySeconds(failureCount = failures, retryAfterSeconds = retryAfter)
         val retryAt = Instant.now().plusSeconds(delaySeconds)
         val failureType = when (throwable) {
@@ -737,14 +675,13 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         _uiState.update {
             it.copy(
                 isLoading = false,
-                errorMessage = null,
+                errorMessage = "Chwilowy błąd serwera lub połączenia. Dane nie są aktualizowane. Próba zostanie ponowiona automatycznie.",
                 canRetry = false,
                 retryCooldownSecondsRemaining = 0,
-                authenticationState = AuthenticationState.Authenticated,
                 dataConnectionState = it.lastSuccessfulFetchAt?.let { last -> DataConnectionState.Stale(last, failures) }
                     ?: DataConnectionState.Offline(null),
-                pollingStatus = when (PollingFailureClassifier.classify(throwable)) {
-                    PollingFailureType.SERVER_UNAVAILABLE -> PollingStatus.ServerUnavailable(retryAt)
+                pollingStatus = when (failure.kind) {
+                    MonitoringFailureKind.SERVER -> PollingStatus.ServerUnavailable(retryAt)
                     else -> PollingStatus.TemporarilyOffline(failures, retryAt)
                 },
                 isDataStale = true,
@@ -911,47 +848,16 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private suspend fun performSingleManualFetch(
-        snapshot: CredentialsSnapshot,
-        trigger: String,
-        priorState: ConnectionState
+        snapshot: CredentialsSnapshot
     ): MonitoringSnapshot {
-        if (!fetchMutex.tryLock()) {
-            DiagnosticLogger.logWarning("MonitoringViewModel", "FETCH SKIPPED reason=already running")
-            throw FetchInProgressException()
-        }
-        DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT ENTER")
-        try {
-            val shouldTrySessionReuse = trigger.contains("retry", ignoreCase = true) || priorState is ConnectionState.Locked
-            if (shouldTrySessionReuse) {
-                val sessionReading = runCatching {
-                    glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull(
-                        preferredPatientId = _uiState.value.selectedPatientId
-                    )
-                }.getOrElse { throwable ->
-                    val statusCode = throwable.findHttpStatusCode()
-                    if (statusCode in setOf(401, 403)) {
-                        DiagnosticLogger.logInfo("MonitoringViewModel", "LOGIN REQUIRED reason=http$statusCode")
-                        null
-                    } else {
-                        throw throwable
-                    }
-                }
-
-                if (sessionReading != null) {
-                    DiagnosticLogger.logInfo("MonitoringViewModel", "SESSION REUSED after rate limit")
-                    return sessionReading
-                }
-            }
-
-            return glucoseRepository.fetchMonitoringSnapshotWithSnapshot(
-                snapshot = snapshot,
-                preferredPatientId = _uiState.value.selectedPatientId
-            )
-        } finally {
-            DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT EXIT")
-            DiagnosticLogger.logInfo("MonitoringViewModel", "FETCH SINGLE-FLIGHT CLEAR")
-            if (fetchMutex.isLocked) fetchMutex.unlock()
-        }
+        // The caller holds fetchMutex. A rejected session ends this attempt; never relogin
+        // inside the same failing graph request. The next explicit click may log in once.
+        return glucoseRepository.fetchMonitoringSnapshotFromPersistedSessionOrNull(
+            preferredPatientId = _uiState.value.selectedPatientId
+        ) ?: glucoseRepository.fetchMonitoringSnapshotWithSnapshot(
+            snapshot = snapshot,
+            preferredPatientId = _uiState.value.selectedPatientId
+        )
     }
 
     private fun MonitoringUiState.applyDashboardSnapshot(
@@ -982,10 +888,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
     }
 
     private fun handleRateLimitFailure(throwable: Throwable) {
-        val httpException = throwable.findLibreHttpException()
-        val retryAfterSeconds = (httpException?.retryAfterSeconds ?: 30).coerceAtLeast(1)
+        val httpException = MonitoringFailure.classify(throwable).http
+        val retryAfterSeconds = maxOf(httpException?.retryAfterSeconds ?: 30, httpException?.lockoutInfo?.lockoutSeconds ?: 0).coerceAtLeast(1)
         val nowMillis = System.currentTimeMillis()
-        val retryAtMillis = nowMillis + retryAfterSeconds * 1000L
+        val retryAtMillis = max(rateLimitUntilEpochMillis, nowMillis + retryAfterSeconds * 1000L)
         setRateLimitUntilEpochMillis(retryAtMillis)
         val retryAt = Instant.ofEpochMilli(retryAtMillis)
         DiagnosticLogger.logWarning("RATE_LIMIT", "Rate limit detected")
@@ -1001,6 +907,10 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 canRetry = false,
                 retryCooldownSecondsRemaining = remaining,
                 errorMessage = rateLimitMessage(remaining),
+                isDataStale = true,
+                dataConnectionState = it.reading?.let { reading -> DataConnectionState.Stale(reading.timestamp, it.consecutivePollingFailures) }
+                    ?: DataConnectionState.Offline(null),
+                staleInfoMessage = "Limit zapytań LibreLinkUp. Wyświetlane dane nie są aktualizowane.",
                 pollingStatus = PollingStatus.ServerUnavailable(retryAt),
                 nextPollingRetryAt = null
             )
@@ -1130,7 +1040,84 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         _homeDataSpan.value = Duration.ZERO
     }
 
+    private fun handleMonitoringFailure(
+        throwable: Throwable,
+        generation: Long,
+        credentials: CredentialsSnapshot,
+        restartPolling: Boolean
+    ) {
+        val failure = try {
+            MonitoringFailure.classify(throwable)
+        } catch (cancelled: CancellationException) {
+            if (generation == selectionGeneration) {
+                _uiState.update { it.copy(isLoading = false,
+                    connectionState = if (it.connectionState == ConnectionState.Connecting)
+                        ConnectionState.Disconnected else it.connectionState) }
+            }
+            throw cancelled
+        }
+        if (credentials != CredentialsSnapshot.fromSettings(settingsRepository.loadSettings())) return
+        if (generation != selectionGeneration && !failure.accountWide) {
+            if (_uiState.value.connectionState == ConnectionState.Connecting) transitionState(ConnectionState.Connected)
+            return
+        }
+        DiagnosticLogger.logException("MonitoringViewModel", failure.original, "Monitoring failure type=${failure.kind}")
+        if (generation == selectionGeneration) failure.graph?.let { graph ->
+            val person = graph.selectedPerson
+            if (_uiState.value.selectedPatientId != person.patientId) clearHistoryFlows()
+            _uiState.update { current ->
+                val ownData = if (current.selectedPatientId == person.patientId) current else current.clearPersonReading()
+                ownData.copy(availablePersons = graph.persons, selectedPatientId = person.patientId,
+                    selectedPersonFirstName = person.firstName, selectedPersonLastName = person.lastName,
+                    selectedPersonFullName = person.displayName, selectedPersonName = person.displayName)
+            }
+        }
+        when (failure.kind) {
+            MonitoringFailureKind.AUTHENTICATION -> handleAuthenticationRequired()
+            MonitoringFailureKind.RATE_LIMIT -> handleRateLimitFailure(throwable)
+            MonitoringFailureKind.MISSING_MEASUREMENT -> {
+                handleSelectedPersonFailure(requireNotNull(failure.graph))
+                if (restartPolling || pollingJob?.isActive != true) startPolling()
+            }
+            MonitoringFailureKind.SERVER, MonitoringFailureKind.NETWORK -> {
+                transitionState(ConnectionState.Connected) // Monitoring enabled, NOT a live data assertion.
+                if (restartPolling || pollingJob?.isActive != true) startPolling()
+                handleTransientPollingFailure(failure)
+            }
+            MonitoringFailureKind.DECODING, MonitoringFailureKind.UNEXPECTED -> {
+                stopPollingInternal("unexpected response; manual retry required")
+                val message = if (failure.kind == MonitoringFailureKind.DECODING)
+                    "Nie można odczytać odpowiedzi LibreLinkUp. Dane nie są aktualizowane. Spróbuj ponownie ręcznie."
+                else "Nieoczekiwany błąd LibreLinkUp. Dane nie są aktualizowane. Spróbuj ponownie ręcznie."
+                transitionState(if (failure.kind == MonitoringFailureKind.DECODING)
+                    ConnectionState.ResponseDecodingFailure(null, null, message) else ConnectionState.UnknownFailure(message))
+                _uiState.update { it.copy(isLoading = false, isDataStale = true,
+                    dataConnectionState = DataConnectionState.Offline(it.lastSuccessfulFetchAt),
+                    errorMessage = message, staleInfoMessage = message, canRetry = authCooldownSeconds() <= 0,
+                    nextPollingRetryAt = null, pollingStatus = null) }
+                if (authCooldownSeconds() > 0) startCooldownCountdown()
+            }
+        }
+    }
+
+    private fun handleAuthenticationRequired() {
+        glucoseRepository.resetSession()
+        stopPollingInternal("authentication required")
+        transitionState(ConnectionState.AuthenticationRequired)
+        _uiState.update { it.copy(isLoading = false, canRetry = authCooldownSeconds() <= 0,
+            errorMessage = "Sesja wygasła lub została odrzucona. Kliknij „Połącz z LibreLinkUp”.",
+            authenticationState = AuthenticationState.AuthenticationRequired,
+            pollingStatus = PollingStatus.AuthenticationRequired("Wymagane ręczne ponowne połączenie."),
+            dataConnectionState = DataConnectionState.Offline(it.lastSuccessfulFetchAt),
+            isDataStale = true, nextPollingRetryAt = null,
+            staleInfoMessage = "Brak aktywnej sesji. Dostępna jest tylko lokalna historia.") }
+        if (authCooldownSeconds() > 0) startCooldownCountdown()
+    }
+
     private fun handleSelectedPersonFailure(error: SelectedPersonGraphException) {
+        failureStartAt = null
+        retryJob?.cancel()
+        retryJob = null
         val person = error.selectedPerson
         if (settingsRepository.loadSettings().selectedPatientId == person.patientId) {
             settingsRepository.clearSelectedPatientId()
@@ -1150,6 +1137,9 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                 canRetry = false,
                 connectionState = ConnectionState.Connected,
                 authenticationState = AuthenticationState.Authenticated,
+                pollingStatus = PollingStatus.Active,
+                consecutivePollingFailures = 0,
+                nextPollingRetryAt = null,
                 historyStatus = if (ownData.reading == null) HistoryStatus.Empty else ownData.historyStatus,
                 isDataStale = true,
                 dataConnectionState = ownData.reading?.let { DataConnectionState.Stale(it.timestamp, 0) }

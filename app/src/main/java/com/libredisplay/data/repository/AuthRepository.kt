@@ -1,6 +1,7 @@
 package com.libredisplay.data.repository
 
 import com.libredisplay.data.api.AuthCapableLibreLinkUpClient
+import com.libredisplay.data.api.LibreAuthenticationException
 import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.LibreResponseDecodingException
 import com.libredisplay.data.api.NonRetryableLibreLinkUpException
@@ -73,7 +74,7 @@ class AuthRepository(
                 val cooldownRemaining = cooldownRemainingSeconds()
                 if (cooldownRemaining > 0) {
                     DiagnosticLogger.logWarning("AuthRepository", "RETRY BLOCKED reason=local cooldown remaining=${cooldownRemaining}s")
-                    throw NonRetryableLibreLinkUpException(
+                    throw LibreAuthenticationException(
                         "Lokalna przerwa bezpieczenstwa: aplikacja wstrzymala kolejna probe na ${formatRemaining(cooldownRemaining)}. Serwer nie potwierdzil, ze konto jest zablokowane."
                     )
                 }
@@ -112,7 +113,10 @@ class AuthRepository(
                     if (statusCode == 401 || statusCode == 403) {
                         DiagnosticLogger.logWarning("AUTH", "Server rejected token, re-authentication required")
                     }
-                    loginStateStore?.clearPersistedSession()
+                    if (statusCode in setOf(401, 403) || throwable is LibreAuthenticationException) {
+                        client.clearSession()
+                        loginStateStore?.clearPersistedSession()
+                    }
                     if (throwable is NonRetryableLibreLinkUpException) {
                         lastTerminalLoginError = throwable
                         DiagnosticLogger.logWarning("AuthRepository", "AUTO RETRY DISABLED")
@@ -139,6 +143,12 @@ class AuthRepository(
         DiagnosticLogger.logInfo("AuthRepository", "LOGIN SINGLE-FLIGHT ENTER")
         return loginMutex.withLock {
             try {
+                val activeExpiry = client.exportSession()?.tokenExpiresAtEpochSeconds
+                if (activeExpiry != null && activeExpiry <= currentTimeMillis() / 1000L) {
+                    client.clearSession()
+                    loginStateStore?.clearPersistedSession()
+                    return@withLock false
+                }
                 if (client.hasActiveSession()) return@withLock true
                 tryImportPersistedSession()
                 client.hasActiveSession()

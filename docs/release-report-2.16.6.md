@@ -1,5 +1,94 @@
 # LibreCare 2.16.6 / 50 — P0 candidate release report
 
+## Current HTTP follow-up — 2026-10-18
+
+**Scoped P0 follow-up, NOT a release approval.** Current evidence below supersedes historical paths/counts later in this document. Previous/new version: **2.16.6 / 50 → 2.16.6 / 50**, unchanged by explicit minimal-scope authorization. CHANGELOG remains unchanged; existing bilingual notes and both reports are updated.
+
+### Execution boundary and provenance
+
+- Protected checkout: `C:\Users\SG0216827\IdeaProjects\LibreDisplay`.
+- Authorized separate worktree: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018`.
+- Verified canonical path, Git toplevel, worktree registration and detached parent HEAD: **`e71d1d12473a151909d112d95e6d57f130578e9b`** (PR #45 before this follow-up).
+- Remote base: **`5433f28b04442d5dfb2af9777801109bee730b35`**. Read-only PR #43 head: **`1547badb7a1a9f87b290c04925638c6505db46d1`**.
+- Delivery destination only: `origin/fix/p0-person-recovery-20261018`, existing draft PR #45. The exact resulting commit and independently checked Actions are recorded in the final handoff; no earlier run is used as proof for a new SHA.
+- **Original execution-boundary incident:** Gradle ran from the protected checkout. Generated or ignored files there **may have changed**. Git status does not prove otherwise. The earlier “No tests found” is not RED evidence. No claim is made that the protected checkout was untouched across that incident.
+- During this resume every Gradle command independently checked current directory, Git toplevel, detached branch and exact HEAD, then launched the absolute wrapper with an explicit process working directory. Helper and per-invocation boundary logs: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018\build\p0-http-evidence\`.
+- No clean was run during recovery. No Gradle ran from the protected checkout, no physical-device ADB operation occurred, and Samsung SM-S948B was not modified. No merge, auto-merge or release publication.
+- Protected tracked/untracked status comparison after validation: **0 differences** from the resume snapshot; this does **not** audit ignored/generated files. Source fingerprint comparison: **0 differences** from `build/p0-http-evidence/final-validated-source.csv` during final tests/builds/emulator execution.
+
+### Implementation / architecture
+
+Added a foreground typed causal-chain classifier preserving original exception, HTTP metadata and selected-person context. Explicit 401/403 invalidates sessions without deleting history; 429/430 preserves sessions and cooldown; 5xx/network failures retain cached data with visible stale/error state and existing backoff. Only typed missing measurement is no-data. Parsing/unexpected failures remain visible and require manual retry. Cancellation is rethrown and loading is cleared.
+
+Startup, manual connection, poll and queued person switch share the fetch boundary. Old person results cannot replace new identity; account-wide rejection/limits are still processed. Valid sessions are reused; rejected requests do not silently relogin. Cached history does not prove authentication; invalid timestamps are rejected instead of fabricated as now. Tests also cover retry cleanup, startup handoff and visible cooldown after screen re-entry.
+
+No schema/migration, backup implementation, privacy/statistics policy, chart/numerical calculation, NFZ/medical/alarm, DEMO generator, signing, CI workflow, version or CHANGELOG implementation changes. Existing startup all-person sync and background-service classifier policy remain separate, not claimed as comprehensively redesigned or verified by this foreground suite.
+
+### Actual commands and evidence
+
+All Gradle commands below ran in the authorized worktree, with fresh expected-HEAD assertions; Windows `gradlew.bat` is the wrapper equivalent.
+
+| Phase | Actual result |
+|---|---|
+| Retained test discovery | Class compiled/discovered; initial scheduler-drain harness hang stopped in the verified worktree worker; NOT RED |
+| Original focused RED | **41 tests, 37 assertion failures, 0 errors/skips**, unchanged production source; `red-assertions.xml` |
+| Additional lifecycle/cooldown RED | 65 tests/3 failures; then 58 tests/4 failures; preserved XML |
+| Final focused `testDebugUnitTest --tests ...` | **105 passed**, including 58 ViewModel / 8 classifier / 3 repository / 18 auth / 18 real-client tests; 35s |
+| `testDebugUnitTest lint assembleDebug assembleDebugAndroidTest` | **PASS**, 2m13s; **578 JVM tests, 0 failures/errors/skips**; lint/debug/test APK complete |
+| Dedicated P0 instrumentation, first pass | All 7 method files PASS; outer PowerShell stderr handling interrupted clean harness reporting after screenshot pull; not final wrapper PASS evidence |
+| Dedicated P0 instrumentation, final repeat | **PASS 7/7**, process exit 0, receiver explicitly restored to default; `http-final` evidence |
+| Existing `RoomMigrationTest` on verified emulator | **PASS 1/1**; real SQLite migration preserves people/readings/settings |
+| `assembleRelease bundleRelease --continue` | **FAIL**, 2m57s: both `packageRelease` and `packageReleaseBundle` fail on missing signing properties |
+| Clean / generic connected-device Gradle task / physical-device tests | NOT RUN — recovery/target restrictions |
+
+Target: **emulator-5580**, **LibreCare_P0_20261018**, **sdk_gphone64_x86_64**, **qemu=1**, API35. Every test operation uses an explicit emulator serial and identity guard. The seven existing methods include preparation and three separate-process restoration paths; this is not seven independent end-to-end user journeys. Synthetic transport is injected after Application construction; BootReceiver is temporarily disabled on the emulator and restored. No boot/autostart, physical Samsung, production-account/network or complete background-service guarantee is implied.
+
+Evidence paths (all existing under the authorized root):
+
+- `build\p0-http-evidence\red-assertions.xml`, `red-edge-cases.xml`, `red-context-cooldown.xml`.
+- `build\p0-http-evidence\final-focused-xml\` and `final-focused-stdout.log`.
+- `build\p0-http-evidence\final-full-stdout.log`, `final-full-exit.log`, `final-full-boundary.log`.
+- `app\build\reports\tests\testDebugUnitTest\index.html`, `app\build\test-results\testDebugUnitTest\`.
+- `app\build\reports\lint-results-debug.html` (PASS does not mean all pre-existing warnings removed).
+- `build\p0-evidence\http-final\`: seven method results and `p0-evidence\` screenshots.
+- `build\p0-http-evidence\emulator-final-stdout.log`, `emulator-final-stderr.log`, `emulator-final-exit.log`, `RoomMigrationTest.txt`.
+- `build\p0-http-evidence\release-verification-stdout.log`, `release-verification-stderr.log`, `release-verification-boundary.log`.
+
+### Current artifacts — local/debug only
+
+**DEBUG APK:** `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018\release-artifacts\LibreCare-2.16.6-debug.apk` — **23,832,220 bytes**.
+
+Gradle output: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018\app\build\outputs\apk\debug\app-debug.apk`, same size/hash. SHA-256: `f867e5e9c48e33580a2dfc0a70eed5d88205dca2d91c3e3f2ac3db874d09e4e3`. APK DEX independently contains the new `MonitoringFailure` class. Public signature verification passed; debug certificate SHA-256 `962cb41fd3f7ff5dd9c64d71385f459eebf7a8a2446e06ccb02e35572958bd07`. This is **not** a production-compatible update or a Samsung install authorization.
+
+Instrumentation APK: `C:\Users\SG0216827\IdeaProjects\LibreCare-p0-http-20261018\app\build\outputs\apk\androidTest\debug\app-debug-androidTest.apk` — **1,122,765 bytes**, emulator-only.
+
+**RELEASE APK:** unavailable; size not applicable. **RELEASE AAB:** unavailable; size not applicable. **GOOGLE PLAY UPLOAD FILE:** **NONE**, size not applicable. Missing properties: `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`, `RELEASE_STORE_FILE`, `RELEASE_STORE_PASSWORD`. No secret import or signing bypass was performed. Recursive APK/AAB search found only the two debug outputs/named copy and a historical PR #43 CI debug APK under `build\p0-http-evidence\pr43-ci\`; that downloaded file is not this follow-up's deliverable. No AAB found.
+
+### Exact follow-up files / Git / recommendations
+
+Expected follow-up diff against `e71d1d12473a151909d112d95e6d57f130578e9b` (relative to the authorized root):
+
+1. `app/src/main/java/com/libredisplay/data/api/LibreLinkUpClient.kt`
+2. `app/src/main/java/com/libredisplay/data/api/LibreLinkUpExceptions.kt`
+3. `app/src/main/java/com/libredisplay/data/repository/AuthRepository.kt`
+4. `app/src/main/java/com/libredisplay/data/repository/GlucoseRepository.kt`
+5. `app/src/main/java/com/libredisplay/ui/monitoring/MonitoringFailure.kt`
+6. `app/src/main/java/com/libredisplay/ui/monitoring/MonitoringViewModel.kt`
+7. `app/src/test/java/com/libredisplay/data/api/RealLibreLinkUpClientTest.kt`
+8. `app/src/test/java/com/libredisplay/ui/monitoring/MonitoringFailureTest.kt`
+9. `app/src/test/java/com/libredisplay/ui/monitoring/P0HttpRecoveryViewModelTest.kt`
+10. `docs/releases/LibreCare-2.16.6-release-notes.md`
+11. `docs/release-report-2.16.6.md`
+12. `docs/quality-review-report-2.16.6.md`
+
+Only these source/test/documentation files may be staged. Existing ignore rules cover build/, APK, AAB, JKS, keystore and local.properties. Branding remains LibreCare; package/applicationId, legacy database/class identifiers, repository paths and historical/generated references retain technical LibreDisplay naming. No dependency added. Diff scope and unchanged remote parent must be reverified immediately before the sole delivery push to PR #45; resulting SHA/Actions are reported in handoff.
+
+**PR #43: HOLD** — read-only review at `1547bad…`, with independent CI XML (499 passing tests, 57 backup tests). Conditional write race, overstated restore readiness and fallback/shared-file mismatch need scoped correction; inherited checksum/atomicity/REPLACE limitations are separately classified in the quality report. No PR #43 change.
+
+**PR #45: scoped ACCEPT recommendation after exact-head delivery/Actions verification**, not merge/publication authority. Remaining risks: original boundary incident's ignored/generated-file uncertainty; release signing/Play compatibility; real-account/background-service/autostart behavior; Samsung attribution; full UI/theme/scaling/accessibility/landscape acceptance; independent PR #43 backup risks. Complete release acceptance remains blocked. The quality report contains PASS / FAIL / NOT APPLICABLE compliance statuses.
+
+## Historical original P0 report (retained; different worktree/evidence)
+
 2026-10-18 — **NOT RELEASE READY / wydanie zablokowane**. Controlled P0 regressions pass; exact Samsung incident attribution, full UI acceptance and signed release delivery remain incomplete. No Product Owner acceptance, merge or publication is implied.
 
 ## Source provenance and scope
