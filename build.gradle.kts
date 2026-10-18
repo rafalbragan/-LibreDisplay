@@ -11,6 +11,19 @@ val mainActivity = ".MainActivity"
 
 fun isWindows(): Boolean = System.getProperty("os.name").contains("Windows", ignoreCase = true)
 
+data class ConnectedAndroidDevice(
+    val serial: String,
+    val state: String,
+    val isEmulator: Boolean
+)
+
+data class DeviceGatePolicy(
+    val allowPhysicalOps: Boolean,
+    val allowlistedPhysicalSerials: Set<String>,
+    val protectedPhysicalSerials: Set<String>,
+    val requestedTargetSerial: String?
+)
+
 fun runAndCapture(vararg command: String): String {
     val output = java.io.ByteArrayOutputStream()
     exec {
@@ -20,6 +33,194 @@ fun runAndCapture(vararg command: String): String {
         isIgnoreExitValue = true
     }
     return output.toString().trim()
+}
+
+fun adbCommand(vararg args: String): Array<String> {
+    val localPropertiesFile = rootProject.file("local.properties")
+    val sdkDir = if (localPropertiesFile.exists()) {
+        java.util.Properties().apply {
+            localPropertiesFile.inputStream().use { load(it) }
+        }.getProperty("sdk.dir")
+    } else {
+        null
+    }
+    val adbName = if (isWindows()) "adb.exe" else "adb"
+    val adbFromSdk = sdkDir
+        ?.let { java.io.File(it, "platform-tools/$adbName") }
+        ?.takeIf { it.exists() }
+        ?.absolutePath
+    val executable = adbFromSdk ?: "adb"
+    return arrayOf(executable, *args)
+}
+
+fun parseConnectedDevices(devicesOutput: String): List<ConnectedAndroidDevice> {
+    return devicesOutput
+        .lineSequence()
+        .drop(1)
+        .map { it.trim() }
+        .filter { it.isNotBlank() }
+        .map { line ->
+            val parts = line.split(Regex("\\s+")).filter { it.isNotBlank() }
+            val serial = parts.getOrNull(0).orEmpty()
+            val state = parts.getOrNull(1).orEmpty()
+            val isEmulator = serial.startsWith("emulator-")
+            ConnectedAndroidDevice(serial = serial, state = state, isEmulator = isEmulator)
+        }
+        .filter { it.serial.isNotBlank() && it.state.isNotBlank() }
+        .toList()
+}
+
+fun parseSerialCsv(raw: String?): Set<String> = raw
+    ?.split(Regex("[,;\\s]+"))
+    ?.map { it.trim() }
+    ?.filter { it.isNotBlank() }
+    ?.toSet()
+    ?: emptySet()
+
+fun isRiskyDeviceTaskName(taskName: String): Boolean =
+    (taskName.startsWith("connected") && taskName.endsWith("AndroidTest")) ||
+        taskName.startsWith("install") ||
+        taskName.startsWith("uninstall") ||
+        taskName == "installAndRun" ||
+        taskName == "removeApp"
+
+fun resolveConnectedDevices(): List<ConnectedAndroidDevice> {
+    val devicesOutput = runCatching { runAndCapture(*adbCommand("devices", "-l")) }
+        .getOrElse { error ->
+            throw GradleException(
+                "Blocked device tasks: cannot verify connected Android devices (adb unavailable or failed: ${error.message})."
+            )
+        }
+
+    if (!devicesOutput.contains("List of devices attached", ignoreCase = true)) {
+        throw GradleException(
+            "Blocked device tasks: adb output is not trusted for device detection. Output: $devicesOutput"
+        )
+    }
+    return parseConnectedDevices(devicesOutput)
+}
+
+fun resolveDeviceGatePolicy(): DeviceGatePolicy {
+    val allowPhysicalOps = (findProperty("allowPhysicalDeviceOps") as? String)
+        ?.equals("true", ignoreCase = true) == true ||
+        (System.getenv("ALLOW_PHYSICAL_DEVICE_OPS") ?: "").equals("true", ignoreCase = true)
+
+    val allowlistedPhysicalSerials = parseSerialCsv(
+        (findProperty("safePhysicalDeviceSerials") as? String)
+            ?: System.getenv("SAFE_PHYSICAL_DEVICE_SERIALS")
+    )
+
+    val protectedDefaults = setOf("R5GL1397F1M")
+    val protectedExtras = parseSerialCsv(
+        (findProperty("protectedPhysicalDeviceSerials") as? String)
+            ?: System.getenv("PROTECTED_PHYSICAL_DEVICE_SERIALS")
+    )
+
+    val requestedTargetSerial = (findProperty("deviceSerial") as? String)
+        ?.trim()
+        ?.takeIf { it.isNotBlank() }
+        ?: (System.getenv("ANDROID_SERIAL") ?: "").trim().takeIf { it.isNotBlank() }
+
+    return DeviceGatePolicy(
+        allowPhysicalOps = allowPhysicalOps,
+        allowlistedPhysicalSerials = allowlistedPhysicalSerials,
+        protectedPhysicalSerials = protectedDefaults + protectedExtras,
+        requestedTargetSerial = requestedTargetSerial
+    )
+}
+
+fun requireSafeDeviceTasks(taskPaths: List<String>) {
+    val connected = resolveConnectedDevices().filter { it.state == "device" }
+    val bySerial = connected.associateBy { it.serial }
+    if (connected.isEmpty()) {
+        throw GradleException(
+            "Blocked device tasks ${taskPaths.joinToString(", ")}: no online Android device/emulator is connected."
+        )
+    }
+
+    val policy = resolveDeviceGatePolicy()
+    val targetSerial = policy.requestedTargetSerial
+
+    // Always force deterministic targeting when selection is ambiguous.
+    if (targetSerial == null && connected.size != 1) {
+        throw GradleException(
+            "Blocked device tasks ${taskPaths.joinToString(", ")}: multiple devices detected. " +
+                "Set ANDROID_SERIAL or -PdeviceSerial=<serial> to target one explicit device."
+        )
+    }
+
+    val effectiveTarget = targetSerial ?: connected.single().serial
+    val targetDevice = bySerial[effectiveTarget]
+        ?: throw GradleException(
+            "Blocked device tasks ${taskPaths.joinToString(", ")}: requested target serial '$effectiveTarget' is not connected."
+        )
+
+    if (policy.protectedPhysicalSerials.contains(effectiveTarget) && !targetDevice.isEmulator) {
+        throw GradleException(
+            "Blocked device tasks ${taskPaths.joinToString(", ")}: serial '$effectiveTarget' is explicitly protected (Product Owner phone)."
+        )
+    }
+
+    if (!targetDevice.isEmulator) {
+        if (!policy.allowPhysicalOps) {
+            throw GradleException(
+                "Blocked device tasks ${taskPaths.joinToString(", ")}: physical target '$effectiveTarget' requires explicit authorization " +
+                    "(-PallowPhysicalDeviceOps=true or ALLOW_PHYSICAL_DEVICE_OPS=true)."
+            )
+        }
+        if (!policy.allowlistedPhysicalSerials.contains(effectiveTarget)) {
+            throw GradleException(
+                "Blocked device tasks ${taskPaths.joinToString(", ")}: physical target '$effectiveTarget' is not allowlisted. " +
+                    "Configure safePhysicalDeviceSerials / SAFE_PHYSICAL_DEVICE_SERIALS for dedicated test devices only."
+            )
+        }
+    }
+}
+
+fun requireSafeDeviceTask(taskPath: String) {
+    requireSafeDeviceTasks(listOf(taskPath))
+}
+
+fun resolveSafeAdbTargetSerial(): String {
+    val connected = resolveConnectedDevices().filter { it.state == "device" }
+    val requested = resolveDeviceGatePolicy().requestedTargetSerial
+    if (requested != null) return requested
+    if (connected.size == 1 && connected.first().isEmulator) {
+        return connected.first().serial
+    }
+    throw GradleException(
+        "Blocked adb command: set ANDROID_SERIAL or -PdeviceSerial=<serial> for deterministic targeting."
+    )
+}
+
+tasks.register("verifySafeDeviceGate") {
+    group = "verification"
+    description = "Runs physical-device safety gate check without installing or uninstalling anything."
+    doLast {
+        requireSafeDeviceTask(path)
+        println("SAFE DEVICE GATE: PASS (no unauthorized physical-device operations allowed).")
+    }
+}
+
+allprojects {
+    tasks.configureEach {
+        val isRiskyDeviceTask = isRiskyDeviceTaskName(name)
+        if (isRiskyDeviceTask) {
+            doFirst {
+                requireSafeDeviceTask(path)
+            }
+        }
+    }
+}
+
+gradle.taskGraph.whenReady {
+    val riskyTasks = allTasks
+        .filter { isRiskyDeviceTaskName(it.name) }
+        .map { it.path }
+        .distinct()
+    if (riskyTasks.isNotEmpty()) {
+        requireSafeDeviceTasks(riskyTasks)
+    }
 }
 
 tasks.register("checkEnvironment") {
@@ -121,10 +322,11 @@ tasks.register("installAndRun") {
     description = "Builds debug APK, installs on device and starts MainActivity."
     dependsOn(":app:installDebug")
     doLast {
+        val targetSerial = resolveSafeAdbTargetSerial()
         val cmd = if (isWindows()) {
-            arrayOf("cmd", "/c", "adb", "shell", "am", "start", "-n", "$appId/$mainActivity")
+            arrayOf("cmd", "/c", "adb", "-s", targetSerial, "shell", "am", "start", "-n", "$appId/$mainActivity")
         } else {
-            arrayOf("adb", "shell", "am", "start", "-n", "$appId/$mainActivity")
+            arrayOf("adb", "-s", targetSerial, "shell", "am", "start", "-n", "$appId/$mainActivity")
         }
         exec {
             commandLine(*cmd)
@@ -137,10 +339,11 @@ tasks.register("removeApp") {
     group = "device"
     description = "Uninstalls LibreCare application from connected device."
     doLast {
+        val targetSerial = resolveSafeAdbTargetSerial()
         val cmd = if (isWindows()) {
-            arrayOf("cmd", "/c", "adb", "uninstall", appId)
+            arrayOf("cmd", "/c", "adb", "-s", targetSerial, "uninstall", appId)
         } else {
-            arrayOf("adb", "uninstall", appId)
+            arrayOf("adb", "-s", targetSerial, "uninstall", appId)
         }
         exec {
             commandLine(*cmd)

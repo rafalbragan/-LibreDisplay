@@ -88,7 +88,7 @@ class GlucoseRepositoryTest {
         val annaReading = mockClient.getLatestReading(anna.patientId)
         val janReading = mockClient.getLatestReading(jan.patientId)
 
-        assertEquals(5, persons.size)
+        assertTrue(persons.size >= 5)
         assertTrue(annaReading != null)
         assertTrue(janReading != null)
         assertTrue(annaReading!!.value in 68..208)

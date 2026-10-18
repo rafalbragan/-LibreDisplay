@@ -42,25 +42,25 @@ interface GlucoseReadingDao {
     @Query("DELETE FROM glucose_readings WHERE patientId = :patientId")
     suspend fun deleteReadingsForPerson(patientId: String): Int
 
-    @Query("DELETE FROM glucose_readings WHERE source = 'DemoMode' OR patientId LIKE 'demo-person-%'")
+    @Query("DELETE FROM glucose_readings WHERE source IN ('DemoMode', 'DEMO') OR patientId LIKE 'demo-person-%'")
     suspend fun deleteDemoReadings(): Int
 
-    @Query("SELECT * FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' ORDER BY timestamp ASC")
+    @Query("SELECT * FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%' ORDER BY timestamp ASC")
     suspend fun getAllLiveReadings(): List<GlucoseReadingEntity>
 
-    @Query("DELETE FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    @Query("DELETE FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%'")
     suspend fun deleteAllLiveReadings(): Int
 
     @Query("SELECT COUNT(*) FROM glucose_readings")
     suspend fun countAllReadings(): Long
 
-    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%'")
     suspend fun countLiveReadings(): Long
 
-    @Query("SELECT MIN(timestamp) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    @Query("SELECT MIN(timestamp) FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%'")
     suspend fun oldestLiveReadingTimestamp(): Instant?
 
-    @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%'")
+    @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%'")
     suspend fun newestLiveReadingTimestamp(): Instant?
 
     @Query("SELECT MIN(timestamp) FROM glucose_readings WHERE patientId = :patientId")
@@ -69,10 +69,10 @@ interface GlucoseReadingDao {
     @Query("SELECT MAX(timestamp) FROM glucose_readings WHERE patientId = :patientId")
     suspend fun newestReadingTimestampForPatient(patientId: String): Instant?
 
-    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' AND timestamp >= :fromInclusive")
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%' AND timestamp >= :fromInclusive")
     suspend fun countLiveReadingsFrom(fromInclusive: Instant): Long
 
-    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source != 'DemoMode' AND patientId NOT LIKE 'demo-person-%' AND timestamp < :cutoff")
+    @Query("SELECT COUNT(*) FROM glucose_readings WHERE source NOT IN ('DemoMode', 'DEMO') AND patientId NOT LIKE 'demo-person-%' AND timestamp < :cutoff")
     suspend fun countLiveReadingsOlderThan(cutoff: Instant): Long
 
     @Query(
@@ -89,7 +89,7 @@ interface GlucoseReadingDao {
             SUM(CASE WHEN g.timestamp >= :from360d THEN 1 ELSE 0 END) AS readings360d
         FROM glucose_readings g
         LEFT JOIN observed_persons o ON o.patientId = g.patientId
-        WHERE g.source != 'DemoMode'
+        WHERE g.source NOT IN ('DemoMode', 'DEMO')
           AND g.patientId NOT LIKE 'demo-person-%'
         GROUP BY g.patientId
         HAVING COUNT(*) > 0

@@ -2,6 +2,7 @@ package com.libredisplay.data.repository
 
 import com.libredisplay.data.api.LibreLinkUpHttpException
 import com.libredisplay.data.api.RetrofitLibreLinkUpClient
+import com.libredisplay.data.demo.DemoDataPolicy
 import com.libredisplay.data.local.SyncRunEntity
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.GlucoseHistoryPoint
@@ -98,6 +99,7 @@ class GlucoseSyncRepository(
                     )
                 }
                 val persons = productionClient.getConnections()
+                    .filterNot { DemoDataPolicy.isDemoPatientId(it.patientId) }
                 personsCount = persons.size
                 localRepository.upsertObservedPersons(persons, Instant.now())
 

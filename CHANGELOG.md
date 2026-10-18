@@ -2,6 +2,122 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.4 - 2026-10-18
+
+### PL
+
+#### Added
+- Dodano pre-execution gate (task graph) dla zadan device-mutating oraz wymuszenie jawnego wyboru targetu po serialu przy wielu urzadzeniach.
+- Dodano dokument autoryzacji dedykowanego urzadzenia testowego: `docs/device-safety-authorization.md`.
+- Dodano raport audytu backupu (metadane + integralnosc bez payloadu medycznego): `docs/backup-audit-2026-10-18.md`.
+- Dodano workflow CI `Device Safety Policy Check` z regułami blokującymi niedozwolone operacje ADB na fizycznych urządzeniach.
+- Dodano współdzieloną konfigurację uruchamiania emulator-only: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
+
+#### Changed
+- Ochrona fizycznych urzadzen rozszerzona o allowliste seriali (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
+- Serial telefonu Product Ownera `R5GL1397F1M` jest stale blokowany jako target operacji mutujacych.
+
+#### Fixed
+- `installAndRun` i `removeApp` wymuszaja teraz `adb -s <serial>`, aby wyeliminowac przypadkowe targetowanie urzadzenia.
+
+#### Tests
+- `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, brak autoryzacji fizycznego targetu)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests ...GlucoseChartPerformanceTest` - PASS (długa historia)
+
+#### Artifacts
+- Bez zmian artefaktow binarnych (hardening procesu i dokumentacji).
+
+### EN
+
+#### Added
+- Added a pre-execution task-graph gate for device-mutating tasks and explicit serial targeting when multiple devices are connected.
+- Added dedicated test-device authorization guide: `docs/device-safety-authorization.md`.
+- Added backup audit report (metadata + integrity only, no medical payload): `docs/backup-audit-2026-10-18.md`.
+- Added CI workflow `Device Safety Policy Check` to block disallowed ADB operations on physical devices.
+- Added shared emulator-only run configuration: `.run/LibreCare Emulator-Only Recovery Scenario.run.xml`.
+
+#### Changed
+- Physical-device protection now includes a serial allowlist (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
+- Product Owner phone serial `R5GL1397F1M` is always blocked as a mutating-task target.
+
+#### Fixed
+- `installAndRun` and `removeApp` now force `adb -s <serial>` to avoid accidental device selection.
+
+#### Tests
+- `./gradlew verifySafeDeviceGate` - FAIL (expected, physical target not authorized)
+- `./gradlew verifySafeDeviceGate -PdeviceSerial=emulator-5554` - PASS
+- `./gradlew connectedDebugAndroidTest -PdeviceSerial=emulator-5554 -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (emulator)
+- `./gradlew :app:testDebugUnitTest --tests ...GlucoseChartPerformanceTest` - PASS (long history)
+
+#### Artifacts
+- No binary artifact changes (process/documentation hardening only).
+
+## 2.16.3 - 2026-10-18
+
+### PL
+
+#### Added
+- Dodano profil DEMO `Mika` z deterministyczna historia glikemii (~18 miesiecy) aktywowany w buildzie testowym przez `ENABLE_MIKA_DEMO_PROFILE=true`.
+- Dodano stale oznaczenie UI: `MIKA - DANE SYMULOWANE / DEMO` na ekranach Home/Monitoring.
+- Dodano fail-closed gate dla taskow `connected*AndroidTest` / `install*` / `uninstall*`, blokujacy operacje na fizycznych urzadzeniach bez jawnej autoryzacji.
+
+#### Changed
+- Wersja aplikacji: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+- Automatyczny backup raportuje teraz jawnie, czy plik jest przywracalny (`restorable`).
+
+#### Fixed
+- Naprawiono P0 crash-loop po wyborze nieaktywnej osoby z pusta historia: aplikacja przechodzi do bezpiecznego stanu `Brak aktualnych danych`.
+- Zablokowano nadpisywanie ostatniej poprawnej lokalnej kopii zapasowej przez pusty snapshot.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
+- `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, fizyczne urzadzenie bez autoryzacji)
+- `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (oczekiwane, jawny override)
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)
+- `release-artifacts/LibreCare-2.16.4-release.apk` (`3,695,803 B`)
+- `release-artifacts/LibreCare-2.16.4-release.aab` (`6,689,411 B`)
+
+### EN
+
+#### Added
+- Added DEMO profile `Mika` with deterministic synthetic glucose history (~18 months), enabled in test builds with `ENABLE_MIKA_DEMO_PROFILE=true`.
+- Added persistent UI label: `MIKA - DANE SYMULOWANE / DEMO` on Home/Monitoring.
+- Added a fail-closed guard for `connected*AndroidTest` / `install*` / `uninstall*` tasks, blocking physical-device operations without explicit authorization.
+
+#### Changed
+- App version: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+- Automatic backup now reports whether the stored file is actually restorable (`restorable`).
+
+#### Fixed
+- Fixed P0 crash-loop when selecting an inactive person with empty history: app now enters safe `No current data` state.
+- Prevented overwriting the last known-good local backup with an empty snapshot.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
+- `./gradlew verifySafeDeviceGate` - FAIL (expected, physical device without authorization)
+- `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (expected, explicit override)
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.4-debug.apk` (`23,891,989 B`)
+- `release-artifacts/LibreCare-2.16.4-release.apk` (`3,695,803 B`)
+- `release-artifacts/LibreCare-2.16.4-release.aab` (`6,689,411 B`)
+
 ## 2.16.2 - 2026-10-16
 
 ### PL

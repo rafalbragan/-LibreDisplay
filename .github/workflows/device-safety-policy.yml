@@ -1,0 +1,27 @@
+name: Device Safety Policy Check
+
+on:
+  push:
+    branches: [main, master]
+    paths:
+      - "build.gradle.kts"
+      - "scripts/ci/device-safety-policy-check.sh"
+      - ".github/workflows/device-safety-policy.yml"
+      - ".github/workflows/*.yml"
+  pull_request:
+    branches: [main, master]
+  workflow_dispatch:
+
+jobs:
+  policy-check:
+    name: Device safety policy
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Run policy check
+        run: bash ./scripts/ci/device-safety-policy-check.sh
+

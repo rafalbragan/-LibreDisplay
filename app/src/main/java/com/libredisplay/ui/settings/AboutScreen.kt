@@ -67,6 +67,10 @@ fun AboutScreen(
                 fontSize = 12.sp
             )
 
+            Text("Historia funkcji", fontSize = 16.sp)
+            Text("2.16.4: Mika bez punktow w przyszlosci, izolacja danych DEMO, bez alarmow dla danych syntetycznych.", fontSize = 12.sp)
+            Text("2.16.3: Naprawa crash-loop #29, profil DEMO Mika, ochrona backupu przed pustym nadpisaniem.", fontSize = 12.sp)
+
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),
                 onClick = {

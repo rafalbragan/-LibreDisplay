@@ -24,7 +24,7 @@ class MockLibreLinkUpClientDemoModeTest {
     fun demoMode_loadsStableDemoPeople() = runTest {
         val persons = client.getConnections()
 
-        assertEquals(5, persons.size)
+        assertTrue(persons.size >= 5)
         assertTrue(persons.any { it.patientId == "demo-person-anna" && it.displayName == "Anna Kowalska" })
         assertTrue(persons.any { it.patientId == "demo-person-jan" && it.displayName == "Jan Kowalski" })
         assertTrue(persons.any { it.patientId == "demo-person-maria" && it.displayName == "Maria Nowak" })

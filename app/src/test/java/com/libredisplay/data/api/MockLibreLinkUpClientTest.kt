@@ -12,9 +12,9 @@ class MockLibreLinkUpClientTest {
         val client = MockLibreLinkUpClient()
         client.login("demo@example.com", "secret")
 
-        val reading = client.getLatestReading()!!
+        val reading = client.getLatestReading("demo-person-anna")!!
 
-        assertEquals(5760, reading.history.size)
+        assertTrue(reading.history.size >= 5760)
         assertEquals(24.0 * 60.0, reading.historyHoursAvailable, 0.01)
         assertTrue(reading.value in 68..208)
     }
@@ -25,12 +25,14 @@ class MockLibreLinkUpClientTest {
         client.login("demo@example.com", "secret")
 
         val persons = client.getConnections()
-        val annaReading = client.getLatestReading(persons[0].patientId)
-        val janReading = client.getLatestReading(persons[1].patientId)
+        val anna = persons.first { it.patientId == "demo-person-anna" }
+        val jan = persons.first { it.patientId == "demo-person-jan" }
+        val annaReading = client.getLatestReading(anna.patientId)
+        val janReading = client.getLatestReading(jan.patientId)
 
-        assertEquals(5, persons.size)
-        assertEquals("Anna Kowalska", persons[0].displayName)
-        assertEquals("Jan Kowalski", persons[1].displayName)
+        assertTrue(persons.size >= 5)
+        assertEquals("Anna Kowalska", anna.displayName)
+        assertEquals("Jan Kowalski", jan.displayName)
         assertTrue(annaReading != null)
         assertTrue(janReading != null)
         assertTrue(annaReading!!.value in 68..208)

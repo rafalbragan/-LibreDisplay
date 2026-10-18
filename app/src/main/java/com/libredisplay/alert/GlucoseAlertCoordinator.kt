@@ -2,6 +2,7 @@ package com.libredisplay.alert
 
 import com.libredisplay.data.model.AppSettings
 import com.libredisplay.data.model.GlucoseReading
+import com.libredisplay.data.demo.DemoDataPolicy
 import java.time.Duration
 import java.time.Instant
 
@@ -20,6 +21,9 @@ class GlucoseAlertCoordinator(
     private var acknowledgedLevel: GlucoseAlertLevel = GlucoseAlertLevel.NONE
 
     fun onReading(settings: AppSettings, reading: GlucoseReading): GlucoseAlert? {
+        if (settings.useMock || DemoDataPolicy.isDemoPatientId(settings.selectedPatientId)) {
+            return null
+        }
         val ageMinutes = Duration.between(reading.timestamp, Instant.now()).toMinutes().coerceAtLeast(0)
         if (ageMinutes > 5) {
             return null
