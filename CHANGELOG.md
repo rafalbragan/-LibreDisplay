@@ -2,6 +2,64 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.3 - 2026-10-18
+
+### PL
+
+#### Added
+- Dodano profil DEMO `Mika` z deterministyczna historia glikemii (~18 miesiecy) aktywowany w buildzie testowym przez `ENABLE_MIKA_DEMO_PROFILE=true`.
+- Dodano stale oznaczenie UI: `MIKA - DANE SYMULOWANE / DEMO` na ekranach Home/Monitoring.
+
+#### Changed
+- Wersja aplikacji: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+- Automatyczny backup raportuje teraz jawnie, czy plik jest przywracalny (`restorable`).
+
+#### Fixed
+- Naprawiono P0 crash-loop po wyborze nieaktywnej osoby z pusta historia: aplikacja przechodzi do bezpiecznego stanu `Brak aktualnych danych`.
+- Zablokowano nadpisywanie ostatniej poprawnej lokalnej kopii zapasowej przez pusty snapshot.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,891,922 B`)
+- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,756 B`)
+- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,689,255 B`)
+
+### EN
+
+#### Added
+- Added DEMO profile `Mika` with deterministic synthetic glucose history (~18 months), enabled in test builds with `ENABLE_MIKA_DEMO_PROFILE=true`.
+- Added persistent UI label: `MIKA - DANE SYMULOWANE / DEMO` on Home/Monitoring.
+
+#### Changed
+- App version: `2.16.2` (`versionCode 46`) -> `2.16.3` (`versionCode 47`).
+- Automatic backup now reports whether the stored file is actually restorable (`restorable`).
+
+#### Fixed
+- Fixed P0 crash-loop when selecting an inactive person with empty history: app now enters safe `No current data` state.
+- Prevented overwriting the last known-good local backup with an empty snapshot.
+
+#### Tests
+- `./gradlew clean` - PASS
+- `./gradlew testDebugUnitTest` - PASS
+- `./gradlew lint` - PASS
+- `./gradlew assembleDebug` - PASS
+- `./gradlew assembleRelease` - PASS
+- `./gradlew bundleRelease` - PASS
+- No connected device/emulator available.
+
+#### Artifacts
+- `release-artifacts/LibreCare-2.16.3-debug.apk` (`23,891,922 B`)
+- `release-artifacts/LibreCare-2.16.3-release.apk` (`3,695,756 B`)
+- `release-artifacts/LibreCare-2.16.3-release.aab` (`6,689,255 B`)
+
 ## 2.16.2 - 2026-10-16
 
 ### PL
