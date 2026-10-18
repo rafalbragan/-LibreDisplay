@@ -20,6 +20,9 @@
 - Rozszerzono testy regresyjne o: brak przyszlych timestampow Miki, izolacje DEMO source, alarm suppression, scenariusz restartu recovery.
 - Dodano test instrumentacyjny scenariusza `brak danych -> zmiana osoby -> restart -> powrot do aktywnej osoby`.
 - Dodano fail-closed gate blokujacy zadania `connected*AndroidTest` / `install*` / `uninstall*` na fizycznych urzadzeniach bez jawnej autoryzacji.
+- Guard dziala przed wykonaniem taskow (walidacja task graph), wymaga serial-targetingu przy wielu urzadzeniach i stale blokuje serial PO `R5GL1397F1M`.
+- `installAndRun` i `removeApp` wymuszaja `adb -s <serial>`.
+- Dodano instrukcje autoryzacji dedykowanego urzadzenia: `docs/device-safety-authorization.md`.
 
 ### Testy
 - `./gradlew clean` - PASS
@@ -31,6 +34,7 @@
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
 - `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, fizyczne urzadzenie bez autoryzacji)
 - `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (oczekiwane, jawny override)
+- Backup audit (read-only) - PASS (`docs/backup-audit-2026-10-18.md`)
 
 ### Artefakty
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`
@@ -41,6 +45,7 @@
 ### Ograniczenia / Blockery
 - Google Sign-In (Credential Manager) - **IN PROGRESS**.
 - Google Drive backup/restore - **IN PROGRESS**.
+- Backup lokalny nie zawiera danych z okresu bezposrednio przed incydentem (najnowszy odczyt: 2026-08-21).
 
 ## EN
 
@@ -62,6 +67,9 @@
 - Added regression coverage for: no-future Mika timestamps, DEMO-source isolation, alarm suppression, restart recovery path.
 - Added instrumentation scenario test for `no data -> person switch -> restart -> return to active person`.
 - Added a fail-closed guard that blocks `connected*AndroidTest` / `install*` / `uninstall*` tasks on physical devices unless explicitly authorized.
+- The guard now runs before task execution (task-graph validation), requires explicit serial targeting in multi-device scenarios, and permanently blocks PO serial `R5GL1397F1M`.
+- `installAndRun` and `removeApp` now enforce `adb -s <serial>`.
+- Added dedicated test-device authorization guide: `docs/device-safety-authorization.md`.
 
 ### Tests
 - `./gradlew clean` - PASS
@@ -73,6 +81,7 @@
 - `./gradlew connectedDebugAndroidTest -Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.ui.monitoring.MonitoringRecoveryScenarioInstrumentedTest` - PASS (SM-S948B)
 - `./gradlew verifySafeDeviceGate` - FAIL (expected, physical device without authorization)
 - `./gradlew verifySafeDeviceGate -PallowPhysicalDeviceOps=true` - PASS (expected, explicit override)
+- Backup audit (read-only) - PASS (`docs/backup-audit-2026-10-18.md`)
 
 ### Artifacts
 - Debug APK: `release-artifacts/LibreCare-2.16.4-debug.apk`
@@ -83,5 +92,6 @@
 ### Known Limitations / Blockers
 - Google Sign-In (Credential Manager) - **IN PROGRESS**.
 - Google Drive backup/restore - **IN PROGRESS**.
+- Local backup does not include data immediately before the incident window (latest reading: 2026-08-21).
 
 

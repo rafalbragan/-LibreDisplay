@@ -2,6 +2,48 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.16.4 - 2026-10-18
+
+### PL
+
+#### Added
+- Dodano pre-execution gate (task graph) dla zadan device-mutating oraz wymuszenie jawnego wyboru targetu po serialu przy wielu urzadzeniach.
+- Dodano dokument autoryzacji dedykowanego urzadzenia testowego: `docs/device-safety-authorization.md`.
+- Dodano raport audytu backupu (metadane + integralnosc bez payloadu medycznego): `docs/backup-audit-2026-10-18.md`.
+
+#### Changed
+- Ochrona fizycznych urzadzen rozszerzona o allowliste seriali (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
+- Serial telefonu Product Ownera `R5GL1397F1M` jest stale blokowany jako target operacji mutujacych.
+
+#### Fixed
+- `installAndRun` i `removeApp` wymuszaja teraz `adb -s <serial>`, aby wyeliminowac przypadkowe targetowanie urzadzenia.
+
+#### Tests
+- `./gradlew verifySafeDeviceGate` - FAIL (oczekiwane, brak autoryzacji fizycznego targetu)
+
+#### Artifacts
+- Bez zmian artefaktow binarnych (hardening procesu i dokumentacji).
+
+### EN
+
+#### Added
+- Added a pre-execution task-graph gate for device-mutating tasks and explicit serial targeting when multiple devices are connected.
+- Added dedicated test-device authorization guide: `docs/device-safety-authorization.md`.
+- Added backup audit report (metadata + integrity only, no medical payload): `docs/backup-audit-2026-10-18.md`.
+
+#### Changed
+- Physical-device protection now includes a serial allowlist (`safePhysicalDeviceSerials` / `SAFE_PHYSICAL_DEVICE_SERIALS`).
+- Product Owner phone serial `R5GL1397F1M` is always blocked as a mutating-task target.
+
+#### Fixed
+- `installAndRun` and `removeApp` now force `adb -s <serial>` to avoid accidental device selection.
+
+#### Tests
+- `./gradlew verifySafeDeviceGate` - FAIL (expected, physical target not authorized)
+
+#### Artifacts
+- No binary artifact changes (process/documentation hardening only).
+
 ## 2.16.3 - 2026-10-18
 
 ### PL

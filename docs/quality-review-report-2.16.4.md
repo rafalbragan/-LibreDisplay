@@ -14,6 +14,7 @@
 - Release bundle: PASS
 - Instrumentation tests: PASS (`MonitoringRecoveryScenarioInstrumentedTest`, SM-S948B)
 - Safety gate: PASS (blocks physical device by default; explicit override required)
+- Safety gate v2: PASS (pre-execution task-graph validation, explicit serial target required when ambiguous)
 
 ## Scope Assessment
 - Mika no-future timestamp requirement: **PASS**.
@@ -26,6 +27,7 @@
 - DEMO data is excluded from LIVE backup/statistics paths using source+prefix filtering.
 - DEMO synthetic readings do not trigger glucose alarms.
 - No destructive migration introduced.
+- Backup file audit completed in read-only mode with SHA-256 verification and metadata-only reporting.
 
 ## Risks and Gaps
 - Persisted explicit `isSynthetic` schema column is still missing; behavior relies on source markers and patient ID policy.
@@ -33,5 +35,7 @@
 
 ## RCA Reference
 - `docs/incident-rca-2026-10-18-physical-device-app-removal.md`
+- `docs/device-safety-authorization.md`
+- `docs/backup-audit-2026-10-18.md`
 
 
