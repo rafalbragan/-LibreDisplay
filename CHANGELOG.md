@@ -2,6 +2,37 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.17.1 - 2026-10-19
+
+### PL
+#### Added
+- Syntetyczne regresje z dokładnymi polskimi nagłówkami Abbott i kolumną ketonów mmol/L.
+#### Changed
+- Wersja 2.17.0/51 → 2.17.1/52; applicationId `com.libredisplay` bez zmian. Chart 2.0 i schemat Room bez zmian.
+#### Fixed
+- Obsługa „Znacznik czasu w urządzeniu”, „Rodzaj zapisu”, „Historyczne stężenia glukozy mg/dL” i „Stężenie glukozy na podstawie skanowania mg/dL”, z zachowaniem wcześniejszych wariantów.
+- Jednostki sprawdzane wyłącznie w wymaganych kolumnach glukozy; ketony mmol/L nie blokują importu mg/dL.
+- Metadane podglądu usunięte z automatycznego tekstu diagnostycznego podsumowania; fixture selektora nie używa starej kopii z pamięci podręcznej.
+#### Tests
+- RED: 19 testów parsera, 6 oczekiwanych niepowodzeń. GREEN: 19/19. Pełne wyniki JVM, lint, migracji, retencji i emulatora: `docs/release-report-2.17.1.md`.
+#### Artifacts
+- `release-artifacts/LibreCare-2.17.1-debug.apk`; rozmiar i SHA-256 w raporcie wydania.
+- Release APK/AAB: HOLD — brak konfiguracji podpisu oraz potwierdzenia zarejestrowanego klucza upload i wersji w Play Console. Prywatny plik nie był udostępniony ani testowany.
+
+### EN
+#### Added
+- Synthetic regressions using exact Polish Abbott headers and an unrelated mmol/L ketone column.
+#### Changed
+- Version 2.17.0/51 → 2.17.1/52; `com.libredisplay`, Chart 2.0 and Room schema retained.
+#### Fixed
+- Exact Abbott timestamp/type/historical/scan aliases supported alongside existing variants; mg/dL validation restricted to glucose columns, not ketones.
+- Preview metadata redacted from automatic summary diagnostics; document-picker fixture refreshed instead of reusing stale cached headers.
+#### Tests
+- RED: 19 parser tests, 6 expected failures. GREEN: 19/19. Full JVM/lint/migration/retention/emulator evidence: `docs/release-report-2.17.1.md`.
+#### Artifacts
+- `release-artifacts/LibreCare-2.17.1-debug.apk`; size and SHA-256 in the release report.
+- Release APK/AAB: HOLD — no active signing configuration or verified registered upload certificate/Play version inventory. Private-file integration remains unverified.
+
 ## 2.17.0 - 2026-10-19
 
 ### PL

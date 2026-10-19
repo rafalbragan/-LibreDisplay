@@ -20,7 +20,10 @@ data class CsvTimeOptions(val zone: ZoneId, val ambiguous: AmbiguousTimePolicy =
 data class CsvMeasurement(val record: Long, val timestamp: Instant, val value: Int, val type: Int,
     val localTimestamp: String, val offset: String)
 data class CsvSummary(val supported: Int, val skipped: Int, val invalid: Int, val ambiguous: Int,
-    val nonexistent: Int, val earliest: Instant?, val latest: Instant?, val metadata: String)
+    val nonexistent: Int, val earliest: Instant?, val latest: Instant?, val metadata: String) {
+    // Metadata is for the private preview only, never automatic diagnostics or assertion output.
+    override fun toString(): String = "CsvSummary(supported=$supported, skipped=$skipped, invalid=$invalid, ambiguous=$ambiguous, nonexistent=$nonexistent, metadata=[REDACTED])"
+}
 class CsvFormatException(message: String) : IllegalArgumentException(message)
 
 /** Parses only the explicitly supported LibreView schema; never uses a patient name as an ID. */
@@ -51,13 +54,14 @@ class LibreViewCsvParser {
                 if (matches.size != 1) throw CsvFormatException("Nieobsługiwany nagłówek LibreView: ${names.first()}.")
                 return matches.single()
             }
-            val time = column("Znacznik czasu urządzenia", "Device Timestamp")
-            val type = column("Typ zapisu", "Typ rekordu", "Typ rejestru", "Record Type")
-            val historical = column("Historyczne stężenie glukozy mg/dL", "Historia glukozy mg/dL", "Historic Glucose mg/dL")
-            val scan = column("Zeskanowane stężenie glukozy mg/dL", "Skanowanie glukozy mg/dL", "Scan Glucose mg/dL")
+            val time = column("Znacznik czasu urządzenia", "Znacznik czasu w urządzeniu", "Device Timestamp")
+            val type = column("Typ zapisu", "Rodzaj zapisu", "Typ rekordu", "Typ rejestru", "Record Type")
+            // Exact glucose-column aliases include their required units. Other columns (e.g.
+            // ketones in mmol/L) are unrelated and must not invalidate mg/dL glucose readings.
+            val historical = column("Historyczne stężenie glukozy mg/dL", "Historyczne stężenia glukozy mg/dL", "Historia glukozy mg/dL", "Historic Glucose mg/dL")
+            val scan = column("Zeskanowane stężenie glukozy mg/dL", "Stężenie glukozy na podstawie skanowania mg/dL", "Skanowanie glukozy mg/dL", "Scan Glucose mg/dL")
             column("Urządzenie", "Device")
             column("Numer seryjny", "Serial Number")
-            if (columns.any { "mmol" in it }) throw CsvFormatException("Obsługiwane są wyłącznie jednostki mg/dL.")
             var record = 2L
             while (true) {
                 currentCoroutineContext().ensureActive()

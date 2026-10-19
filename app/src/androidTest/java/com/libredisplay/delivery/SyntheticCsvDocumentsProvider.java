@@ -18,13 +18,13 @@ import java.util.Map;
 /** Platform-only Java: DocumentsUI starts the test APK without the target APK's Kotlin runtime. */
 public class SyntheticCsvDocumentsProvider extends DocumentsProvider {
     public static final String CSV = "\uFEFFDane glukozy,Profil DEMO\r\n"
-        + "Urządzenie,Numer seryjny,Znacznik czasu urządzenia,Typ zapisu,Historyczne stężenie glukozy mg/dL,Zeskanowane stężenie glukozy mg/dL,Notatki\r\n"
-        + "Libre,synthetic,01-05-2020 10:00,0,110,,\r\n"
-        + "Libre,synthetic,01-05-2020 10:01,1,,123,\"Przykład, bez danych osobowych\r\nDruga linia\"\r\n"
-        + "Libre,synthetic,01-05-2020 10:02,6,,,zdarzenie\r\n"
-        + "Libre,synthetic,01-05-2020 10:00,0,110,,\r\n"
-        + "Libre,synthetic,01-05-2020 10:00,0,210,,\r\n"
-        + "Libre,synthetic,19-10-2026 10:00,0,145,,\r\n";
+        + "Urządzenie,Numer seryjny,Znacznik czasu w urządzeniu,Rodzaj zapisu,Historyczne stężenia glukozy mg/dL,Stężenie glukozy na podstawie skanowania mg/dL,Ciała ketonowe mmol/L,Notatki\r\n"
+        + "Libre,synthetic,01-05-2020 10:00,0,110,,0.2,\r\n"
+        + "Libre,synthetic,01-05-2020 10:01,1,,123,0.3,\"Przykład, bez danych osobowych\r\nDruga linia\"\r\n"
+        + "Libre,synthetic,01-05-2020 10:02,6,,,0.4,zdarzenie\r\n"
+        + "Libre,synthetic,01-05-2020 10:00,0,110,,0.2,\r\n"
+        + "Libre,synthetic,01-05-2020 10:00,0,210,,0.2,\r\n"
+        + "Libre,synthetic,19-10-2026 10:00,0,145,,0.2,\r\n";
     @Override public boolean onCreate() { return true; }
     @Override public Cursor queryRoots(String[] projection) {
         String[] columns = projection != null ? projection : new String[] {
@@ -51,7 +51,7 @@ public class SyntheticCsvDocumentsProvider extends DocumentsProvider {
         if (signal != null) signal.throwIfCanceled();
         File file = new File(getContext().getCacheDir(), "platform-synthetic-" + id + ".csv");
         try {
-            if (!file.exists()) Files.write(file.toPath(), ("valid".equals(id) ? CSV : "unrelated,columns\nnot,libreview").getBytes(StandardCharsets.UTF_8));
+            Files.write(file.toPath(), ("valid".equals(id) ? CSV : "unrelated,columns\nnot,libreview").getBytes(StandardCharsets.UTF_8));
         } catch (IOException error) { throw new FileNotFoundException("Synthetic fixture unavailable"); }
         return ParcelFileDescriptor.open(file, ParcelFileDescriptor.MODE_READ_ONLY);
     }
