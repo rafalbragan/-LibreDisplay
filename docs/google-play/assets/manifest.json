@@ -1,0 +1,74 @@
+[
+  {
+    "file": "LibreCare-feature-1024x500.png",
+    "width": 1024,
+    "height": 500,
+    "bytes": 104853,
+    "sha256": "e9034069b8de2c39ac260386dd48cda780699e951444443a442b4fa8271e1d1f",
+    "kind": "branding-graphic"
+  },
+  {
+    "file": "LibreCare-icon-512.png",
+    "width": 512,
+    "height": 512,
+    "bytes": 184537,
+    "sha256": "4f6ccde97b7ddb03ef23b5261a774607bfb728c725d05bef68ee6ee04ad0d319",
+    "kind": "branding-graphic"
+  },
+  {
+    "file": "screen-01-import-profile.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 164673,
+    "sha256": "edb79f03b91b7878fdc2e3ac042237228a03a824e7bb2bf5fc45e3caeeff922f",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-02-import-preview.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 180517,
+    "sha256": "d42b3ea3a2f5dd4b931ad417073e9a87f57380d60e9d793a83a545011e160776",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-03-import-complete.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 188447,
+    "sha256": "7f866e5da95474f5c812332aed92462eb5218d1f8677323c307900c0a82d8123",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-04-chart-day.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 125602,
+    "sha256": "fa1fb718343ca60474e5dd4aa9af0c69692630ecf1541ca07bda70cb170476a9",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-05-chart-multiyear.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 105237,
+    "sha256": "852140643f175fcd47df9436a8fbd7596effae42300061991016707956561f3e",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-06-chart-landscape.png",
+    "width": 1920,
+    "height": 1080,
+    "bytes": 84599,
+    "sha256": "8641a13b2f1fff2001427683e6d8bffe055b7cf55d22a68dad6124086625b733",
+    "kind": "emulator-screenshot"
+  },
+  {
+    "file": "screen-07-chart-dark-large-font.png",
+    "width": 1080,
+    "height": 1920,
+    "bytes": 140843,
+    "sha256": "baeb8da3fca57c1778b56c6e28a5493b2c62b63d290c75c5cabf38e30625d3f2",
+    "kind": "emulator-screenshot"
+  }
+]

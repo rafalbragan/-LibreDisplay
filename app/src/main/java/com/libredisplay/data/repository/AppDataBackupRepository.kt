@@ -637,7 +637,8 @@ class AppDataBackupRepository(
         receivedAtIso = receivedAt.toString(),
         isValid = isValid,
         rawTrendCode = rawTrendCode,
-        createdAtIso = createdAt.toString()
+        createdAtIso = createdAt.toString(),
+        importProvenance = importProvenance
     )
 
     private fun PatientSettingsEntity.toDto(): BackupPatientSettingsDto = BackupPatientSettingsDto(
@@ -735,7 +736,8 @@ class AppDataBackupRepository(
             receivedAt = Instant.parse(receivedAtIso),
             isValid = isValid,
             rawTrendCode = rawTrendCode,
-            createdAt = Instant.parse(createdAtIso)
+            createdAt = Instant.parse(createdAtIso),
+            importProvenance = importProvenance
         )
     }.onFailure {
         DiagnosticLogger.logWarning(

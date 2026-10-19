@@ -80,6 +80,7 @@ object BackupCodec {
                     addProperty("isValid", reading.isValid)
                     addProperty("rawTrendCode", reading.rawTrendCode)
                     addProperty("createdAtIso", reading.createdAtIso)
+                    addProperty("importProvenance", reading.importProvenance)
                 }
             )
         }
@@ -364,7 +365,8 @@ object BackupCodec {
             receivedAtIso = firstString("receivedAtIso", "i") ?: timestamp,
             isValid = firstBoolean("isValid", "j") ?: true,
             rawTrendCode = firstString("rawTrendCode", "k"),
-            createdAtIso = firstString("createdAtIso", "l") ?: timestamp
+            createdAtIso = firstString("createdAtIso", "l") ?: timestamp,
+            importProvenance = firstString("importProvenance")
         )
     }
 

@@ -11,6 +11,13 @@ New-Item -ItemType Directory -Force -Path $evidence | Out-Null
 
 function Assert-Emulator {
     if ($Serial -notmatch '^emulator-[0-9]+$') { throw 'Only an explicitly named emulator is allowed.' }
+    $port = [regex]::Escape($Serial.Substring('emulator-'.Length))
+    $emulatorProcesses = @(Get-CimInstance Win32_Process | Where-Object {
+        $_.Name -like 'qemu-system-*' -and
+        $_.CommandLine -match ('-port\s+' + $port + '(?:\s|$)') -and
+        $_.CommandLine -match '-avd\s+"?LibreCare_P0_'
+    })
+    if ($emulatorProcesses.Count -ne 1) { throw 'Dedicated emulator process command line is not verified.' }
     $state = & $Adb -s $Serial get-state 2>&1
     if ($LASTEXITCODE -ne 0 -or "$state".Trim() -ne 'device') { throw 'Selected emulator is unavailable.' }
     $qemu = & $Adb -s $Serial shell getprop ro.kernel.qemu
@@ -18,6 +25,10 @@ function Assert-Emulator {
     $model = & $Adb -s $Serial shell getprop ro.product.model
     if ("$qemu".Trim() -ne '1' -or "$avd" -notmatch 'LibreCare_P0_' -or "$model" -match 'SM-|Samsung') {
         throw 'Target is not a verified dedicated LibreCare P0 emulator.'
+    }
+    $avdName = [regex]::Escape(([string]@($avd)[0]).Trim())
+    if ($emulatorProcesses[0].CommandLine -notmatch ('-avd\s+"?' + $avdName + '(?:"|\s|$)')) {
+        throw 'Emulator AVD identity differs from the verified process.'
     }
 }
 

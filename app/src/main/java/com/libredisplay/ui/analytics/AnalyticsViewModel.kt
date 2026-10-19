@@ -141,9 +141,11 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         viewModelScope.launch(exceptionHandler) {
             _uiState.update { it.copy(isLoading = true, infoMessage = null) }
             val settings = settingsRepository.loadSettings()
-            val snapshot = app.glucoseSyncRepository.loadLatestLocalSnapshot(settings.selectedPatientId)
-            val persons = snapshot?.persons.orEmpty()
-            val selectedPerson = snapshot?.selectedPerson ?: persons.firstOrNull()
+            val entities = if (settings.appMode == com.libredisplay.data.model.AppMode.DEMO) {
+                app.database.observedPersonDao().getAllDemoPersons()
+            } else app.database.observedPersonDao().getAllLivePersons()
+            val persons = entities.map { LibreConnectionPerson(it.patientId, it.displayName, it.firstName, it.lastName) }
+            val selectedPerson = persons.firstOrNull { it.patientId == settings.selectedPatientId } ?: persons.firstOrNull()
             val selectedPatientId = selectedPerson?.patientId
             val selectedName = selectedPerson?.displayName
             val storedRange = selectedPatientId?.let { localRepository.loadStoredRange(it) }
@@ -441,6 +443,9 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
         val buffer = analysisBuffer
         val customStart = state.customStart
         val customEnd = state.customEnd
+        val customReadings = if (customStart != null && customEnd != null && !customEnd.isBefore(customStart)) {
+            localRepository.loadHistory(patientId, customStart, customEnd)
+        } else emptyList()
         val matrix = withContext(Dispatchers.Default) {
             val now = Instant.now()
             AnalysisPeriod.entries.associateWith { period ->
@@ -450,10 +455,12 @@ class DataAnalysisViewModel(application: Application) : AndroidViewModel(applica
                     } else {
                         now.minus(period.duration ?: Duration.ofDays(30)) to now
                     }
-                val scoped = buffer.filter { !it.timestamp.isBefore(periodStart) && !it.timestamp.isAfter(periodEnd) }
+                val source = if (period == AnalysisPeriod.CUSTOM && customStart != null && customEnd != null) customReadings else buffer
+                val scoped = source.filter { !it.timestamp.isBefore(periodStart) && !it.timestamp.isAfter(periodEnd) }
                 AnalysisMetricsFactory.calculate(scoped, periodStart, periodEnd, settings.targetLow, settings.targetHigh, 54, 250)
             }
         }
+        if (_uiState.value.selectedPatientId != patientId || _uiState.value.customStart != customStart || _uiState.value.customEnd != customEnd) return
         _uiState.update {
             it.copy(
                 metricsByPeriod = matrix,

@@ -2,6 +2,39 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.17.0 - 2026-10-19
+
+### PL
+#### Added
+- Import LibreView CSV przez selektor pliku/folderu, jawny wybór profilu i potwierdzany podgląd.
+- Historia 2.0: przybliżanie, przesuwanie, dokładny wybór punktu i zakresy wieloletnie; materiały Google Play.
+#### Changed
+- Wersja 2.16.2/46 → 2.17.0/51; addytywna migracja Room 2→3 i zachowanie pochodzenia importu w kopiach.
+- Importowana historia jest chroniona przed rutynową retencją i dostępna dla analizy lokalnych profili.
+#### Fixed
+- Duplikaty importu nie tworzą nowych rekordów; konflikty nie nadpisują istniejących wartości; anulowanie wycofuje transakcję.
+- Zintegrowano sprawdzone P0 z PR #45. PR #43 i #38 nie zostały scalone ani zmodyfikowane.
+#### Tests
+- Parser, repozytorium, ViewModele, retencja, migracje i rzeczywiste testy gestów/selektorów emulatora; dokładne wyniki: `docs/release-report-2.17.0.md`.
+#### Artifacts
+- Debug APK i jego rozmiar/SHA-256: raport wydania. Grafiki i zrzuty: `docs/google-play/assets/manifest.json`.
+- Release APK/AAB oraz gotowość Google Play: **HOLD**, brak zweryfikowanego certyfikatu upload i aktywnej konfiguracji podpisu w worktree.
+
+### EN
+#### Added
+- LibreView CSV file/folder import with explicit profile selection, confirmation and preview.
+- Multi-year history explorer with pinch/pan, exact point selection and Play store materials.
+#### Changed
+- Version 2.16.2/46 → 2.17.0/51; additive Room 2→3 migration and backup provenance round-trip.
+- Imported history survives routine retention and is available to local-profile analysis.
+#### Fixed
+- Idempotent import, no conflicting overwrite, atomic cancellation rollback; reviewed P0 recovery integration from PR #45.
+#### Tests
+- Parser/repository/ViewModel/retention/migration and real emulator picker/gesture coverage; exact evidence in `docs/release-report-2.17.0.md`.
+#### Artifacts
+- Debug APK metadata in the release report; graphics and genuine captures in `docs/google-play/assets/manifest.json`.
+- Signed release APK/AAB and Play readiness remain **HOLD**. No merge, auto-merge or publication.
+
 ## 2.16.2 - 2026-10-16
 
 ### PL

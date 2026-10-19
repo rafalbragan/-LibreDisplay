@@ -161,10 +161,10 @@ fun MonitoringScreen(
     }
 
     if (historyContext != null) {
-        FullScreenGlucoseChartScreen(
-            onNavigateBack = { historyContext = null },
-            viewModel = viewModel,
-            initialRange = historyContext!!.timeRange.toHistoryTimeRange()
+        HistoryExplorerScreen(
+            onBack = { historyContext = null },
+            initialPatientId = state.selectedPatientId,
+            initialWindowMillis = historyContext!!.timeRange.toHistoryTimeRange().duration.toMillis()
         )
         return
     }

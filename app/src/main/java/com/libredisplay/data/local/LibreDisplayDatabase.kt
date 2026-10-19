@@ -11,7 +11,7 @@ import androidx.room.TypeConverters
         SyncRunEntity::class,
         PatientSettingsEntity::class
     ],
-    version = 2,
+    version = 3,
     exportSchema = true
 )
 @TypeConverters(RoomConverters::class)
@@ -23,7 +23,7 @@ abstract class LibreDisplayDatabase : RoomDatabase() {
 
     companion object {
         /** Keep this in sync with the @Database(version = …) annotation above. */
-        const val DB_VERSION = 2
+        const val DB_VERSION = 3
         const val DB_NAME = "libredisplay.db"
     }
 }

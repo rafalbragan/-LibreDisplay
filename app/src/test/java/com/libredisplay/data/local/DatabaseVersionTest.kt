@@ -25,10 +25,10 @@ import org.junit.Test
 class DatabaseVersionTest {
 
     @Test
-    fun currentVersionIs2() {
+    fun currentVersionIs3() {
         assertEquals(
-            "DB_VERSION must be 2 after adding sourceAccountId column",
-            2,
+            "DB_VERSION must be 3 after adding import provenance",
+            3,
             LibreDisplayDatabase.DB_VERSION
         )
     }

@@ -55,8 +55,8 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 35
-        versionCode = 46
-        versionName = "2.16.2"
+        versionCode = 51
+        versionName = "2.17.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
@@ -114,6 +114,7 @@ android {
     sourceSets {
         getByName("test").java.srcDir("src/sharedTest/java")
         getByName("androidTest").java.srcDir("src/sharedTest/java")
+        getByName("androidTest").assets.srcDir("schemas")
     }
 
 
@@ -129,6 +130,7 @@ ksp {
 }
 
 dependencies {
+    implementation("com.univocity:univocity-parsers:2.9.1")
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.lifecycle.runtime.ktx)
     implementation(libs.androidx.lifecycle.viewmodel.compose)
@@ -171,6 +173,7 @@ dependencies {
     testImplementation("io.github.takahirom.roborazzi:roborazzi-compose:1.42.0")
     androidTestImplementation(libs.androidx.test.ext.junit)
     androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation("androidx.test.uiautomator:uiautomator:2.3.0")
     androidTestImplementation(libs.androidx.test.core.ktx)
     androidTestImplementation(platform(libs.androidx.compose.bom))
     androidTestImplementation(libs.androidx.ui.test.junit4)

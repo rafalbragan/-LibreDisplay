@@ -83,12 +83,6 @@ class LibreDisplayApp : Application() {
             LibreDisplayDatabase.DB_NAME
         )
             .addMigrations(*ALL_MIGRATIONS)
-            .apply {
-                if (BuildConfig.DEBUG) {
-                    // Only allow destructive recreation in debug builds as a last resort
-                    fallbackToDestructiveMigration()
-                }
-            }
             .build()
 
         DiagnosticLogger.logInfo("DB", "Database opened successfully")
