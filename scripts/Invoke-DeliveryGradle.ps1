@@ -27,15 +27,23 @@ $registration = (& git -C $root worktree list --porcelain) -join "`n"
 if ($LASTEXITCODE -ne 0 -or -not $registration.Contains("worktree $($root.Replace('\', '/'))`nHEAD $head`nbranch refs/heads/$branch")) {
     throw 'STOP: worktree registration mismatch'
 }
-$env:JAVA_HOME = 'C:\Program Files\Microsoft\jdk-17.0.20.101-hotspot'
-$env:ANDROID_HOME = 'C:\Users\SG0216827\IdeaProjects\LibreDisplay\.android-sdk'
+$jdks = @(Get-ChildItem -LiteralPath (Join-Path $root '.delivery-evidence\jdk21') -Directory | Where-Object {
+    (Test-Path -LiteralPath (Join-Path $_.FullName 'bin\java.exe')) -and
+    ((Get-Content -LiteralPath (Join-Path $_.FullName 'release') -Raw) -match 'JAVA_VERSION="21\.')
+})
+if ($jdks.Count -ne 1) { throw 'STOP: one worktree-local JDK 21 is required for Robolectric API 36' }
+$env:JAVA_HOME = $jdks[0].FullName
+$env:ANDROID_HOME = Join-Path $root '.android-sdk'
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
-# Signing is intentionally not imported: the registered Play upload certificate is unavailable.
+if (-not (Test-Path -LiteralPath (Join-Path $env:ANDROID_HOME 'platforms\android-36\android.jar'))) {
+    throw 'STOP: worktree-local API 36 SDK is missing'
+}
+# This test/debug launcher intentionally never imports release signing credentials.
 $logs = Join-Path $root '.delivery-evidence'
 New-Item -ItemType Directory -Path $logs -Force | Out-Null
 $boundary = "BOUNDARY_PASS cwd=$root gitTop=$top branch=$branch head=$head processWorkingDirectory=$root tasks=$Tasks"
 $boundary | Tee-Object -FilePath (Join-Path $logs "$Label-boundary.log")
-$command = '/d /s /c ""' + $root + '\gradlew.bat" ' + $Tasks + ' --console=plain"'
+$command = '/d /s /c ""' + $root + '\gradlew.bat" -p "' + $root + '" ' + $Tasks + ' --console=plain"'
 $process = Start-Process -FilePath 'C:\Windows\System32\cmd.exe' -ArgumentList $command -WorkingDirectory $root -NoNewWindow -PassThru -Wait -RedirectStandardOutput (Join-Path $logs "$Label-stdout.log") -RedirectStandardError (Join-Path $logs "$Label-stderr.log")
 Get-Content -LiteralPath (Join-Path $logs "$Label-stdout.log")
 Get-Content -LiteralPath (Join-Path $logs "$Label-stderr.log")

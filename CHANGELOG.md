@@ -2,6 +2,34 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.17.2 - 2026-10-19
+
+### PL
+#### Added
+- Testy API 36: limit czasu usługi dataSync, systemowe gesty wstecz i insets; zabezpieczony launcher dedykowanego emulatora Android 16.
+#### Changed
+- 2.17.1/52 → 2.17.2/53 (dostępność 53 potwierdzona przez właściciela); compileSdk/targetSdk 36, AGP 8.10.1, Gradle 8.11.1, Robolectric 4.16.1, runtime testów JDK 21.
+- Jawne ostrzeżenie lint o istniejącym braku DAL dla opcjonalnych passkeys; pozostałe błędy nadal blokują build.
+#### Fixed
+- Docelowe API 35 powodujące odrzucenie w Play oraz brak bezpiecznego zakończenia FGS po limicie dataSync.
+#### Tests
+- JVM 617/617; lint 0 błędów. Dokładne wyniki emulatora API 36, migracji i pozostałych kontroli: `docs/release-report-2.17.2.md`.
+#### Artifacts
+- Weryfikacja podpisanych AAB/APK i debug APK, pełne ścieżki, rozmiary i SHA-256: raport wydania. Nie opublikowano w Play.
+
+### EN
+#### Added
+- API 36 foreground-timeout, system-back gesture and inset regressions; guarded dedicated Android 16 emulator runner.
+#### Changed
+- 2.17.1/52 → 2.17.2/53 (owner-confirmed availability); compile/target SDK 36 with compatible AGP/Gradle/Robolectric and JDK 21 test runtime.
+- Keep the pre-existing optional-passkey DAL prerequisite visible as a lint warning; other errors still fail the build.
+#### Fixed
+- Reported Play target-35 rejection and missing dataSync foreground-service timeout shutdown.
+#### Tests
+- JVM 617/617; lint zero errors. Exact API 36 instrumentation/migration evidence: `docs/release-report-2.17.2.md`.
+#### Artifacts
+- Signed AAB/APK and debug APK verification, paths, sizes and hashes are recorded in the release report. No Play publication.
+
 ## 2.17.1 - 2026-10-19
 
 ### PL

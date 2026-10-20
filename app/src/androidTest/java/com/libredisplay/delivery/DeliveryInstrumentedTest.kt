@@ -184,6 +184,34 @@ class DeliveryInstrumentedTest {
         assertEquals(7 * 86_400_000L, duration())
     }
 
+    @Test fun systemBackGestureReturnsFromImporterToPrivacy() {
+        rule.setContent { LibreDisplayTheme { PrivacyDataScreen({}, {}, {}, {}) } }
+        rule.onNodeWithText("Import LibreView CSV").performClick()
+        rule.onNodeWithTag("csv-import-screen").assertIsDisplayed()
+        device.swipe(1, device.displayHeight / 2, device.displayWidth / 3, device.displayHeight / 2, 30)
+        rule.waitUntil(10_000) { rule.onAllNodesWithTag("csv-import-screen").fetchSemanticsNodes().isEmpty() }
+        rule.onNodeWithText("Import LibreView CSV").assertIsDisplayed()
+    }
+
+    @Test fun historyBackGestureAndSystemInsetsRemainCorrect() {
+        var backCount = 0
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({ backCount++ }, A) } }
+        waitForChart()
+        val decor = rule.activity.window.decorView
+        val insets = requireNotNull(androidx.core.view.ViewCompat.getRootWindowInsets(decor))
+            .getInsets(androidx.core.view.WindowInsetsCompat.Type.systemBars() or
+                androidx.core.view.WindowInsetsCompat.Type.displayCutout())
+        listOf(rule.onNodeWithText("Wstecz"), rule.onNodeWithTag("history-chart"),
+            rule.onNodeWithTag("history-latest")).forEach { node ->
+            val bounds = node.fetchSemanticsNode().boundsInWindow
+            assertTrue("Control overlaps status bar/cutout", bounds.top >= insets.top - 1)
+            assertTrue("Control overlaps navigation bar", bounds.bottom <= decor.height - insets.bottom + 1)
+        }
+        device.swipe(1, device.displayHeight / 2, device.displayWidth / 3, device.displayHeight / 2, 30)
+        rule.waitUntil(10_000) { backCount == 1 }
+        rule.runOnIdle { assertFalse(rule.activity.isFinishing) }
+    }
+
     @Test fun darkThemeAndLargeFontKeepHistoryReadable() {
         rule.setContent {
             val config = android.content.res.Configuration(androidx.compose.ui.platform.LocalConfiguration.current).apply {

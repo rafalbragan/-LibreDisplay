@@ -49,14 +49,14 @@ val hasReleaseSigningConfig = missingReleaseSigningProps.isEmpty() && releaseSto
 
 android {
     namespace = "com.libredisplay"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.libredisplay"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 52
-        versionName = "2.17.1"
+        targetSdk = 36
+        versionCode = 53
+        versionName = "2.17.2"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())

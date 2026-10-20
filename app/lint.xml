@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<lint>
+    <!-- Existing external prerequisite, documented in release-report-2.5.0.md:
+         librecare.app ownership/DAL has not been verified. Do not invent an
+         affiliation with Abbott or claim passkeys work. Keep this finding visible;
+         native password storage and the biometric/PIN fallback remain unchanged. -->
+    <issue id="CredManMissingDal" severity="warning" />
+</lint>
