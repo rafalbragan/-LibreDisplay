@@ -11,9 +11,27 @@ starting. Nothing here authorizes implementation by itself.
 - [x] Real module inventory from the codebase (`MODULE_INVENTORY.md`, `MODULE_MODE_MATRIX.md`).
 - [x] Requirements Collector schemas + templates + examples.
 - [x] Deterministic `product_cli.py` (`validate`, `summary`) + `product-quality` CI.
-- [ ] (Not started) Populate real observations from an exploratory review phase.
+- [x] Evidence-aligned feature inventory for the current product baseline: `Futures` screen shows real delivered functionality (monitoring, chart/history, CSV import, analytics, profiles, privacy) and separately marks in-development / under-review items.
+- [ ] Populate additional exploratory observations from a new review cycle when a human explicitly authorizes the next discovery step.
 
 Exit criteria: `product validate` green; Android CI and Firebase Test Lab baseline unchanged.
+
+## Current evidence snapshot (verified against PR #46 / LibreCare 2.17.2)
+
+- Implemented and verified in target baseline:
+  - monitoring / glucose overview
+  - chart history / full-screen history interaction
+  - LibreView CSV import
+  - analytics and statistics
+  - monitored-person profiles
+  - privacy/data settings surface
+- Active work in progress:
+  - backup and restore integrity verification
+  - mode architecture for caregiver / senior / clinician
+- Under review / needs PO decision:
+  - alerts and refresh behavior
+  - 12h metrics and TIR accuracy review
+  - product mode selection persistence
 
 ## Phase 2 — Exploratory review & backlog population (requires human go-ahead)
 
@@ -24,7 +42,7 @@ Exit criteria: `product validate` green; Android CI and Firebase Test Lab baseli
 ## Phase 3 — Mode architecture groundwork (requires human go-ahead)
 
 - Introduce `UserMode` + `ModulePresentationPolicyProvider` in a presentation layer.
-- CAREGIVER policy reproduces today's UI (behaviour-preserving); tests stay green.
+- CAREGIVER policy reproduces today's UI (behavior-preserving); tests stay green.
 
 ## Phase 4 — Per-module mode policies (requires human go-ahead, per module)
 
@@ -41,4 +59,3 @@ Exit criteria: `product validate` green; Android CI and Firebase Test Lab baseli
   (see `SAFETY_GUARDRAILS.md` G1/G4). Not on this roadmap as a normal feature.
 
 `FUTURE` items are ideas, not commitments, and never described as existing functionality.
-
