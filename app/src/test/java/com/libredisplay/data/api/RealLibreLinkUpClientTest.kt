@@ -11,6 +11,7 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.fail
 import org.junit.Test
 import retrofit2.Response
+import java.time.Instant
 
 class RealLibreLinkUpClientTest {
 
@@ -498,6 +499,202 @@ class RealLibreLinkUpClientTest {
         assertEquals(listOf("patient-1", "patient-1"), http.graphPatientIds)
     }
 
+    @Test
+    fun getConnections_usesShortLivedCache_andAvoidsDuplicateRequest() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(listOf(Response.success(json("""
+                {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+            """))))
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        val first = client.getConnections()
+        val second = client.getConnections()
+
+        assertEquals(1, http.connectionsCalls)
+        assertEquals(first, second)
+        assertEquals("patient-1", second.first().patientId)
+    }
+
+    @Test
+    fun importSession_invalidatesConnectionsCache_andFetchesFreshConnections() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-2","firstName":"Tata"}]}
+                    """))
+                )
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+        val exported = client.exportSession()
+        assertNotNull(exported)
+
+        val first = client.getConnections()
+        client.importSession(exported!!)
+        val second = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-1", first.first().patientId)
+        assertEquals("patient-2", second.first().patientId)
+    }
+
+    @Test
+    fun getConnections_cacheExpiresAfter30Seconds_andRefreshes() = runTest {
+        var now = Instant.parse("2026-10-16T12:00:00Z")
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-2","firstName":"Tata"}]}
+                    """))
+                )
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http, nowProvider = { now })
+        client.login("a@b.com", "secret", "EU")
+
+        val first = client.getConnections()
+        now = now.plusSeconds(31)
+        val second = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-1", first.first().patientId)
+        assertEquals("patient-2", second.first().patientId)
+    }
+
+    @Test
+    fun clearSession_invalidatesConnectionsCache_andDoesNotLeakPreviousSessionData() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"abc-1"},"user":{"id":"user-1"}}}
+                    """)),
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"abc-2"},"user":{"id":"user-2"}}}
+                    """))
+                )
+            ),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-old","firstName":"Old"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-new","firstName":"New"}]}
+                    """))
+                )
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+        val first = client.getConnections()
+
+        client.clearSession()
+        client.login("a@b.com", "secret", "EU")
+        val second = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-old", first.first().patientId)
+        assertEquals("patient-new", second.first().patientId)
+    }
+
+    @Test
+    fun getConnections_afterHttp429_retriesOnNextCall_andReturnsFreshData() = runTest {
+        val error = """{"status":429,"retry_after":30}"""
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(listOf(Response.success(json("""
+                {"status":0,"data":{"authTicket":{"token":"abc"},"user":{"id":"user-1"}}}
+            """)))),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.error(429, error.toResponseBody("application/json".toMediaType())),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-1","firstName":"Mama"}]}
+                    """))
+                )
+            )
+        )
+        val client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpHttpException")
+        } catch (ex: LibreLinkUpHttpException) {
+            assertEquals(429, ex.statusCode)
+            assertEquals(30, ex.retryAfterSeconds)
+        }
+
+        val persons = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-1", persons.first().patientId)
+    }
+
+    @Test
+    fun getConnections_whenSessionChangesDuringRequest_dropsStaleResult_andFetchesFreshOnNextCall() = runTest {
+        val http = FakeHttp(
+            loginResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"token-1"},"user":{"id":"user-1"}}}
+                    """)),
+                    Response.success(json("""
+                        {"status":0,"data":{"authTicket":{"token":"token-2"},"user":{"id":"user-2"}}}
+                    """))
+                )
+            ),
+            connectionsResponses = ArrayDeque(
+                listOf(
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-old","firstName":"Old"}]}
+                    """)),
+                    Response.success(json("""
+                        {"data":[{"patientId":"patient-new","firstName":"New"}]}
+                    """))
+                )
+            )
+        )
+        lateinit var client: RetrofitLibreLinkUpClient
+        client = RetrofitLibreLinkUpClient(http = http)
+        client.login("a@b.com", "secret", "EU")
+
+        http.onGetConnections = { client.clearSession() }
+
+        try {
+            client.getConnections()
+            fail("Expected LibreLinkUpException")
+        } catch (_: LibreLinkUpException) {
+        }
+
+        http.onGetConnections = null
+        client.login("a@b.com", "secret", "EU")
+        val persons = client.getConnections()
+
+        assertEquals(2, http.connectionsCalls)
+        assertEquals("patient-new", persons.first().patientId)
+    }
+
     private class FakeHttp(
         val loginResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),
         val connectionsResponses: ArrayDeque<Response<JsonObject>> = ArrayDeque(),
@@ -506,6 +703,7 @@ class RealLibreLinkUpClientTest {
         var loginCalls = 0
         var connectionsCalls = 0
         var graphCalls = 0
+        var onGetConnections: (() -> Unit)? = null
         val loginBaseUrls = mutableListOf<String>()
         val graphTokens = mutableListOf<String>()
         val graphAccountIds = mutableListOf<String>()
@@ -519,6 +717,7 @@ class RealLibreLinkUpClientTest {
 
         override suspend fun getConnections(baseUrl: String, token: String, accountIdHash: String): Response<JsonObject> {
             connectionsCalls += 1
+            onGetConnections?.invoke()
             return connectionsResponses.removeFirst()
         }
 
