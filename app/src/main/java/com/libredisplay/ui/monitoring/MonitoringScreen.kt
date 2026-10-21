@@ -254,6 +254,7 @@ fun MonitoringScreen(
                             onPersonSelected = viewModel::onPersonSelected,
                             isDemoMode = state.isDemoMode
                         )
+                        MikaDemoDataBanner(selectedPatientId = state.selectedPatientId)
 
                         if (reading != null) {
                             if (isLandscapeHome) {
