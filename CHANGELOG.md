@@ -2,6 +2,98 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.17.2 - 2026-10-19
+
+### PL
+#### Added
+- Testy API 36: limit czasu usługi dataSync, systemowe gesty wstecz i insets; zabezpieczony launcher dedykowanego emulatora Android 16.
+#### Changed
+- 2.17.1/52 → 2.17.2/53 (dostępność 53 potwierdzona przez właściciela); compileSdk/targetSdk 36, AGP 8.10.1, Gradle 8.11.1, Robolectric 4.16.1, runtime testów JDK 21.
+- Jawne ostrzeżenie lint o istniejącym braku DAL dla opcjonalnych passkeys; pozostałe błędy nadal blokują build.
+#### Fixed
+- Docelowe API 35 powodujące odrzucenie w Play oraz brak bezpiecznego zakończenia FGS po limicie dataSync.
+#### Tests
+- JVM 617/617; lint 0 błędów. Dokładne wyniki emulatora API 36, migracji i pozostałych kontroli: `docs/release-report-2.17.2.md`.
+#### Artifacts
+- Weryfikacja podpisanych AAB/APK i debug APK, pełne ścieżki, rozmiary i SHA-256: raport wydania. Nie opublikowano w Play.
+
+### EN
+#### Added
+- API 36 foreground-timeout, system-back gesture and inset regressions; guarded dedicated Android 16 emulator runner.
+#### Changed
+- 2.17.1/52 → 2.17.2/53 (owner-confirmed availability); compile/target SDK 36 with compatible AGP/Gradle/Robolectric and JDK 21 test runtime.
+- Keep the pre-existing optional-passkey DAL prerequisite visible as a lint warning; other errors still fail the build.
+#### Fixed
+- Reported Play target-35 rejection and missing dataSync foreground-service timeout shutdown.
+#### Tests
+- JVM 617/617; lint zero errors. Exact API 36 instrumentation/migration evidence: `docs/release-report-2.17.2.md`.
+#### Artifacts
+- Signed AAB/APK and debug APK verification, paths, sizes and hashes are recorded in the release report. No Play publication.
+
+## 2.17.1 - 2026-10-19
+
+### PL
+#### Added
+- Syntetyczne regresje z dokładnymi polskimi nagłówkami Abbott i kolumną ketonów mmol/L.
+#### Changed
+- Wersja 2.17.0/51 → 2.17.1/52; applicationId `com.libredisplay` bez zmian. Chart 2.0 i schemat Room bez zmian.
+#### Fixed
+- Obsługa „Znacznik czasu w urządzeniu”, „Rodzaj zapisu”, „Historyczne stężenia glukozy mg/dL” i „Stężenie glukozy na podstawie skanowania mg/dL”, z zachowaniem wcześniejszych wariantów.
+- Jednostki sprawdzane wyłącznie w wymaganych kolumnach glukozy; ketony mmol/L nie blokują importu mg/dL.
+- Metadane podglądu usunięte z automatycznego tekstu diagnostycznego podsumowania; fixture selektora nie używa starej kopii z pamięci podręcznej.
+#### Tests
+- RED: 19 testów parsera, 6 oczekiwanych niepowodzeń. GREEN: 19/19. Pełne wyniki JVM, lint, migracji, retencji i emulatora: `docs/release-report-2.17.1.md`.
+#### Artifacts
+- `release-artifacts/LibreCare-2.17.1-debug.apk`; rozmiar i SHA-256 w raporcie wydania.
+- Release APK/AAB: HOLD — brak konfiguracji podpisu oraz potwierdzenia zarejestrowanego klucza upload i wersji w Play Console. Prywatny plik nie był udostępniony ani testowany.
+
+### EN
+#### Added
+- Synthetic regressions using exact Polish Abbott headers and an unrelated mmol/L ketone column.
+#### Changed
+- Version 2.17.0/51 → 2.17.1/52; `com.libredisplay`, Chart 2.0 and Room schema retained.
+#### Fixed
+- Exact Abbott timestamp/type/historical/scan aliases supported alongside existing variants; mg/dL validation restricted to glucose columns, not ketones.
+- Preview metadata redacted from automatic summary diagnostics; document-picker fixture refreshed instead of reusing stale cached headers.
+#### Tests
+- RED: 19 parser tests, 6 expected failures. GREEN: 19/19. Full JVM/lint/migration/retention/emulator evidence: `docs/release-report-2.17.1.md`.
+#### Artifacts
+- `release-artifacts/LibreCare-2.17.1-debug.apk`; size and SHA-256 in the release report.
+- Release APK/AAB: HOLD — no active signing configuration or verified registered upload certificate/Play version inventory. Private-file integration remains unverified.
+
+## 2.17.0 - 2026-10-19
+
+### PL
+#### Added
+- Import LibreView CSV przez selektor pliku/folderu, jawny wybór profilu i potwierdzany podgląd.
+- Historia 2.0: przybliżanie, przesuwanie, dokładny wybór punktu i zakresy wieloletnie; materiały Google Play.
+#### Changed
+- Wersja 2.16.2/46 → 2.17.0/51; addytywna migracja Room 2→3 i zachowanie pochodzenia importu w kopiach.
+- Importowana historia jest chroniona przed rutynową retencją i dostępna dla analizy lokalnych profili.
+#### Fixed
+- Duplikaty importu nie tworzą nowych rekordów; konflikty nie nadpisują istniejących wartości; anulowanie wycofuje transakcję.
+- Zintegrowano sprawdzone P0 z PR #45. PR #43 i #38 nie zostały scalone ani zmodyfikowane.
+#### Tests
+- Parser, repozytorium, ViewModele, retencja, migracje i rzeczywiste testy gestów/selektorów emulatora; dokładne wyniki: `docs/release-report-2.17.0.md`.
+#### Artifacts
+- Debug APK i jego rozmiar/SHA-256: raport wydania. Grafiki i zrzuty: `docs/google-play/assets/manifest.json`.
+- Release APK/AAB oraz gotowość Google Play: **HOLD**, brak zweryfikowanego certyfikatu upload i aktywnej konfiguracji podpisu w worktree.
+
+### EN
+#### Added
+- LibreView CSV file/folder import with explicit profile selection, confirmation and preview.
+- Multi-year history explorer with pinch/pan, exact point selection and Play store materials.
+#### Changed
+- Version 2.16.2/46 → 2.17.0/51; additive Room 2→3 migration and backup provenance round-trip.
+- Imported history survives routine retention and is available to local-profile analysis.
+#### Fixed
+- Idempotent import, no conflicting overwrite, atomic cancellation rollback; reviewed P0 recovery integration from PR #45.
+#### Tests
+- Parser/repository/ViewModel/retention/migration and real emulator picker/gesture coverage; exact evidence in `docs/release-report-2.17.0.md`.
+#### Artifacts
+- Debug APK metadata in the release report; graphics and genuine captures in `docs/google-play/assets/manifest.json`.
+- Signed release APK/AAB and Play readiness remain **HOLD**. No merge, auto-merge or publication.
+
 ## 2.16.2 - 2026-10-16
 
 ### PL

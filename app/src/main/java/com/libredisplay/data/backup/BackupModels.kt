@@ -56,7 +56,8 @@ data class BackupReadingDto(
     val receivedAtIso: String,
     val isValid: Boolean = true,
     val rawTrendCode: String? = null,
-    val createdAtIso: String
+    val createdAtIso: String,
+    val importProvenance: String? = null
 )
 
 data class BackupPatientSettingsDto(

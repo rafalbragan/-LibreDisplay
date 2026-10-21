@@ -20,11 +20,18 @@ val MIGRATION_1_2 = object : Migration(1, 2) {
     }
 }
 
+val MIGRATION_2_3 = object : Migration(2, 3) {
+    override fun migrate(database: SupportSQLiteDatabase) {
+        database.execSQL("ALTER TABLE glucose_readings ADD COLUMN importProvenance TEXT")
+    }
+}
+
 /**
  * All registered migrations, in order. Register every migration here so the
  * database builder can pick them all up with a single spread call.
  */
 val ALL_MIGRATIONS = arrayOf(
-    MIGRATION_1_2
+    MIGRATION_1_2,
+    MIGRATION_2_3
 )
 

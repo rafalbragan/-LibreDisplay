@@ -87,6 +87,21 @@ fun PrivacyDataScreen(
     onRestorePickerConsumed: () -> Unit = {},
     viewModel: PrivacyDataViewModel = viewModel()
 ) {
+    var showCsvImport by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var showLocalHistory by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    var importedPatientId by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<String?>(null) }
+    if (showLocalHistory) {
+        com.libredisplay.ui.monitoring.HistoryExplorerScreen(
+            onBack = { showLocalHistory = false }, initialPatientId = importedPatientId
+        )
+        return
+    }
+    if (showCsvImport) {
+        CsvImportScreen(onBack = { showCsvImport = false }, onHistory = {
+            importedPatientId = it; showLocalHistory = true
+        })
+        return
+    }
     val context = LocalContext.current
     val event by viewModel.event.collectAsState()
     val backupInfo by viewModel.backupInfo.collectAsState()
@@ -152,6 +167,13 @@ fun PrivacyDataScreen(
             }
 
             Text("LibreCare zapisuje część danych lokalnie na tym urządzeniu.", fontSize = 13.sp)
+
+            Button(onClick = { showCsvImport = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Import LibreView CSV")
+            }
+            OutlinedButton(onClick = { importedPatientId = null; showLocalHistory = true }, modifier = Modifier.fillMaxWidth()) {
+                Text("Przeglądaj lokalną historię")
+            }
 
             OutlinedButton(
                 modifier = Modifier.fillMaxWidth(),

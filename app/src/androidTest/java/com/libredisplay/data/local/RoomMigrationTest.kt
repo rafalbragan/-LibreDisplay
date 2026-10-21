@@ -18,6 +18,29 @@ import java.time.Instant
 @RunWith(AndroidJUnit4::class)
 class RoomMigrationTest {
 
+    @org.junit.Rule
+    @JvmField
+    val migrationHelper = androidx.room.testing.MigrationTestHelper(
+        androidx.test.platform.app.InstrumentationRegistry.getInstrumentation(), LibreDisplayDatabase::class.java
+    )
+
+    @Test
+    fun migrate2To3_validatesFullSchemaAndPreservesHistory() {
+        migrationHelper.createDatabase(TEST_DB, 2).apply {
+            execSQL("INSERT INTO glucose_readings (id,patientId,timestamp,valueMgDl,source,receivedAt,isValid,createdAt) VALUES ('csv','local-csv-demo',1588320000000,123,'LibreViewCSV',1588320000000,1,1588320000000)")
+            close()
+        }
+        migrationHelper.runMigrationsAndValidate(TEST_DB, 3, true, MIGRATION_2_3).apply {
+            query("SELECT valueMgDl, source, importProvenance FROM glucose_readings WHERE id='csv'").use {
+                assertEquals(true, it.moveToFirst())
+                assertEquals(123, it.getInt(0))
+                assertEquals("LibreViewCSV", it.getString(1))
+                assertNull(it.getString(2))
+            }
+            close()
+        }
+    }
+
     private val context: Context
         get() = ApplicationProvider.getApplicationContext()
 

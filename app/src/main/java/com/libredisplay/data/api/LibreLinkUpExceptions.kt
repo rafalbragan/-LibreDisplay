@@ -5,10 +5,16 @@ open class LibreLinkUpException(
     cause: Throwable? = null
 ) : Exception(message, cause)
 
-class NonRetryableLibreLinkUpException(
+open class NonRetryableLibreLinkUpException(
     message: String,
     cause: Throwable? = null
 ) : LibreLinkUpException(message, cause)
+
+class LibreAuthenticationException(message: String) : NonRetryableLibreLinkUpException(message)
+
+class MissingGlucoseMeasurementException : NonRetryableLibreLinkUpException(
+    "Brak aktualnego pomiaru glukozy w odpowiedzi graph"
+)
 
 class LibreResponseDecodingException(
     message: String,

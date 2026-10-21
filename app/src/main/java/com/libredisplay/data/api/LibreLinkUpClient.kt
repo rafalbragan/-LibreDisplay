@@ -106,17 +106,30 @@ class RetrofitLibreLinkUpClient(
         val graphBody = requireJsonSuccess(step = "GRAPH", response = graphResponse)
 
         val measurement = findCurrentMeasurement(graphBody)
-            ?: throw NonRetryableLibreLinkUpException("Brak aktualnego pomiaru glukozy w odpowiedzi graph")
+            ?: run {
+                val data = graphBody.objectAt("data")
+                val connection = data?.objectAt("connection") ?: graphBody.objectAt("connection")
+                val graph = data?.get("graphData") ?: connection?.get("graphData") ?: graphBody.get("graphData")
+                val malformedMeasurement = listOfNotNull(connection, data).any { container ->
+                    listOf("glucoseMeasurement", "glucoseItem").any { key ->
+                        container.has(key) && !container.get(key).isJsonNull
+                    }
+                }
+                if (graphBody.intAt("status") == 0 && connection != null &&
+                    graph?.isJsonArray == true && !malformedMeasurement
+                ) throw MissingGlucoseMeasurementException()
+                throw LibreResponseDecodingException("Nieprawidłowa struktura odpowiedzi wykresu LibreLinkUp.")
+            }
 
         val currentValue = measurement.intAt("ValueInMgPerDl")
             ?: measurement.intAt("Value")
             ?: measurement.intAt("value")
-            ?: throw NonRetryableLibreLinkUpException("Brak aktualnej wartosci glukozy w graph")
+            ?: throw LibreResponseDecodingException("Brak aktualnej wartości glukozy w odpowiedzi wykresu.")
         val currentTimestamp = parseTimestamp(
             measurement.stringAt("Timestamp")
                 ?: measurement.stringAt("FactoryTimestamp")
                 ?: measurement.stringAt("timestamp")
-        ) ?: Instant.now()
+        ) ?: throw LibreResponseDecodingException("Nieprawidłowy czas pomiaru w odpowiedzi wykresu.")
         val trendCode = measurement.intAt("TrendArrow") ?: measurement.intAt("trendArrow") ?: 0
         val trend = GlucoseTrend.fromApiCode(trendCode)
         val currentPoint = GlucoseHistoryPoint(currentValue, currentTimestamp, trend)
@@ -264,14 +277,14 @@ class RetrofitLibreLinkUpClient(
                 val detail = "LibreLinkUp odrzucil logowanie. Nie oznacza to jednoznacznie, ze wpisane haslo jest bledne. Kolejna proba nie zostanie wykonana automatycznie."
                 DiagnosticStatus.setLogin(ok = false, detail = detail)
                 DiagnosticLogger.logInfo("LibreLinkUpClient", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                throw NonRetryableLibreLinkUpException(detail)
+                throw LibreAuthenticationException(detail)
             }
 
             if (status == 4) {
                 val detail = "Logowanie wymaga dodatkowej akcji konta (np. akceptacji Terms/Privacy lub weryfikacji)."
                 DiagnosticStatus.setLogin(ok = false, detail = detail)
                 DiagnosticLogger.logInfo("LibreLinkUpClient", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                throw NonRetryableLibreLinkUpException(detail)
+                throw LibreAuthenticationException(detail)
             }
 
             val redirect = body.objectAt("data")?.boolAt("redirect") == true
@@ -288,13 +301,13 @@ class RetrofitLibreLinkUpClient(
                 ?: run {
                     DiagnosticLogger.logJsonSchema("LOGIN TOKEN MISSING", body)
                     DiagnosticLogger.logInfo("LibreLinkUpClient", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                    throw NonRetryableLibreLinkUpException("Brak tokenu w sciezce data.authTicket.token")
+                    throw LibreResponseDecodingException("Brak tokenu w ścieżce data.authTicket.token")
                 }
             val userId = body.stringAt("data", "user", "id")
                 ?: run {
                     DiagnosticLogger.logJsonSchema("LOGIN USER ID MISSING", body)
                     DiagnosticLogger.logInfo("LibreLinkUpClient", "LOGIN ATTEMPT END attemptId=$attemptId result=failure")
-                    throw NonRetryableLibreLinkUpException("Brak user.id w sciezce data.user.id")
+                    throw LibreResponseDecodingException("Brak user.id w ścieżce data.user.id")
                 }
 
             val accountIdHash = sha256(userId)
@@ -374,11 +387,11 @@ class RetrofitLibreLinkUpClient(
             contentType = response.headers()["Content-Type"]
         )
         val logicalStatus = body.intAt("status")
-        if (logicalStatus in setOf(400, 401, 403, 429, 430, 500)) {
+        if (logicalStatus in setOf(400, 401, 403, 429, 430) || logicalStatus in 500..599) {
             val rawBody = body.toString()
             val retryResolution = resolveRetryAfterSeconds(
                 statusCode = logicalStatus ?: response.code(),
-                headerRetryAfter = null,
+                headerRetryAfter = response.headers()["Retry-After"],
                 rawBody = rawBody
             )
             if (logicalStatus == 429) {

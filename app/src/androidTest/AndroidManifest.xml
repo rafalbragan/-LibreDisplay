@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <application>
+        <!-- Synthetic, test-APK-only SAF provider. Never included in release/debug app APKs. -->
+        <provider android:name="com.libredisplay.delivery.SyntheticCsvDocumentsProvider"
+            android:authorities="com.libredisplay.test.synthetic.csv"
+            android:exported="true" android:grantUriPermissions="true"
+            android:permission="android.permission.MANAGE_DOCUMENTS">
+            <intent-filter><action android:name="android.content.action.DOCUMENTS_PROVIDER" /></intent-filter>
+        </provider>
+    </application>
+</manifest>
+

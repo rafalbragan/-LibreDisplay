@@ -2,6 +2,9 @@
 .gradle/
 build/
 **/build/
+.kotlin/
+.delivery-evidence/
+release-artifacts/
 
 # Android / local SDK config
 local.properties

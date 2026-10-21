@@ -161,10 +161,10 @@ fun MonitoringScreen(
     }
 
     if (historyContext != null) {
-        FullScreenGlucoseChartScreen(
-            onNavigateBack = { historyContext = null },
-            viewModel = viewModel,
-            initialRange = historyContext!!.timeRange.toHistoryTimeRange()
+        HistoryExplorerScreen(
+            onBack = { historyContext = null },
+            initialPatientId = state.selectedPatientId,
+            initialWindowMillis = historyContext!!.timeRange.toHistoryTimeRange().duration.toMillis()
         )
         return
     }
@@ -225,7 +225,7 @@ fun MonitoringScreen(
             Box(modifier = Modifier.weight(1f).fillMaxHeight()) {
             when {
                 !state.isConfigured -> EmptyConfigurationState(onNavigateToSettings)
-                state.isLoading && state.reading == null -> LoadingState()
+                state.isLoading && state.reading == null && state.availablePersons.isEmpty() -> LoadingState()
                 else -> {
                     val reading = state.reading
                     val contentModifier = Modifier
@@ -410,7 +410,13 @@ fun MonitoringScreen(
                                     }
                                 )
                             }
+                        } else if (state.isLoading) {
+                            Text("Ładowanie danych wybranej osoby…", color = DashboardSecondaryText)
                         } else {
+                            Text(
+                                state.staleInfoMessage ?: "Brak aktualnych danych dla wybranej osoby.",
+                                color = DashboardSecondaryText
+                            )
                             EmptyChartState()
                         }
                         ErrorPanel(state.errorMessage, state.canRetry, state.retryCooldownSecondsRemaining, viewModel)

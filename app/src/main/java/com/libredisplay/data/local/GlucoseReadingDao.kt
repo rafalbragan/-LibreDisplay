@@ -33,7 +33,7 @@ interface GlucoseReadingDao {
         toInclusive: Instant
     ): List<GlucoseReadingEntity>
 
-    @Query("DELETE FROM glucose_readings WHERE timestamp < :cutoff")
+    @Query("DELETE FROM glucose_readings WHERE timestamp < :cutoff AND source NOT IN ('LibreViewCSV', 'LibreViewScan')")
     suspend fun deleteOlderThan(cutoff: Instant): Int
 
     @Query("DELETE FROM glucose_readings")
@@ -103,5 +103,28 @@ interface GlucoseReadingDao {
         from90d: Instant,
         from360d: Instant
     ): List<PersonCoverageRow>
+
+    @Query("SELECT * FROM glucose_readings WHERE patientId = :patientId AND timestamp IN (:timestamps)")
+    suspend fun atTimestamps(patientId: String, timestamps: List<Instant>): List<GlucoseReadingEntity>
+
+    @Query("""
+        SELECT MIN(timestamp) AS firstTime, MAX(timestamp) AS lastTime,
+               MIN(valueMgDl) AS minimum, MAX(valueMgDl) AS maximum, AVG(valueMgDl) AS average,
+               COUNT(*) AS count, SUM(CASE WHEN source = 'LibreViewScan' THEN 1 ELSE 0 END) AS scans
+        FROM glucose_readings WHERE patientId = :patientId AND isValid = 1
+          AND timestamp >= :start AND timestamp <= :end
+        GROUP BY (timestamp - :start) / :bucketMillis ORDER BY firstTime LIMIT 801
+    """)
+    suspend fun chartBuckets(patientId: String, start: Long, end: Long, bucketMillis: Long): List<HistoryBucket>
+
+    @Query("""
+        SELECT * FROM glucose_readings WHERE patientId = :patientId AND isValid = 1
+        AND timestamp >= :start AND timestamp <= :end
+        ORDER BY ABS(timestamp - :at) ASC, timestamp ASC LIMIT 1
+    """)
+    suspend fun nearestInViewport(patientId: String, start: Long, end: Long, at: Long): GlucoseReadingEntity?
 }
+
+data class HistoryBucket(val firstTime: Long, val lastTime: Long, val minimum: Int,
+    val maximum: Int, val average: Double, val count: Int, val scans: Int)
 

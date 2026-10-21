@@ -25,6 +25,7 @@ data class GlucoseReadingEntity(
     val receivedAt: Instant,
     val isValid: Boolean = true,
     val rawTrendCode: String? = null,
-    val createdAt: Instant
+    val createdAt: Instant,
+    val importProvenance: String? = null
 )
 

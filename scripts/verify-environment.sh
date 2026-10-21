@@ -69,7 +69,7 @@ if [ -z "$SDK_ROOT" ]; then
 else
   echo "Effective SDK root: $SDK_ROOT"
   check_path "platform-tools" "$SDK_ROOT/platform-tools"
-  check_path "platform android-35" "$SDK_ROOT/platforms/android-35"
+  check_path "platform android-36" "$SDK_ROOT/platforms/android-36"
   check_path "build-tools 35.0.0" "$SDK_ROOT/build-tools/35.0.0"
   if [ -x "$SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
 	pass "sdkmanager installed in cmdline-tools"
@@ -81,11 +81,7 @@ else
 fi
 
 section "Build configuration"
-echo "compileSdk=35"
-echo "targetSdk=35"
-echo "minSdk=26"
-echo "versionName=2.5.0"
-echo "versionCode=27"
+grep -E '^[[:space:]]*(compileSdk|targetSdk|minSdk|versionName|versionCode)[[:space:]]*=' "$ROOT_DIR/app/build.gradle.kts"
 
 section "Summary"
 if [ "$FAILURES" -gt 0 ]; then

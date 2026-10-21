@@ -1,0 +1,8 @@
+LibreCare 2.17.0
+• Import LibreView CSV z pliku lub wskazanego folderu.
+• Podgląd profilu, dat, strefy czasowej, duplikatów i konfliktów przed zapisem.
+• Transakcyjny import bez nadpisywania istniejących wartości; historia chroniona przed automatyczną retencją.
+• Nowy wykres historii: przybliżanie, przesuwanie, wybór punktu i przeglądanie wielu lat.
+• Poprawki rozpoznawania błędów sesji i zachowania wyboru osoby.
+Wersja do testów. Aplikacja nie wylicza dawek insuliny ani nie zaleca leczenia.
+

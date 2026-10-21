@@ -194,6 +194,13 @@ internal fun selectYAxisLabels(
 
 internal fun isValidChartCoordinate(x: Float, y: Float): Boolean = x.isFinite() && y.isFinite()
 
+internal fun chartTimeFraction(epochMillis: Long, domainStartMillis: Long, domainEndMillis: Long): Float {
+    // Absolute epoch milliseconds lose short intervals in Float (even start + 1f == start).
+    // Subtract before converting, using the same mapping for drawing and hit testing.
+    val durationMillis = (domainEndMillis - domainStartMillis).coerceAtLeast(1L)
+    return ((epochMillis - domainStartMillis).toDouble() / durationMillis.toDouble()).toFloat()
+}
+
 internal fun findNearestPointIndexByX(points: List<Offset>, tapX: Float): Int? {
     if (points.isEmpty()) return null
     var bestIndex = 0
@@ -415,10 +422,8 @@ internal fun findNearestHistoryPointMatch(
         ?: prepared.points.first().epochMillis
     val resolvedDomainEnd = domainEndMillis?.takeIf { it > resolvedDomainStart }
         ?: prepared.points.last().epochMillis.coerceAtLeast(resolvedDomainStart + 1L)
-    val minTime = resolvedDomainStart.toFloat()
-    val maxTime = resolvedDomainEnd.toFloat().coerceAtLeast(minTime + 1f)
     val offsets = prepared.points.map { sample ->
-        val fraction = (sample.epochMillis.toFloat() - minTime) / (maxTime - minTime)
+        val fraction = chartTimeFraction(sample.epochMillis, resolvedDomainStart, resolvedDomainEnd)
         Offset(area.left + fraction * area.width, 0f)
     }
     val nearestIndex = findNearestPointIndexByX(offsets, touchX) ?: return null
@@ -709,8 +714,6 @@ fun GlucoseChart(
         val resolvedDomainEndMillis = domainEnd?.toEpochMilli()?.takeIf { it > resolvedDomainStartMillis }
             ?: sorted.last().epochMillis.coerceAtLeast(resolvedDomainStartMillis + 1L)
         val visibleDuration = java.time.Duration.ofMillis((resolvedDomainEndMillis - resolvedDomainStartMillis).coerceAtLeast(1L))
-        val minTime = resolvedDomainStartMillis.toFloat()
-        val maxTime = resolvedDomainEndMillis.toFloat().coerceAtLeast(minTime + 1f)
 
         val yLabels = selectYAxisLabels(yScaleMin, targetLow, targetHigh, yScaleMax, maxLabels = maxYAxisLabels)
         val adaptiveLeftPadding = adaptiveYAxisPadding(axisLeftPaddingPx, yLabels, textMeasurer, labelStyle)
@@ -744,8 +747,8 @@ fun GlucoseChart(
             return chartBottom - (fraction * chartHeight)
         }
 
-        fun xFor(epochMs: Float): Float {
-            val fraction = (epochMs - minTime) / (maxTime - minTime)
+        fun xFor(epochMs: Long): Float {
+            val fraction = chartTimeFraction(epochMs, resolvedDomainStartMillis, resolvedDomainEndMillis)
             return chartLeft + (fraction * chartWidth)
         }
 
@@ -770,7 +773,7 @@ fun GlucoseChart(
         drawBand(lowY, chartBottom, LibreCareColors.VeryLowBand.copy(alpha = 0.18f))
 
         val plottedPoints = sorted.mapNotNull { point ->
-            val x = xFor(point.epochMillis.toFloat())
+            val x = xFor(point.epochMillis)
             val y = yFor(point.value)
             if (!isValidChartCoordinate(x, y)) {
                 DiagnosticLogger.logWarning("GlucoseChart", "CHART POINT SKIPPED reason=invalid coordinate")
@@ -785,7 +788,7 @@ fun GlucoseChart(
             val drawableSegments = if (segments.isEmpty()) listOf(renderedPoints) else segments
             drawableSegments.forEach { segment ->
                 val offsets = segment.mapNotNull { point ->
-                    val x = xFor(point.timestamp.toEpochMilli().toFloat())
+                    val x = xFor(point.timestamp.toEpochMilli())
                     val y = yFor(point.value)
                     if (isValidChartCoordinate(x, y)) Offset(x, y) else null
                 }
@@ -840,7 +843,7 @@ fun GlucoseChart(
         }.distinct().sorted()
 
         xTicks.forEach { tickMillis ->
-            val gridFraction = (tickMillis.toFloat() - minTime) / (maxTime - minTime)
+            val gridFraction = chartTimeFraction(tickMillis, resolvedDomainStartMillis, resolvedDomainEndMillis)
             if (gridFraction !in 0f..1f) return@forEach
             val gridX = chartLeft + gridFraction * chartWidth
             drawLine(
@@ -857,7 +860,7 @@ fun GlucoseChart(
         val crossesMidnight = Instant.ofEpochMilli(resolvedDomainStartMillis).atZone(zoneId).toLocalDate() !=
             Instant.ofEpochMilli(resolvedDomainEndMillis).atZone(zoneId).toLocalDate()
         xTicks.forEachIndexed { index, labelEpochMillis ->
-            val fraction = (labelEpochMillis.toFloat() - minTime) / (maxTime - minTime)
+            val fraction = chartTimeFraction(labelEpochMillis, resolvedDomainStartMillis, resolvedDomainEndMillis)
             val labelX = chartLeft + fraction * chartWidth
             val instant = Instant.ofEpochMilli(labelEpochMillis)
             val localDate = instant.atZone(zoneId).toLocalDate()

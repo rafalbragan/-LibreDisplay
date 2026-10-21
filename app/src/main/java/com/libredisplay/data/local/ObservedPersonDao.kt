@@ -17,6 +17,9 @@ interface ObservedPersonDao {
     @Query("SELECT * FROM observed_persons WHERE patientId NOT LIKE 'demo-person-%' ORDER BY displayName ASC")
     suspend fun getAllLivePersons(): List<ObservedPersonEntity>
 
+    @Query("SELECT * FROM observed_persons WHERE patientId LIKE 'demo-person-%' ORDER BY displayName ASC")
+    suspend fun getAllDemoPersons(): List<ObservedPersonEntity>
+
     @Query("SELECT * FROM observed_persons WHERE patientId = :patientId LIMIT 1")
     suspend fun getByPatientId(patientId: String): ObservedPersonEntity?
 
