@@ -2,16 +2,18 @@ package com.libredisplay.ui.futures
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.selection.selectable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -27,12 +29,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
+import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -42,7 +46,6 @@ import com.libredisplay.ui.monitoring.LibreCareTestTags
 import com.libredisplay.ui.monitoring.TopLevelNavigationBar
 import com.libredisplay.ui.theme.LibreCareColors
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun FuturesScreen(
     onOpenHome: () -> Unit = {},
@@ -51,15 +54,32 @@ fun FuturesScreen(
     viewModel: FuturesViewModel = viewModel()
 ) {
     val state by viewModel.uiState.collectAsState()
+    FuturesContent(state, viewModel::selectAudience, viewModel::toggleIdea, onOpenHome, onOpenAnalytics, onOpenSettings)
+}
 
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun FuturesContent(
+    state: FuturesUiState,
+    onSelectAudience: (FuturesAudience) -> Unit,
+    onToggleIdea: (String) -> Unit,
+    onOpenHome: () -> Unit = {},
+    onOpenAnalytics: () -> Unit = {},
+    onOpenSettings: () -> Unit = {}
+) {
     Scaffold(
+        containerColor = LibreCareColors.Background,
         topBar = {
             TopAppBar(
+                colors = TopAppBarDefaults.topAppBarColors(
+                    containerColor = LibreCareColors.Background,
+                    titleContentColor = LibreCareColors.TextPrimary
+                ),
                 title = {
                     Column {
-                        Text("Futures")
+                        Text("Funkcje LibreCare")
                         Text(
-                            "Prototypy funkcji i kierunki rozwoju",
+                            "Dostępność i propozycje rozwoju",
                             color = LibreCareColors.TextSecondary,
                             fontSize = 12.sp,
                             fontWeight = FontWeight.Normal
@@ -90,42 +110,23 @@ fun FuturesScreen(
             FuturesHeroCard()
             AudienceSelector(
                 selected = state.selectedAudience,
-                onSelect = viewModel::selectAudience
+                onSelect = onSelectAudience
             )
-            FuturesSectionHeader(
-                title = "Najbliższe do wdrożenia",
-                subtitle = "To są kierunki, które już mają opis techniczny i mogą wejść po akceptacji."
-            )
-            state.visibleIdeas.filter { it.status == FuturesStatus.GOTOWE_DO_TESTU }.forEach { idea ->
-                FutureIdeaCard(
-                    idea = idea,
-                    expanded = idea.id in state.expandedIdeaIds,
-                    onToggle = { viewModel.toggleIdea(idea.id) }
-                )
+            if (state.visibleIdeas.isEmpty()) {
+                Text("Brak funkcji dla wybranej perspektywy. Wybierz filtr Wszyscy.", color = LibreCareColors.TextPrimary)
             }
-
-            FuturesSectionHeader(
-                title = "Eksperymenty produktowe",
-                subtitle = "Pomysły dla pacjenta, opiekuna, seniora i lekarza, które warto obejrzeć przed wdrożeniem."
-            )
-            state.visibleIdeas.filter { it.status == FuturesStatus.PROTOTYP }.forEach { idea ->
-                FutureIdeaCard(
-                    idea = idea,
-                    expanded = idea.id in state.expandedIdeaIds,
-                    onToggle = { viewModel.toggleIdea(idea.id) }
-                )
-            }
-
-            FuturesSectionHeader(
-                title = "Zależności i dane",
-                subtitle = "Te kierunki mają potencjał, ale wymagają dodatkowych danych albo oddzielnej infrastruktury."
-            )
-            state.visibleIdeas.filter { it.status != FuturesStatus.GOTOWE_DO_TESTU && it.status != FuturesStatus.PROTOTYP }.forEach { idea ->
-                FutureIdeaCard(
-                    idea = idea,
-                    expanded = idea.id in state.expandedIdeaIds,
-                    onToggle = { viewModel.toggleIdea(idea.id) }
-                )
+            FuturesStatus.entries.forEach { status ->
+                val ideas = state.visibleIdeas.filter { it.status == status }
+                if (ideas.isNotEmpty()) {
+                    FuturesSectionHeader(title = status.label, subtitle = status.description)
+                    ideas.forEach { idea ->
+                        FutureIdeaCard(
+                            idea = idea,
+                            expanded = idea.id in state.expandedIdeaIds,
+                            onToggle = { onToggleIdea(idea.id) }
+                        )
+                    }
+                }
             }
 
             FuturesRoadmapCard()
@@ -147,20 +148,20 @@ private fun FuturesHeroCard() {
         Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
             Icon(Icons.Filled.AutoAwesome, contentDescription = null, tint = LibreCareColors.AccentTeal)
             Text(
-                text = "Bezpieczna strefa prototypów",
+                text = "Co jest dostępne, a co wymaga decyzji",
                 color = LibreCareColors.TextPrimary,
                 fontWeight = FontWeight.Bold,
                 fontSize = 18.sp
             )
         }
         Text(
-            text = "Tutaj zbieramy to, co warto przetestować przed zmianami na ekranie głównym, w statystykach i w przyszłych widokach dla seniora, opiekuna oraz lekarza.",
+            text = "Lista opisuje funkcje tej wersji LibreCare oraz otwarte propozycje. Nie potwierdza publikacji w Google Play ani niezawodności medycznej.",
             color = LibreCareColors.TextSecondary,
             fontSize = 14.sp,
             lineHeight = 20.sp
         )
         Text(
-            text = "Obecna funkcjonalność Monitoringu, Analizy i Ustawień pozostaje bez zmian — zakładka Futures ma pokazać kierunek, priorytety i wartość dla użytkownika.",
+            text = "Dostępne ekrany otworzysz z dolnego paska. Propozycja nie jest obietnicą wdrożenia ani poradą dotyczącą leczenia.",
             color = LibreCareColors.TextSecondary,
             fontSize = 13.sp,
             lineHeight = 18.sp
@@ -168,6 +169,7 @@ private fun FuturesHeroCard() {
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun AudienceSelector(
     selected: FuturesAudience,
@@ -180,9 +182,14 @@ private fun AudienceSelector(
             fontWeight = FontWeight.SemiBold,
             fontSize = 14.sp
         )
-        Row(
-            modifier = Modifier.horizontalScroll(rememberScrollState()),
-            horizontalArrangement = Arrangement.spacedBy(8.dp)
+        Text(
+            text = "Filtr zmienia tylko tę listę, nie tryb aplikacji.",
+            color = LibreCareColors.TextSecondary,
+            fontSize = 13.sp
+        )
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FuturesAudience.entries.forEach { audience ->
                 AudienceChip(
@@ -211,8 +218,10 @@ private fun AudienceChip(
             )
             .border(1.dp, if (selected) LibreCareColors.AccentTeal else LibreCareColors.Surface, RoundedCornerShape(999.dp))
             .testTag(tag)
-            .clickable(onClick = onClick)
-            .padding(horizontal = 12.dp, vertical = 8.dp)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
+            .heightIn(min = 48.dp)
+            .padding(horizontal = 12.dp, vertical = 8.dp),
+        contentAlignment = Alignment.Center
     ) {
         Text(
             text = label,
@@ -244,6 +253,7 @@ private fun FuturesSectionHeader(
     }
 }
 
+@OptIn(ExperimentalLayoutApi::class)
 @Composable
 private fun FutureIdeaCard(
     idea: FutureIdea,
@@ -277,32 +287,34 @@ private fun FutureIdeaCard(
                     fontSize = 13.sp,
                     lineHeight = 18.sp
                 )
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                FlowRow(
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
                     StatusBadge(status = idea.status)
                     idea.audiences
                         .filter { it != FuturesAudience.WSZYSCY }
-                        .take(3)
                         .forEach { audience ->
                             MiniBadge(label = audience.label)
                         }
                 }
             }
-            IconButton(onClick = onToggle) {
+            IconButton(onClick = onToggle, modifier = Modifier.testTag("futures_toggle_${idea.id}")) {
                 Icon(
                     imageVector = if (expanded) Icons.Filled.KeyboardArrowUp else Icons.Filled.KeyboardArrowDown,
-                    contentDescription = if (expanded) "Ukryj szczegóły" else "Pokaż szczegóły",
+                    contentDescription = "${if (expanded) "Ukryj" else "Pokaż"} szczegóły: ${idea.title}",
                     tint = LibreCareColors.TextSecondary
                 )
             }
         }
 
-        InfoBlock(title = "Po co", body = idea.nowValue)
+        InfoBlock(title = "Stan i ograniczenia", body = idea.nowValue)
 
         if (expanded) {
             HorizontalDivider(color = LibreCareColors.SurfaceMuted)
             Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Text(
-                    text = "Co pokazujemy w Futures",
+                    text = "Szczegóły",
                     color = LibreCareColors.TextPrimary,
                     fontSize = 14.sp,
                     fontWeight = FontWeight.SemiBold
@@ -342,10 +354,10 @@ private fun InfoBlock(title: String, body: String) {
 @Composable
 private fun StatusBadge(status: FuturesStatus) {
     val color = when (status) {
-        FuturesStatus.GOTOWE_DO_TESTU -> LibreCareColors.AccentTeal
-        FuturesStatus.PROTOTYP -> LibreCareColors.AccentAmber
-        FuturesStatus.WYMAGA_DANYCH -> LibreCareColors.AccentRed.copy(alpha = 0.85f)
-        FuturesStatus.WYMAGA_BACKENDU -> LibreCareColors.TextSecondary
+        FuturesStatus.AVAILABLE -> LibreCareColors.AccentTeal
+        FuturesStatus.IN_DEVELOPMENT -> LibreCareColors.AccentAmber
+        FuturesStatus.PLANNED -> LibreCareColors.TextPrimary
+        FuturesStatus.UNDER_REVIEW -> LibreCareColors.TextSecondary
     }
     Box(
         modifier = Modifier
@@ -388,19 +400,19 @@ private fun FuturesRoadmapCard() {
         verticalArrangement = Arrangement.spacedBy(8.dp)
     ) {
         Text(
-            text = "Roadmapa decyzji",
+            text = "Jak podejmowane są decyzje",
             color = LibreCareColors.TextPrimary,
             fontWeight = FontWeight.Bold,
             fontSize = 16.sp
         )
         Text(
-            text = "1. Obejrzeć Futures i ocenić priorytety.\n2. Wybrać, co przenieść na istniejący ekran Analiza.\n3. Dopiero potem zdecydować, co ma trafić na Główną, do Statystyk albo do widoków Senior / Opiekun / Lekarz.",
+            text = "Planowane oznacza akceptację właściciela produktu. W rozwoju wymaga także potwierdzenia aktywnych prac. Do oceny nie oznacza zgody na wdrożenie.",
             color = LibreCareColors.TextSecondary,
             fontSize = 13.sp,
             lineHeight = 19.sp
         )
         Text(
-            text = "Dokumentacja techniczna została przygotowana w katalogu docs/, więc wdrożenie można rozbić na bezpieczne etapy.",
+            text = "Wcześniejsze pomysły zachowano w dokumentacji produktu. Ich obecność na liście propozycji nie zmienia zatwierdzonych wymagań.",
             color = LibreCareColors.TextSecondary,
             fontSize = 13.sp,
             lineHeight = 18.sp

@@ -14,11 +14,11 @@ enum class FuturesAudience(val label: String) {
     LEKARZ("Lekarz")
 }
 
-enum class FuturesStatus(val label: String) {
-    AVAILABLE("Dostępne"),
-    IN_DEVELOPMENT("W rozwoju"),
-    PLANNED("Planowane"),
-    UNDER_REVIEW("Weryfikacja")
+enum class FuturesStatus(val label: String, val description: String) {
+    AVAILABLE("Dostępne", "Funkcje obecne w tej wersji aplikacji. Dostępność nie oznacza braku ograniczeń."),
+    IN_DEVELOPMENT("W rozwoju", "Zatwierdzone prace, których realizacja została potwierdzona."),
+    PLANNED("Planowane", "Przyszłe prace wyraźnie zaakceptowane przez właściciela produktu."),
+    UNDER_REVIEW("Do oceny", "Propozycje lub luki wymagające oceny. Nie oznaczają zatwierdzenia wdrożenia.")
 }
 
 data class FutureIdea(
@@ -66,46 +66,46 @@ private fun defaultFutureIdeas(): List<FutureIdea> = listOf(
         id = "monitoring-glucose",
         emoji = "📈",
         title = "Monitoring glikemii",
-        summary = "Aktualna wartość glikemii, trend, status świeżości danych i szybkie podsumowanie ryzyka na ekranie głównym.",
+        summary = "Odczyt glikemii, trend i informacja o aktualności danych na ekranie głównym.",
         status = FuturesStatus.AVAILABLE,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Dostępne na bazowym ekranie monitorowania w LibreCare 2.17.2: aktualny poziom glikemii, trend i status danych są widoczne bez dodatkowego przejścia.",
+        nowValue = "Ekran monitorowania pokazuje ostatni dostępny odczyt. Sprawdź jego czas — synchronizacja może być opóźniona.",
         highlights = listOf(
             "Wskaźnik aktualności danych i kolorowe ostrzeżenia dla użytkownika.",
             "Szybki przegląd wartości, trendu i zakresu docelowego.",
             "Wspólna podstawa dla ekranu głównego, opiekuna i analityki."
         ),
-        nextStep = "To jest obecnie podstawowa funkcja produkcyjna i nie jest traktowana jako przyszły prototyp."
+        nextStep = "Otwórz ekran główny, aby sprawdzić odczyt i jego aktualność."
     ),
     FutureIdea(
         id = "history-and-chart",
         emoji = "📊",
         title = "Historia i interaktywny wykres",
-        summary = "Pełna historia glikemii z interaktywnym wykresem, zakresem czasu i kontrolą zoomu w widoku głównym i pełnoekranowym.",
+        summary = "Przegląd zapisanej historii glikemii, wybór okresu i powiększanie wykresu w widoku historii.",
         status = FuturesStatus.AVAILABLE,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Wersja bazowa ma działający wykres historii, zoom i wczytanie zakresu czasu bez rozrywania głównego workflowu.",
+        nowValue = "Historia korzysta z dostępnych zapisów. Brak odczytów i ustawiona retencja ograniczają widoczny okres.",
         highlights = listOf(
             "Po naciśnięciu wykres otwiera się w pełnym widoku historii.",
-            "Zakresy czasu i min/max są zachowane między ekranami.",
-            "Teren z zakresem docelowym i siatka są czytelne w warunkach produkcyjnych."
+            "Widok historii pozwala wybierać okres i odczyt na wykresie.",
+            "Wykres oznacza minimum, maksimum i zakres docelowy."
         ),
-        nextStep = "To już jest funkcjonalność w bazowym obrazie produktu, nie kandydat do odkrycia."
+        nextStep = "Otwórz historię z wykresu na ekranie głównym."
     ),
     FutureIdea(
         id = "libreview-csv-import",
         emoji = "📥",
         title = "Import LibreView CSV",
-        summary = "Import danych z eksportu LibreView CSV do bieżącego modelu raportowania i analizy bez zmiany zasad bezpieczeństwa.",
+        summary = "Wczytywanie pliku lub folderu CSV z LibreView, podgląd i przypisanie danych do wybranej osoby.",
         status = FuturesStatus.AVAILABLE,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Import jest dostarczony w bazie PR #46 i jest częścią obecnej linii produkcyjnej LibreCare 2.17.2.",
+        nowValue = "Import wymaga podglądu i potwierdzenia osoby. Obsługiwane formaty i strefa czasowa wpływają na wynik odczytu pliku.",
         highlights = listOf(
-            "Wsparcie dla eksportu LibreView CSV jako źródła danych w aplikacji.",
-            "Dane ładowane do istniejącego modelu analitycznego bez łamania aktualnego UI.",
-            "Wersja 2.17.2 jest zgodna z dostarczoną funkcjonalnością PR #46."
+            "Wybór pliku lub folderu przez systemowy selektor dokumentów.",
+            "Podgląd nowych rekordów, duplikatów i konfliktów przed zapisem.",
+            "Dane historyczne nie zastępują bieżących odczytów czujnika."
         ),
-        nextStep = "Dla następnej iteracji: utrzymać jako sprawdzoną ścieżkę importu, a nie jako przyszły prototyp."
+        nextStep = "Import znajdziesz w ustawieniach, w sekcji Prywatność i dane."
     ),
     FutureIdea(
         id = "analytics-and-statistics",
@@ -114,73 +114,73 @@ private fun defaultFutureIdeas(): List<FutureIdea> = listOf(
         summary = "Miary, TIR, średnie, rozkłady i statystyki dla wybranego zakresu czasu z czytelnym podsumowaniem użytkownika.",
         status = FuturesStatus.AVAILABLE,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Analiza i statystyki są udostępnione w istniejącym modulo analitycznym, z zakresem, metrykami i prezentacją wyników.",
+        nowValue = "Analiza pokazuje metryki dla dostępnych danych i wybranego okresu. Wyniki nie zastępują oceny medycznej.",
         highlights = listOf(
             "Wizualizacja zakresu czasu i trendu w analizie.",
             "Zestaw metryk i istotnych wartości dla użytkownika i opiekuna.",
-            "Statystyki pozostają spójne z monitoringiem i historią."
+            "Pokrycie danych i wybrany okres należy uwzględnić przy interpretacji."
         ),
-        nextStep = "To jest obecna funkcja produktu, nie nowy pomysł z dyskusji."
+        nextStep = "Otwórz analizę z dolnego paska nawigacji. Przegląd dokładności 12h metryk pozostaje osobnym zadaniem."
     ),
     FutureIdea(
         id = "person-profiles",
         emoji = "👥",
         title = "Profile obserwowanych osób",
-        summary = "Osoby monitorowane są rozdzielone i selekcjonowane, z priorytetyzacją i identyfikacją na kartach oraz w widoku opiekuna.",
+        summary = "Wybór obserwowanej osoby i prezentacja jej odczytów oraz statusu danych.",
         status = FuturesStatus.AVAILABLE,
         audiences = setOf(FuturesAudience.OPIEKUN, FuturesAudience.PACJENT, FuturesAudience.LEKARZ),
         nowValue = "W aktualnym produkcie istnieje wybór osób, osobna logika podziału na sekcje oraz osobne karty monitorowanych profili.",
         highlights = listOf(
-            "Wybór osoby bez crash-loop i z rollbackiem po błędzie.",
+            "Wybór osoby z obsługą braku dostępnych danych.",
             "Wysokiej wagi sekcja \"Wymaga uwagi\" dla opiekuna.",
             "Przejrzysta hierarchia profili i statusu danych."
         ),
-        nextStep = "Ta funkcja jest już utrwalona w bazowym UI i powinna być prezentowana jako dostępna."
+        nextStep = "Wybierz osobę na ekranie głównym i sprawdź jej status danych."
     ),
     FutureIdea(
         id = "privacy-and-data",
         emoji = "🔒",
         title = "Prywatność i dane",
-        summary = "Kontrola prywatności, przechowywanie danych, ustawienia użytkownika i widoczne informacje o bezpieczeństwie w oparciu o istniejące ekrany ustawień.",
+        summary = "Ustawienia retencji, usuwania danych i diagnostyki oraz informacje o wykorzystaniu pamięci i transferu.",
         status = FuturesStatus.AVAILABLE,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Ekrany prywatności, ustawień i diagnostyki są obecne; nie wszystkie warstwy bezpieczeństwa są jeszcze finalnie rozstrzygnięte, ale UI istnieje.",
+        nowValue = "Ustawienia udostępniają kontrolę danych. Obecność tych opcji nie jest gwarancją integralności kopii zapasowej.",
         highlights = listOf(
             "Prywatność i dane są rozdzielone w ustawieniach aplikacji.",
             "Przechowywanie i retencja są dostępne w istniejącym produkcie.",
             "Użytkownik ma kontrolę nad ustawieniami danych i diagnostyki."
         ),
-        nextStep = "To jest funkcja obecna, lecz weryfikacja prywatności i backupu pozostaje ciągłym procesem."
+        nextStep = "Otwórz ustawienia. Przed usunięciem danych sprawdź możliwość ich odzyskania."
     ),
     FutureIdea(
         id = "backup-and-restore",
         emoji = "💾",
         title = "Kopie i odzyskiwanie danych",
-        summary = "Automatyczne kopie zapasowe, import/restore i mechanika zabezpieczająca dane, z zachowaniem ostrożności wobec pozostałych luk integralności.",
-        status = FuturesStatus.IN_DEVELOPMENT,
+        summary = "Istnieją opcje kopii i odtwarzania, ale kompletność odzyskiwania danych wymaga weryfikacji.",
+        status = FuturesStatus.UNDER_REVIEW,
         audiences = setOf(FuturesAudience.OPIEKUN, FuturesAudience.PACJENT, FuturesAudience.LEKARZ),
-        nowValue = "W aplikacji jest mechanizm backupu i restore, ale integracja i integralność danych wymaga dalszej weryfikacji; nie należy oznaczać całkowitego bezpieczeństwa.",
+        nowValue = "Mechanizm kopii istnieje. Otwarte luki integralności nie pozwalają traktować go jako gwarancji odzyskania danych. Nie potwierdzono aktywnego, zatwierdzonego wdrożenia poprawek.",
         highlights = listOf(
-            "Automatyczne kopie zapasowe są częścią istniejącego flow.",
+            "Opcje kopii zapasowych znajdują się w ustawieniach danych.",
             "Weryfikacja integralności i odtwarzania pozostaje priorytetem.",
             "Niezbędne są dalsze testy przy poprawnie przechowywanych i odzyskiwanych danych."
         ),
-        nextStep = "Zaleca się dalszą implementację i testy bezpieczeństwa przed uznaniem za w pełni bezpieczne."
+        nextStep = "Potrzebne są testy odtwarzania i osobna decyzja właściciela produktu o zakresie poprawek."
     ),
     FutureIdea(
         id = "caregiver-senior-clinician-modes",
         emoji = "🧭",
         title = "Tryby Opiekun / Senior / Lekarz",
         summary = "Jedna aplikacja z wieloma perspektywami użytkownika, z bieżącym głównym kierunkiem opiekuna i kolejnymi etapami dla innych ról.",
-        status = FuturesStatus.IN_DEVELOPMENT,
+        status = FuturesStatus.UNDER_REVIEW,
         audiences = FuturesAudience.entries.toSet(),
-        nowValue = "Istnieje model i rozgałęzienie dla opiekuna w Home, ale pełne, trwałe przełączanie i dedykowane ekrany Senior / Lekarz są nadal rozwijane.",
+        nowValue = "Kierunek trzech perspektyw jest zaakceptowany w dokumentacji. Nie oznacza to aktywnego wdrożenia pełnych trybów ani trwałego przełączania między nimi.",
         highlights = listOf(
             "Obecny produkt jest zorientowany na główny tryb opiekuna.",
-            "Architektura i perspektywy są już projektowane w warstwie produktu.",
+            "Docelowe zasady prezentacji opisano w dokumentacji produktu.",
             "Nie ma jeszcze pełnej, produkcyjnej implementacji wszystkich trybów."
         ),
-        nextStep = "To jest bezpieczny kandydat do dalszego rozwoju, ale bez uznania za gotowe dla wszystkich ról."
+        nextStep = "Zakres wdrożenia i zapamiętywania preferencji wymaga osobnej akceptacji właściciela produktu. Filtr na tej stronie nie zmienia trybu aplikacji."
     ),
     FutureIdea(
         id = "alerts-and-refresh",
@@ -189,7 +189,7 @@ private fun defaultFutureIdeas(): List<FutureIdea> = listOf(
         summary = "Sygnały ostrzegawcze, regularne odświeżanie danych i spójna prezentacja świeżości w całym interfejsie użytkownika.",
         status = FuturesStatus.UNDER_REVIEW,
         audiences = setOf(FuturesAudience.OPIEKUN, FuturesAudience.PACJENT, FuturesAudience.LEKARZ),
-        nowValue = "Jest ślad zachowania i monitorowania, ale obszar ostrzeżeń i odświeżania wymaga dalszej weryfikacji poprzez testy i badania bezpieczeństwa.",
+        nowValue = "Odświeżanie i powiadomienia istnieją. Zaakceptowano analizę alarmów, lecz zmiany ich działania pozostają wstrzymane do osobnej decyzji właściciela produktu.",
         highlights = listOf(
             "Należy weryfikować zachowanie alertów po zmianach danych i po odświeżeniu.",
             "Problem bezpieczeństwa dotyczy świeżości danych i spójnej komunikacji.",
@@ -210,7 +210,7 @@ private fun defaultFutureIdeas(): List<FutureIdea> = listOf(
             "Wartość wskaźników musi odpowiadać rzeczywistemu pokryciu danych i okresowi analizy.",
             "To wymaga testów i jasnego produktu wobec danych demo oraz dobowych zmian."
         ),
-        nextStep = "Potrzebne jest osobne badanie produktu i kontrola przed zaliczeniem do funkcjonalności gotowej."
+        nextStep = "Najpierw porównanie metryk z danymi źródłowymi i decyzja o zakresie ewentualnej poprawki; nowe badanie użytkowników nie jest warunkiem takiego testu."
     )
 )
 
