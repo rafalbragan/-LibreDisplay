@@ -457,4 +457,39 @@ class DashboardUiLogicTest {
         assertEquals(null, trendWindowSnapshot(reading, requestedWindowMinutes = 10))
         assertEquals(null, estimateTrendRate(reading, requestedWindowMinutes = 10))
     }
+
+    @Test
+    fun dashboardMetrics_singleStaleMeasurement_doesNotInventRangeStats() {
+        val reading = GlucoseReading.of(
+            value = 145,
+            timestamp = Instant.parse("2020-01-01T12:00:00Z"),
+            trend = GlucoseTrend.FLAT,
+            history = emptyList()
+        )
+        val metrics = buildDashboardMetrics(reading, targetLow = 80, targetHigh = 180)
+        assertEquals(null, metrics.belowPercent)
+        assertEquals(null, metrics.inRangePercent)
+        assertEquals(null, metrics.abovePercent)
+        val tile = rangeTileUi(metrics.inRangePercent, metrics.inRangeDuration, hasReadings = false)
+        assertEquals("—", tile.percentLabel)
+        assertEquals("brak danych", tile.durationLabel)
+    }
+
+    @Test
+    fun dashboardMetrics_partialHistory_returnsCompleteRangePercentages() {
+        val end = Instant.parse("2026-10-17T12:00:00Z")
+        val reading = GlucoseReading.of(
+            value = 240,
+            timestamp = end,
+            trend = GlucoseTrend.RISING,
+            history = listOf(
+                GlucoseHistoryPoint(60, end.minusSeconds(1800), GlucoseTrend.FLAT),
+                GlucoseHistoryPoint(120, end.minusSeconds(900), GlucoseTrend.RISING)
+            )
+        )
+        val metrics = buildDashboardMetrics(reading, targetLow = 80, targetHigh = 180)
+        val percentages = listOf(metrics.belowPercent, metrics.inRangePercent, metrics.abovePercent)
+        assertTrue(percentages.all { it != null && it in 0..100 })
+        assertTrue(percentages.filterNotNull().sum() in 99..101)
+    }
 }
