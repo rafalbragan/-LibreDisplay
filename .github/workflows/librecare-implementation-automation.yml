@@ -34,6 +34,7 @@ jobs:
       copilot-requests: write
       contents: write
       issues: write
+      pull-requests: write
     # actionlint enable rule:unknown-permission
     steps:
       - name: Checkout
@@ -153,18 +154,13 @@ jobs:
             --base-branch master \
             --output-file bug-handoff.json || true
 
-      - name: Persist automation records
+      - name: Persist automation records as review PR
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_KIND: bug-intake
+          PR_TITLE: "product: bug intake #${{ github.event.issue.number }}"
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/bugs product/implementation product/generated
-          if git diff --cached --quiet; then
-            echo "No Product Foundation changes to commit."
-          else
-            git commit -m "product: bug intake #${{ github.event.issue.number }}"
-            git pull --rebase origin "${{ github.ref_name }}"
-            git push origin "HEAD:${{ github.ref_name }}"
-          fi
+          bash scripts/product/create_foundation_pr.sh product/bugs product/implementation product/generated
 
   track-work-pr:
     if: github.event_name == 'pull_request' && github.event.action != 'closed'
