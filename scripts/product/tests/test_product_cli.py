@@ -874,6 +874,13 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         self.assertNotIn("--yolo", text)
         self.assertNotIn("--allow-all", text)
 
+    def test_inbox_import_syncs_routed_label_before_parsing_event(self):
+        text = WORKFLOW_PATH.read_text(encoding="utf-8")
+        self.assertIn("if: steps.route.outputs.process == 'true'", text)
+        self.assertIn('labels.append({"name": "product-inbox"})', text)
+        self.assertIn('path.write_text(json.dumps(event, ensure_ascii=False)', text)
+        self.assertIn("python scripts/product/product_cli.py inbox-import --event-file github-event.json", text)
+
     def test_workflow_has_persistence_and_concurrency(self):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("concurrency:", text)
