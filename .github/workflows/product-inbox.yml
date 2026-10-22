@@ -18,6 +18,8 @@ jobs:
       copilot-requests: write
       contents: write
       issues: write
+      pull-requests: write
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -159,21 +161,14 @@ jobs:
         run: |
           python scripts/product/product_cli.py review
 
-      - name: Persist Product Foundation state
+      - name: Persist Product Foundation state as review PR
         if: steps.route.outputs.process == 'true'
         env:
-          BRANCH_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_KIND: inbox-review
+          PR_TITLE: "product: process inbox #${{ github.event.issue.number }}"
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
-          if git diff --cached --quiet; then
-            echo "No Product Foundation changes to commit."
-          else
-            git commit -m "product: process inbox issue #${{ github.event.issue.number }}"
-            git pull --rebase origin "$BRANCH_NAME"
-            git push origin "HEAD:$BRANCH_NAME"
-          fi
+          bash scripts/product/create_foundation_pr.sh product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
 
       - name: Build issue review comment
         if: steps.route.outputs.process == 'true'
@@ -221,6 +216,8 @@ jobs:
     permissions:
       contents: write
       issues: write
+      pull-requests: write
+      actions: write
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -341,20 +338,13 @@ jobs:
         run: |
           python scripts/product/product_cli.py review
 
-      - name: Persist Product Foundation state
+      - name: Persist Product Foundation state as review PR
         env:
-          BRANCH_NAME: ${{ github.ref_name }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_KIND: inbox-decision
+          PR_TITLE: "product: apply inbox decision #${{ github.event.issue.number }}"
         run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
-          if git diff --cached --quiet; then
-            echo "No Product Foundation changes to commit."
-          else
-            git commit -m "product: apply inbox decision issue #${{ github.event.issue.number }}"
-            git pull --rebase origin "$BRANCH_NAME"
-            git push origin "HEAD:$BRANCH_NAME"
-          fi
+          bash scripts/product/create_foundation_pr.sh product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation
 
       - name: Fail workflow if implementation handoff failed
         if: github.event.comment.body == '/accept' && steps.handoff_summary.outputs.handoff_result == 'HANDOFF_FAILED'
