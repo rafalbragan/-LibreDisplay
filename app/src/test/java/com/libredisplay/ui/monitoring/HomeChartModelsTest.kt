@@ -92,6 +92,31 @@ class HomeChartModelsTest {
         assertEquals(HomeChartRange.LAST_12_HOURS, snapHomeChartRange(Duration.ofHours(11)))
     }
 
+    @Test fun homeHistoryPan_movesInBothDirectionsByVisibleWindowFraction() {
+        val hour = 3_600_000L
+        val oldest = 0L
+        val latest = 48 * hour
+        val window = 12 * hour
+        val initial = 24 * hour
+        assertEquals(18 * hour, panHomeHistoryStart(initial, 0.5f, window, oldest, latest))
+        assertEquals(30 * hour, panHomeHistoryStart(initial, -0.5f, window, oldest, latest))
+    }
+
+    @Test fun homeHistoryPan_clampsToOldestAndNewestAvailableWindows() {
+        val hour = 3_600_000L
+        val oldest = 10 * hour
+        val latest = 58 * hour
+        val window = 12 * hour
+        assertEquals(oldest, panHomeHistoryStart(oldest, 0.9f, window, oldest, latest))
+        assertEquals(46 * hour, panHomeHistoryStart(46 * hour, -0.9f, window, oldest, latest))
+        assertEquals(46 * hour, panHomeHistoryStart(46 * hour, -1f, window, oldest, latest))
+    }
+
+    @Test fun homeHistoryPan_ignoresInvalidDragOrDuration() {
+        assertEquals(24L, panHomeHistoryStart(24L, Float.NaN, 12L, 0L, 48L))
+        assertEquals(24L, panHomeHistoryStart(24L, 0.5f, 0L, 0L, 48L))
+    }
+
     private fun samplePoints(now: Instant, hours: Int): List<GlucoseHistoryPoint> {
         val total = hours * 4
         return (0 until total).map { index ->
