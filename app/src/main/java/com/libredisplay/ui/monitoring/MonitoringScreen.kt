@@ -1105,6 +1105,45 @@ private fun GlucoseChartCard(
                 )
             }
             activeViewport?.let { visibleViewport ->
+                // Move by precisely one selected time window, without requiring
+                // a precise drag on the mini navigator.
+                val windowMillis = visibleViewport.duration.toMillis().coerceAtLeast(1L)
+                val minStart = navigationDomainStart?.toEpochMilli()
+                val maxStart = availableEnd?.toEpochMilli()?.minus(windowMillis)
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(
+                        onClick = {
+                            if (minStart != null) {
+                                viewportStartMillis = (visibleViewport.start.toEpochMilli() - windowMillis)
+                                    .coerceAtLeast(minStart)
+                                followLatest = false
+                                hasNewerData = availableEnd?.toEpochMilli()?.let {
+                                    viewportStartMillis!! + windowMillis < it
+                                } ?: false
+                                selectedPoint = null
+                            }
+                        },
+                        enabled = minStart != null && visibleViewport.start.toEpochMilli() > minStart,
+                        modifier = Modifier.testTag("home-chart-previous")
+                    ) { Text("← Wcześniej") }
+                    TextButton(
+                        onClick = {
+                            if (maxStart != null) {
+                                viewportStartMillis = (visibleViewport.start.toEpochMilli() + windowMillis)
+                                    .coerceAtMost(maxStart)
+                                followLatest = viewportStartMillis == maxStart
+                                hasNewerData = !followLatest
+                                selectedPoint = null
+                            }
+                        },
+                        enabled = maxStart != null && visibleViewport.start.toEpochMilli() < maxStart,
+                        modifier = Modifier.testTag("home-chart-next")
+                    ) { Text("Później →") }
+                }
                 HomeChartNavigator(
                     viewport = visibleViewport,
                     availableStart = navigationDomainStart,
