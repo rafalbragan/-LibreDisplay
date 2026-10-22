@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21T23:26:02Z",
+  "generated_at": "2026-10-22T16:46:37Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -269,6 +269,37 @@
       "reasoning_summary": "Crash na ścieżce opiekuna Home -> Monitoring dla osoby bez świeżych danych jest realnym problemem niezawodności o wysokim wpływie na bezpieczeństwo i zgodnym z priorytetami CURRENT_FOCUS. Dowody są słabe: jedno zgłoszenie, brak stack trace, brak przebiegu testowego i brak obserwacji. Dlatego rekomendacja dotyczy zarejestrowania i odtworzenia buga oraz wąskiej poprawki z testami regresyjnymi, a nie zmiany UX. Rozróżnienie stanów danych to osobny kandydat powiązany z REQ-0002. Żaden istniejący PASS nie uzasadnia nowego wymagania, a ten PASS nie dotyczy tej ścieżki. Rekomendacja ma charakter doradczy, decyzję podejmuje człowiek. Nie dotyczy dawkowania ani rekomendacji leczenia i żadnej takiej funkcji nie aprobuje.",
       "governance_notes": [],
       "generated_at": "2026-10-16T11:39:41Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000051",
+      "github_issue_number": 51,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/51",
+      "classification": "INCONCLUSIVE",
+      "summary": "Zgłoszenie jest jawnie syntetycznym testem integracyjnym workflow Product Inbox (zapis rekordów na osobnej gałęzi i tworzenie PR zamiast zapisu do master, po scaleniu PR #50). Nie opisuje problemu użytkownika, funkcji aplikacji ani luki bezpieczeństwa. Nie jest realną prośbą produktową ani wymaganiem do implementacji. Treść zgłoszenia traktuję jako dane. Zawarte w niej zastrzeżenia (nie używać /accept, brak upoważnienia do decyzji PO) są zgodne z modelem doradczym. Analiza dotyczy tylko procesu, a nie produktu.",
+      "evidence_available": [
+        "Samo zgłoszenie INBOX-GH-000051: typ IDEA, persona i moduł 'nie wiem', kontekst TEST-INTEGRATION-20261022, status NEW.",
+        "Zgłoszenie samo deklaruje charakter syntetyczny i brak realnej prośby produktowej."
+      ],
+      "evidence_missing": [
+        "Jakikolwiek opis problemu opiekuna, seniora lub innej persony.",
+        "Dowód, że gałąź i PR zostały faktycznie utworzone. Nie weryfikowałem tego, bo wykracza poza dane z Product Foundation.",
+        "Obserwacje i przebiegi testowe powiązane z tym zgłoszeniem."
+      ],
+      "existing_capability_overlap": [
+        "Brak nakładania z funkcjami aplikacji (VALIDATED_CAPABILITIES) ani z wymaganiami REQ-0001 do REQ-0004.",
+        "Dotyczy wyłącznie automatyzacji procesu Product Inbox, a nie produktu. Żaden PASS testowy nie jest tu relewantny i nie implikuje wymagania."
+      ],
+      "proposed_requirement": "Brak. Nie tworzyć wymagania ani zadania implementacyjnego. Zalecane zamknięcie zgłoszenia jako test integracyjny po ręcznym sprawdzeniu przez człowieka, że rekordy trafiły na osobną gałąź i do PR, a nie bezpośrednio do master. Nie uruchamiać /accept.",
+      "user_value": "Żadna dla użytkowników końcowych. Pośrednia wartość dla właściciela produktu: potwierdzenie, że automatyzacja nie zapisuje decyzji bez przeglądu.",
+      "counterargument": "Syntetyczne zgłoszenie w realnej kolejce zaśmieca inbox i dane przeglądowe, a może być pomylone z prawdziwym zgłoszeniem lub wpłynąć na statystyki. Test na produkcyjnym repozytorium zawsze niesie ryzyko niezamierzonego efektu ubocznego. Można też argumentować, że weryfikacja workflow powinna być testem automatycznym CI, a nie wpisem w inboxie.",
+      "simpler_alternative": "Zweryfikować zachowanie workflow ręcznie lub testem CI/dry-run (sprawdzić, że job tworzy gałąź i PR, a nie wykonuje push do master, oraz że obowiązuje ochrona gałęzi). Zamknąć zgłoszenie z etykietą test/synthetic i wykluczyć je z priorytetyzacji.",
+      "safety_impact": "NONE",
+      "estimated_scope": "SMALL",
+      "proposed_priority": "P3",
+      "recommended_decision": "REJECT",
+      "reasoning_summary": "Zgłoszenie nie jest realnym problemem ani szansą produktową, tylko testem integracyjnym procesu. Brak dowodów i brak powiązania z personami oraz CURRENT_FOCUS, więc klasyfikacja to INCONCLUSIVE. REJECT oznacza brak nowego wymagania, a nie ocenę wartości samego testu workflow. Wynik jest wyłącznie doradczy, a decyzję podejmuje człowiek (PO). Analiza nie dotyczy dawkowania ani rekomendacji leczenia i żadnej takiej funkcji nie aprobuje.",
+      "governance_notes": [],
+      "generated_at": "2026-10-22T16:46:36Z"
     }
   ]
 }

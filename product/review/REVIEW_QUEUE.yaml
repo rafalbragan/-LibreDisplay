@@ -1,5 +1,5 @@
 version: 2
-updated: '2026-10-21'
+updated: '2026-10-22'
 phase: phase-1-foundation
 note: 'v2: Evidence correctly classified — no automatic creation of requirements from
   passing tests'
