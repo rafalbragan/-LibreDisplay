@@ -40,6 +40,12 @@ class HistoryExplorerWindowTest {
         assertTrue(canJoinHistorySamples(start, start + 15 * 60_000L))
         assertFalse(canJoinHistorySamples(start, start + 21 * 60_000L))
     }
+    @Test fun continuityBoundaryNeverInventsMissingGlucoseHistory() {
+        val first = start
+        assertTrue(canJoinHistorySamples(first, first + 20 * 60_000L))
+        assertFalse(canJoinHistorySamples(first, first + 20 * 60_000L + 1))
+        assertFalse(canJoinHistorySamples(first, first + 3 * 86_400_000L))
+    }
     @Test fun zoomBoundsHandleSingleReadingSpan() {
         val tiny = ExplorerWindow(start, start + 60_000)
         assertEquals(tiny, tiny.transform(100f, 0f, 0.5f, tiny))

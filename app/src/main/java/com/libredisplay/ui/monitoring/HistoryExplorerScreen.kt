@@ -218,12 +218,16 @@ private fun ExplorerCanvas(buckets: List<HistoryBucket>, viewport: ExplorerWindo
         clipRect(left, top, right, bottom) {
             var previous: HistoryBucket? = null
             for (bucket in buckets) {
-                val xx = x(bucket.firstTime)
+                val xx = x(bucket.firstTime + (bucket.lastTime - bucket.firstTime) / 2)
                 val yy = y(bucket.average)
                 if (!xx.isFinite() || !yy.isFinite()) continue
                 val old = previous
-                if (old != null && old.count == 1 && bucket.count == 1 && canJoinHistorySamples(old.lastTime, bucket.firstTime)) {
-                    drawLine(colors.primary, Offset(x(old.lastTime), y(old.average)), Offset(xx, yy), 2.dp.toPx())
+                if (old != null && canJoinHistorySamples(old.lastTime, bucket.firstTime)) {
+                    // Use the center of aggregated bins for a consistent temporal line.
+                    // Never connect across an actual sensor-data gap greater than 20 minutes.
+                    val previousX = x(old.firstTime + (old.lastTime - old.firstTime) / 2)
+                    val currentX = x(bucket.firstTime + (bucket.lastTime - bucket.firstTime) / 2)
+                    drawLine(colors.primary, Offset(previousX, y(old.average)), Offset(currentX, yy), 2.dp.toPx())
                 }
                 if (bucket.count > 1) {
                     drawLine(colors.primary.copy(alpha = 0.8f), Offset(xx, y(bucket.minimum.toDouble())), Offset(xx, y(bucket.maximum.toDouble())), 2.dp.toPx())
