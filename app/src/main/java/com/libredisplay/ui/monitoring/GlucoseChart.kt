@@ -487,6 +487,7 @@ fun GlucoseChart(
     onPointSelected: ((GlucoseHistoryPoint) -> Unit)? = null,
     onPointSelectionCleared: (() -> Unit)? = null,
     onChartTapped: (() -> Unit)? = null,
+    onHorizontalPan: ((Float) -> Unit)? = null,
     chartHeight: Dp = 260.dp,
     maxVisiblePoints: Int = 300,
     maxYAxisLabels: Int = 6,
@@ -587,14 +588,38 @@ fun GlucoseChart(
                     }
                 }
             }
-            .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected) {
+            .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected, onHorizontalPan) {
+                var horizontalDrag = 0f
+                var verticalDrag = 0f
+                var isHorizontalPan = false
                 detectDragGestures(
-                    onDragStart = { offset ->
+                    onDragStart = {
+                        horizontalDrag = 0f
+                        verticalDrag = 0f
+                        isHorizontalPan = false
+                    },
+                    onDragEnd = {
+                        if (isHorizontalPan && canvasWidth > 0f) {
+                            onHorizontalPan?.invoke(horizontalDrag / canvasWidth)
+                        }
+                        onPointSelectionCleared?.invoke()
+                    },
+                    onDragCancel = {
+                        onPointSelectionCleared?.invoke()
+                    }
+                ) { change, drag ->
+                    horizontalDrag += drag.x
+                    verticalDrag += drag.y
+                    if (onHorizontalPan != null && !isHorizontalPan &&
+                        kotlin.math.abs(horizontalDrag) > 18.dp.toPx() &&
+                        kotlin.math.abs(horizontalDrag) > kotlin.math.abs(verticalDrag) * 1.5f
+                    ) isHorizontalPan = true
+                    if (!isHorizontalPan) {
                         val selectedReading = findNearestHistoryPoint(
                             points = renderedPoints,
                             canvasWidth = canvasWidth,
                             canvasHeight = canvasHeight,
-                            touchX = offset.x,
+                            touchX = change.position.x,
                             domainStartMillis = domainStart?.toEpochMilli(),
                             domainEndMillis = domainEnd?.toEpochMilli(),
                             axisLeftPaddingPx = axisLeftPaddingPx,
@@ -602,34 +627,8 @@ fun GlucoseChart(
                             axisRightPaddingPx = axisRightPaddingPx,
                             axisBottomPaddingPx = axisBottomPaddingPx
                         )
-                        if (selectedReading != null) {
-                            DiagnosticLogger.logInfo(
-                                "GlucoseChart",
-                                "CHART POINT SELECTED timestamp=${selectedReading.timestamp} value=${selectedReading.value}"
-                            )
-                            onPointSelected?.invoke(selectedReading)
-                        }
-                    },
-                    onDragEnd = {
-                        onPointSelectionCleared?.invoke()
-                    },
-                    onDragCancel = {
-                        onPointSelectionCleared?.invoke()
+                        if (selectedReading != null) onPointSelected?.invoke(selectedReading)
                     }
-                ) { change, _ ->
-                    val selectedReading = findNearestHistoryPoint(
-                        points = renderedPoints,
-                        canvasWidth = canvasWidth,
-                        canvasHeight = canvasHeight,
-                        touchX = change.position.x,
-                        domainStartMillis = domainStart?.toEpochMilli(),
-                        domainEndMillis = domainEnd?.toEpochMilli(),
-                        axisLeftPaddingPx = axisLeftPaddingPx,
-                        axisTopPaddingPx = axisTopPaddingPx,
-                        axisRightPaddingPx = axisRightPaddingPx,
-                        axisBottomPaddingPx = axisBottomPaddingPx
-                    ) ?: return@detectDragGestures
-                    onPointSelected?.invoke(selectedReading)
                     change.consume()
                 }
             }
