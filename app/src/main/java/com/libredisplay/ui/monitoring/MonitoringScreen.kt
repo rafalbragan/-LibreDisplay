@@ -862,6 +862,23 @@ internal data class RangeSelectorState(
 )
 
 @Composable
+/**
+ * Keeps horizontal history panning inside the recorded timeline.
+ * Positive drag reveals older data; negative drag returns toward latest.
+ */
+internal fun panHomeHistoryStart(
+    currentStartMillis: Long,
+    fraction: Float,
+    windowMillis: Long,
+    oldestMillis: Long,
+    latestMillis: Long
+): Long {
+    if (!fraction.isFinite() || windowMillis <= 0L || latestMillis < oldestMillis) return currentStartMillis
+    val limit = (latestMillis - windowMillis).coerceAtLeast(oldestMillis)
+    val shift = (fraction.coerceIn(-1f, 1f) * windowMillis).roundToLong()
+    return (currentStartMillis - shift).coerceIn(oldestMillis, limit)
+}
+
 private fun GlucoseChartCard(
     state: MonitoringUiState,
     reading: GlucoseReading?,
@@ -1100,8 +1117,9 @@ private fun GlucoseChartCard(
                         if (shown != null && start != null && end != null) {
                             val duration = shown.duration.toMillis().coerceAtLeast(1L)
                             val limit = (end - duration).coerceAtLeast(start)
-                            val delta = (fraction * duration).roundToLong()
-                            val next = (shown.start.toEpochMilli() - delta).coerceIn(start, limit)
+                            val next = panHomeHistoryStart(
+                                shown.start.toEpochMilli(), fraction, duration, start, end
+                            )
                             viewportStartMillis = next
                             followLatest = next >= limit
                             hasNewerData = !followLatest
