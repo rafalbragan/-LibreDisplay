@@ -861,7 +861,6 @@ internal data class RangeSelectorState(
     val onRangeSelected: (HomeChartRange) -> Unit
 )
 
-@Composable
 /**
  * Keeps horizontal history panning inside the recorded timeline.
  * Positive drag reveals older data; negative drag returns toward latest.
@@ -879,6 +878,7 @@ internal fun panHomeHistoryStart(
     return (currentStartMillis - shift).coerceIn(oldestMillis, limit)
 }
 
+@Composable
 private fun GlucoseChartCard(
     state: MonitoringUiState,
     reading: GlucoseReading?,
