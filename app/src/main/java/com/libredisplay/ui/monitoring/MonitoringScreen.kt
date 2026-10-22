@@ -1093,6 +1093,21 @@ private fun GlucoseChartCard(
                     onPointSelected = { point -> selectedPoint = point },
                     onPointSelectionCleared = { selectedPoint = null },
                     onChartTapped = onOpenHistory,
+                    onHorizontalPan = { fraction ->
+                        val shown = activeViewport
+                        val start = navigationDomainStart?.toEpochMilli()
+                        val end = availableEnd?.toEpochMilli()
+                        if (shown != null && start != null && end != null) {
+                            val duration = shown.duration.toMillis().coerceAtLeast(1L)
+                            val limit = (end - duration).coerceAtLeast(start)
+                            val delta = (fraction * duration).roundToLong()
+                            val next = (shown.start.toEpochMilli() - delta).coerceIn(start, limit)
+                            viewportStartMillis = next
+                            followLatest = next >= limit
+                            hasNewerData = !followLatest
+                            selectedPoint = null
+                        }
+                    },
                     chartHeight = chartHeight,
                     maxYAxisLabels = 4,
                     maxXAxisLabels = 5,
