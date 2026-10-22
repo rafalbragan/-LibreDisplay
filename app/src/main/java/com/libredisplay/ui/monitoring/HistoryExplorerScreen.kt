@@ -222,7 +222,7 @@ private fun ExplorerCanvas(buckets: List<HistoryBucket>, viewport: ExplorerWindo
                 val yy = y(bucket.average)
                 if (!xx.isFinite() || !yy.isFinite()) continue
                 val old = previous
-                if (old != null && old.count == 1 && bucket.count == 1 && canJoinHistorySamples(old.lastTime, bucket.firstTime)) {
+                if (old != null && canJoinHistorySamples(old.lastTime, bucket.firstTime)) {
                     drawLine(colors.primary, Offset(x(old.lastTime), y(old.average)), Offset(xx, yy), 2.dp.toPx())
                 }
                 if (bucket.count > 1) {
