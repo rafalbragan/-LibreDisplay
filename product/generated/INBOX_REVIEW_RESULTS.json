@@ -1,5 +1,5 @@
 {
-  "generated_at": "2026-10-21T23:26:02Z",
+  "generated_at": "2026-10-22T16:30:41Z",
   "items": [
     {
       "inbox_id": "INBOX-GH-000001",
@@ -269,6 +269,39 @@
       "reasoning_summary": "Crash na ścieżce opiekuna Home -> Monitoring dla osoby bez świeżych danych jest realnym problemem niezawodności o wysokim wpływie na bezpieczeństwo i zgodnym z priorytetami CURRENT_FOCUS. Dowody są słabe: jedno zgłoszenie, brak stack trace, brak przebiegu testowego i brak obserwacji. Dlatego rekomendacja dotyczy zarejestrowania i odtworzenia buga oraz wąskiej poprawki z testami regresyjnymi, a nie zmiany UX. Rozróżnienie stanów danych to osobny kandydat powiązany z REQ-0002. Żaden istniejący PASS nie uzasadnia nowego wymagania, a ten PASS nie dotyczy tej ścieżki. Rekomendacja ma charakter doradczy, decyzję podejmuje człowiek. Nie dotyczy dawkowania ani rekomendacji leczenia i żadnej takiej funkcji nie aprobuje.",
       "governance_notes": [],
       "generated_at": "2026-10-16T11:39:41Z"
+    },
+    {
+      "inbox_id": "INBOX-GH-000051",
+      "github_issue_number": 51,
+      "github_issue_url": "https://github.com/rafalbragan/-LibreDisplay/issues/51",
+      "classification": "INCONCLUSIVE",
+      "summary": "Syntetyczne zgłoszenie testowe (TEST-INTEGRATION-20261022) sprawdzające, czy workflow Product Inbox zapisuje rekordy na osobnej gałęzi i otwiera PR zamiast pisać bezpośrednio do master. Zgłoszenie samo mówi, że nie jest prośbą produktową ani wymaganiem. Dotyczy infrastruktury procesu, a nie funkcji aplikacji ani problemu użytkownika. Nie przeczytałem pozostałych plików Product Foundation (wymagania, obserwacje, test-runs, decyzje, VALIDATED_CAPABILITIES, SAFETY_GUARDRAILS, PERSONAS). Przejrzałem tylko schemat, CURRENT_FOCUS.yaml i listę plików w product/inbox.",
+      "evidence_available": [
+        "Zgłoszenie jest jawnie oznaczone jako syntetyczne i testowe (raw_input, why_it_matters, context).",
+        "CURRENT_FOCUS.yaml: człowiek musi zatwierdzać; AI nie może zatwierdzać wymagań ani rozpoczynać implementacji.",
+        "Rekord product/inbox/INBOX-GH-000051.json istnieje w repozytorium."
+      ],
+      "evidence_missing": [
+        "Dowód z wykonania workflow: nazwa gałęzi, numer PR i brak bezpośredniego zapisu do master.",
+        "Jakikolwiek problem użytkownika lub obserwacja dotycząca aplikacji.",
+        "Wynik testu integracyjnego zapisany w product/research/test-runs.",
+        "Informacja, czy wymaganie ochrony master przed zapisem przez workflow jest już gdzieś zapisane."
+      ],
+      "existing_capability_overlap": [
+        "PR #50 jest wskazany jako źródło zmiany workflow, ale nie sprawdziłem go w repozytorium.",
+        "Ogólna zasada human_approval z CURRENT_FOCUS.yaml, bez związku z funkcjami aplikacji."
+      ],
+      "proposed_requirement": "Brak. Zgłoszenie nie uzasadnia nowego wymagania produktowego. Ewentualną weryfikację workflow (zapis na gałęzi i PR, bez zapisu do master) należy zapisać jako wynik testu, a nie jako wymaganie. Sam wynik PASS nie tworzy wymagania.",
+      "user_value": "Brak bezpośredniej wartości dla użytkowników aplikacji. Pośrednio chroni integralność procesu Product Foundation i decyzji Product Ownera.",
+      "counterargument": "Test procesu warto zachować, bo bez dowodu, że workflow nie pisze do master, automatyzacja mogłaby po cichu ominąć kontrolę człowieka. Ten argument przemawia za odnotowaniem wyniku testu, a nie za wymaganiem produktowym. Pozostawienie rekordu w inboxie może też zaśmiecać backlog i zaburzać deduplikację oraz klasteryzację.",
+      "simpler_alternative": "Zamknąć zgłoszenie jako test. Wynik (gałąź, PR, brak zapisu do master) odnotować w komentarzu do issue lub w product/research/test-runs. Rozważyć stałą etykietę lub pole synthetic/test, żeby takie rekordy były wykluczane z analizy produktowej.",
+      "safety_impact": "NONE",
+      "estimated_scope": "SMALL",
+      "proposed_priority": "P3",
+      "recommended_decision": "REJECT",
+      "reasoning_summary": "Zgłoszenie jest syntetyczne i dotyczy procesu, nie produktu. Nie ma w nim problemu użytkownika, dowodu ani wymagania do zaakceptowania. Rekomenduję REJECT jako wymaganie produktowe, z odnotowaniem wyniku testu workflow osobno. Rekomendacja jest wyłącznie doradcza; decyzję podejmuje Product Owner. Zgłoszenie nie dotyczy dawkowania insulinowego ani zaleceń terapeutycznych i niczego takiego nie zatwierdzam.",
+      "governance_notes": [],
+      "generated_at": "2026-10-22T16:30:41Z"
     }
   ]
 }
