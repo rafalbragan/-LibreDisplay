@@ -103,6 +103,21 @@ jobs:
       - name: Import inbox issue
         if: steps.route.outputs.process == 'true'
         run: |
+          # The routing step may add product-inbox after GitHub created the immutable event payload.
+          # Synchronize only the label already established by the guarded routing step.
+          python - <<'PY'
+          import json
+          from pathlib import Path
+          path = Path("github-event.json")
+          event = json.loads(path.read_text(encoding="utf-8"))
+          issue = event.get("issue")
+          if not isinstance(issue, dict):
+              raise SystemExit("Expected issue payload after successful Product Inbox routing")
+          labels = issue.setdefault("labels", [])
+          if not any(isinstance(label, dict) and label.get("name") == "product-inbox" for label in labels):
+              labels.append({"name": "product-inbox"})
+          path.write_text(json.dumps(event, ensure_ascii=False), encoding="utf-8")
+          PY
           python scripts/product/product_cli.py inbox-import --event-file github-event.json
 
       - name: Validate Product Foundation
