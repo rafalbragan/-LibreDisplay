@@ -878,9 +878,18 @@ class ProductInboxWorkflowStaticTest(unittest.TestCase):
         text = WORKFLOW_PATH.read_text(encoding="utf-8")
         self.assertIn("concurrency:", text)
         self.assertIn("group: product-foundation-state", text)
-        self.assertIn("git add product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation", text)
-        self.assertIn("product: process inbox issue", text)
-        self.assertIn("product: apply inbox decision issue", text)
+        persistence_command = "bash scripts/product/create_foundation_pr.sh product/inbox product/generated product/review product/research product/requirements product/decisions product/implementation"
+        self.assertEqual(text.count(persistence_command), 2)
+        self.assertIn("PR_KIND: inbox-review", text)
+        self.assertIn("PR_KIND: inbox-decision", text)
+        self.assertIn("product: process inbox", text)
+        self.assertIn("product: apply inbox decision", text)
+        self.assertNotIn('git push origin "HEAD:$BRANCH_NAME"', text)
+        helper = (WORKFLOW_PATH.parents[2] / "scripts/product/create_foundation_pr.sh").read_text(encoding="utf-8")
+        self.assertIn("git add --", helper)
+        self.assertIn("gh pr create --base master", helper)
+        self.assertIn('if [[ "${GITHUB_REF_NAME:-}" != "master" ]]', helper)
+        self.assertNotIn('git push origin "HEAD:master"', helper)
 
     def test_workflows_are_valid_yaml(self):
         for workflow_path in [WORKFLOW_PATH, BUG_WORKFLOW_PATH]:
