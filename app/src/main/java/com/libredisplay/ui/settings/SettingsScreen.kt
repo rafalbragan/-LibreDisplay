@@ -4,6 +4,7 @@ import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
 import android.content.Intent
+import android.widget.Toast
 import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -58,6 +59,7 @@ import androidx.compose.ui.res.stringResource
 import com.libredisplay.R
 import com.libredisplay.data.model.QuickMetricId
 import com.libredisplay.diagnostics.DiagnosticLogger
+import com.libredisplay.diagnostics.DiagnosticShareSanitizer
 import com.libredisplay.ui.theme.LibreCareColors
 import androidx.compose.ui.graphics.Color
 
@@ -479,11 +481,16 @@ private fun metricLabel(metricId: QuickMetricId): String = when (metricId) {
 
 private fun copyLog(context: Context) {
     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", DiagnosticLogger.readAll()))
+    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", DiagnosticShareSanitizer.sanitize(DiagnosticLogger.readAll())))
 }
 
-private fun shareLog(context: Context) {
-    DiagnosticLogger.createShareIntent(context)?.let {
-        context.startActivity(Intent.createChooser(it, "Udostępnij log"))
+internal fun shareLog(context: Context) {
+    val launched = runCatching {
+        val intent = DiagnosticLogger.createShareIntent(context) ?: return@runCatching false
+        context.startActivity(Intent.createChooser(intent, "Udostępnij log"))
+        true
+    }.getOrDefault(false)
+    if (!launched) {
+        Toast.makeText(context, "Nie można udostępnić logu diagnostycznego. Spróbuj ponownie.", Toast.LENGTH_LONG).show()
     }
 }

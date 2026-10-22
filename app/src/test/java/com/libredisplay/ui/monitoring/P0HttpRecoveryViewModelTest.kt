@@ -128,6 +128,72 @@ class P0HttpRecoveryViewModelTest {
     @Test fun switchDecoding() = verify(Entry.SWITCH, error = LibreResponseDecodingException("synthetic"))
     @Test fun switchUnexpected() = verify(Entry.SWITCH, error = IllegalStateException("synthetic"))
 
+    @Test fun startupOldMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.STARTUP, stale = true)
+    @Test fun manualOldMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.MANUAL, stale = true)
+    @Test fun pollingOldMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.POLL, stale = true)
+    @Test fun startupOldMeasurementWithHistory() = verifySuccessfulFreshness(Entry.STARTUP, stale = true, history = true)
+    @Test fun manualOldMeasurementWithHistory() = verifySuccessfulFreshness(Entry.MANUAL, stale = true, history = true)
+    @Test fun pollingOldMeasurementWithHistory() = verifySuccessfulFreshness(Entry.POLL, stale = true, history = true)
+    @Test fun startupFreshMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.STARTUP, stale = false)
+    @Test fun manualFreshMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.MANUAL, stale = false)
+    @Test fun pollingFreshMeasurementWithoutHistory() = verifySuccessfulFreshness(Entry.POLL, stale = false)
+    @Test fun switchToHistoricalPersonDoesNotClaimLiveData() = verifySuccessfulFreshness(Entry.SWITCH, stale = true)
+    @Test fun switchToFreshPersonRestoresLiveData() = verifySuccessfulFreshness(Entry.SWITCH, stale = false)
+
+    private fun verifySuccessfulFreshness(entry: Entry, stale: Boolean, history: Boolean = false) = runTest(dispatcher) {
+        auth.ensureAuthenticated()
+        if (entry == Entry.POLL || entry == Entry.SWITCH) {
+            vm.onScreenVisible(0)
+            runCurrent()
+        }
+        // A fixed historical timestamp reproduces the defect independently of network/timing.
+        val timestamp = if (stale) Instant.parse("2020-01-01T12:00:00Z")
+            else Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
+        val points = if (history) """[{"ValueInMgPerDl":120,"Timestamp":"${timestamp.minusSeconds(300)}"}]""" else "[]"
+        http.graphBody = """{"status":0,"data":{"connection":{"glucoseMeasurement":{"ValueInMgPerDl":147,"Timestamp":"$timestamp"}},"graphData":$points}}"""
+        when (entry) {
+            Entry.STARTUP -> vm.onScreenVisible(0)
+            Entry.MANUAL -> vm.connectManually()
+            Entry.POLL -> vm.refreshNow()
+            Entry.SWITCH -> vm.onPersonSelected(INACTIVE)
+        }
+        runCurrent()
+        val state = vm.uiState.value
+        assertEquals(ConnectionState.Connected, state.connectionState)
+        assertEquals(AuthenticationState.Authenticated, state.authenticationState)
+        assertFalse(state.isLoading)
+        assertEquals(if (entry == Entry.SWITCH) INACTIVE else ACTIVE, state.selectedPatientId)
+        assertEquals(147, state.reading?.value)
+        assertEquals(timestamp, state.reading?.timestamp)
+        assertEquals(stale, state.isDataStale)
+        if (stale) {
+            assertTrue(state.dataConnectionState is DataConnectionState.Stale)
+            assertNotNull(state.staleInfoMessage)
+        } else {
+            assertEquals(DataConnectionState.Live, state.dataConnectionState)
+            assertNull(state.staleInfoMessage)
+        }
+        assertNull(state.errorMessage)
+        assertNull(state.nextPollingRetryAt)
+    }
+
+    @Test fun personSwitchLocalCacheRemainsStaleWhileNetworkIsPending() = runTest(dispatcher) {
+        auth.ensureAuthenticated()
+        vm.onScreenVisible(0); runCurrent()
+        val timestamp = Instant.now().truncatedTo(java.time.temporal.ChronoUnit.SECONDS)
+        http.graphBody = """{"status":0,"data":{"connection":{"glucoseMeasurement":{"ValueInMgPerDl":123,"Timestamp":"$timestamp"}},"graphData":[]}}"""
+        repository.fetchMonitoringSnapshot(INACTIVE)
+        http.gate = CompletableDeferred()
+        vm.onPersonSelected(INACTIVE); runCurrent()
+        assertEquals(INACTIVE, vm.uiState.value.selectedPatientId)
+        assertEquals(123, vm.uiState.value.reading?.value)
+        assertTrue(vm.uiState.value.isDataStale)
+        assertNotEquals(DataConnectionState.Live, vm.uiState.value.dataConnectionState)
+        http.gate!!.complete(Unit); runCurrent()
+        assertFalse(vm.uiState.value.isDataStale)
+        assertEquals(DataConnectionState.Live, vm.uiState.value.dataConnectionState)
+    }
+
     private fun verify(entry: Entry, code: Int? = null, error: Throwable? = null, connections: Boolean = false) = runTest(dispatcher) {
         auth.ensureAuthenticated()
         if (entry == Entry.POLL || entry == Entry.SWITCH) {

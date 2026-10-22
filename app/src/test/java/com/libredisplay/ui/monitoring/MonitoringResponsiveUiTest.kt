@@ -9,6 +9,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.assertTextEquals
 import androidx.compose.ui.test.hasText
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performScrollToNode
@@ -137,6 +138,29 @@ class MonitoringResponsiveUiTest {
                 .performScrollToNode(hasText(text))
             composeRule.onNodeWithText(text, substring = false).assertTextEquals(text)
         }
+    }
+
+    @Test
+    fun wideLayout_largeFont_keepsStaleDataAndCoreHomeElementsVisible() {
+        composeRule.setContent {
+            MonitoringHomeTestHost(
+                scenario = GlucoseScenario.STALE_DATA,
+                widthDp = 900,
+                fontScale = 1.4f
+            )
+        }
+        // The host and hero both expose the stale label; either is a valid visible warning.
+        composeRule.onAllNodesWithText("Dane nieaktualne")[0].assertIsDisplayed()
+        composeRule.onNodeWithTag(LibreCareTestTags.TOP_BAR_TITLE).assertIsDisplayed()
+        composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_VALUE).assertIsDisplayed()
+        composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_UNIT).assertIsDisplayed()
+        composeRule.assertNoOverlap(
+            first = composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_VALUE),
+            second = composeRule.onNodeWithTag(LibreCareTestTags.HOME_CURRENT_GLUCOSE_UNIT),
+            firstLabel = "Current glucose",
+            secondLabel = "Unit",
+            context = "stale data, width=900, fontScale=1.4"
+        )
     }
 
     @Test

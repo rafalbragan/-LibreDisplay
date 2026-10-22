@@ -64,6 +64,59 @@ class DeliveryInstrumentedTest {
     }
     @After fun resetOrientation() { device.setOrientationNatural(); device.unfreezeRotation() }
 
+    @Test fun historyButtonsMoveExactlyOneWindowAndReturnToLatest() {
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
+        waitForChart()
+        val latestStart = start()
+        val window = duration()
+        assertEquals(86_400_000L, window)
+        rule.onNodeWithTag("history-previous").performClick()
+        waitForChart()
+        assertEquals(latestStart - window, start())
+        assertEquals(window, duration())
+        rule.onNodeWithTag("history-next").performClick()
+        waitForChart()
+        assertEquals(latestStart, start())
+        rule.onNodeWithTag("history-previous").performClick()
+        waitForChart()
+        rule.onNodeWithTag("history-latest").performClick()
+        waitForChart()
+        assertEquals(latestStart, start())
+        assertEquals(window, duration())
+        rule.onNodeWithTag("history-next").performClick()
+        rule.waitForIdle()
+        assertEquals(latestStart, start())
+        rule.onNodeWithTag("history-range-Dzień").assertIsSelected()
+        rule.onNodeWithText("Osoba DEMO A").assertIsDisplayed()
+    }
+
+    @Test fun historyButtonsClampAtOldestAndKeepPersonAndSelectedRange() {
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
+        waitForChart()
+        rule.onNodeWithTag("history-range-Rok").performClick()
+        waitForChart()
+        val window = 365 * 86_400_000L
+        val end = Instant.parse("2026-10-19T10:00:00Z").toEpochMilli()
+        val oldest = end - 2350 * 86_400_000L
+        repeat(7) {
+            val expected = (start() - window).coerceAtLeast(oldest)
+            rule.onNodeWithTag("history-previous").performClick()
+            waitForChart()
+            assertEquals(expected, start())
+            assertEquals(window, duration())
+        }
+        assertEquals(oldest, start())
+        rule.onNodeWithTag("history-next").performClick()
+        waitForChart()
+        assertEquals(oldest + window, start())
+        rule.onNodeWithTag("history-latest").performClick()
+        waitForChart()
+        assertEquals(end - window, start())
+        assertEquals(window, duration())
+        rule.onNodeWithTag("history-range-Rok").assertIsSelected()
+        rule.onNodeWithText("Osoba DEMO A").assertIsDisplayed()
+    }
+
     @Test fun privacyEntryOpensRealImporter() {
         rule.setContent { LibreDisplayTheme { PrivacyDataScreen({}, {}, {}, {}) } }
         rule.onNodeWithText("Import LibreView CSV").assertIsDisplayed().performClick()

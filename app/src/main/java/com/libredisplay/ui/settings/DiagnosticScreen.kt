@@ -3,7 +3,6 @@ package com.libredisplay.ui.settings
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -32,6 +31,7 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import com.libredisplay.data.repository.SettingsRepository
 import com.libredisplay.diagnostics.DiagnosticLogger
+import com.libredisplay.diagnostics.DiagnosticShareSanitizer
 import com.libredisplay.diagnostics.DiagnosticStatus
 
 @OptIn(ExperimentalMaterial3Api::class)
@@ -86,7 +86,7 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
                 OutlinedButton(onClick = { refresh() }, modifier = Modifier.weight(1f)) { Text("Pokaż log") }
                 OutlinedButton(onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", logText))
+                    clipboard.setPrimaryClip(ClipData.newPlainText("LibreCareLog", DiagnosticShareSanitizer.sanitize(logText)))
                 }, modifier = Modifier.weight(1f)) { Text("Kopiuj") }
             }
 
@@ -95,11 +95,7 @@ fun DiagnosticScreen(onNavigateBack: () -> Unit) {
                     DiagnosticLogger.clear()
                     refresh()
                 }, modifier = Modifier.weight(1f)) { Text("Wyczyść") }
-                Button(onClick = {
-                    DiagnosticLogger.createShareIntent(context)?.let {
-                        context.startActivity(Intent.createChooser(it, "Udostępnij log"))
-                    }
-                }, modifier = Modifier.weight(1f)) { Text("Udostępnij") }
+                Button(onClick = { shareLog(context) }, modifier = Modifier.weight(1f)) { Text("Udostępnij") }
             }
 
             Text("Plik logu: ${DiagnosticLogger.logFilePath()}")

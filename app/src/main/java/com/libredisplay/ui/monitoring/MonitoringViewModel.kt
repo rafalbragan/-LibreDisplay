@@ -307,14 +307,11 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     retryCooldownSecondsRemaining = authCooldownSeconds(),
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = DataConnectionState.Live,
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = snapshotOrNull.reading.timestamp,
-                    isDataStale = false,
                     consecutivePollingFailures = 0,
-                    nextPollingRetryAt = null,
-                    staleInfoMessage = null
+                    nextPollingRetryAt = null
                     )
                 }
                 startPolling()
@@ -438,6 +435,7 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                             it.applyDashboardSnapshot(localSnapshot, persistSelection = false).copy(
                                 isLoading = false,
                                 isDataStale = true,
+                                dataConnectionState = DataConnectionState.Stale(localSnapshot.reading.timestamp, 0),
                                 staleInfoMessage = "Dane z lokalnej historii. Trwa odswiezanie dla wybranej osoby."
                             )
                         }
@@ -514,14 +512,11 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                         canRetry = false,
                         lastUpdatedAt = Instant.now(),
                         authenticationState = AuthenticationState.Authenticated,
-                        dataConnectionState = DataConnectionState.Live,
                         pollingStatus = PollingStatus.Active,
                         lastSuccessfulFetchAt = Instant.now(),
                         lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                        isDataStale = false,
                         consecutivePollingFailures = 0,
-                        nextPollingRetryAt = null,
-                        staleInfoMessage = null
+                        nextPollingRetryAt = null
                         )
                     }
                     startPolling()
@@ -635,14 +630,11 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
                     lastUpdatedAt = Instant.now(),
                     isPolling = true,
                     authenticationState = AuthenticationState.Authenticated,
-                    dataConnectionState = DataConnectionState.Live,
                     pollingStatus = PollingStatus.Active,
                     lastSuccessfulFetchAt = Instant.now(),
                     lastMeasurementTimestamp = monitoringSnapshot.reading.timestamp,
-                    isDataStale = false,
                     consecutivePollingFailures = 0,
-                    nextPollingRetryAt = null,
-                    staleInfoMessage = null
+                    nextPollingRetryAt = null
                 )
                 if (pollingJob?.isActive != true) startPolling()
             }.onFailure { throwable ->
@@ -873,7 +865,15 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         if (persistSelection && settingsRepository.loadSettings().selectedPatientId != selected.patientId) {
             settingsRepository.saveSelectedPatientId(selected.patientId)
         }
+        // Successful connectivity is not evidence of a current measurement. Reuse the UI's
+        // existing age policy rather than introducing a second cutoff or discarding history.
+        val freshnessWarning = buildGlucoseWarnings(snapshot.reading)
+            .firstOrNull { it.level == GlucoseWarningLevel.STALE_DATA }
         return withReading(snapshot.reading).copy(
+            isDataStale = freshnessWarning != null,
+            dataConnectionState = if (freshnessWarning == null) DataConnectionState.Live
+                else DataConnectionState.Stale(snapshot.reading.timestamp, 0),
+            staleInfoMessage = freshnessWarning?.message,
             availablePersons = persons,
             selectedPatientId = selected.patientId,
             selectedPersonFirstName = selected.firstName,
