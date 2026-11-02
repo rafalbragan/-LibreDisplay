@@ -378,6 +378,7 @@ jobs:
             --device="model=${{ steps.device.outputs.small_model }},version=${{ steps.device.outputs.small_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.standard_model }},version=${{ steps.device.outputs.standard_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.large_model }},version=${{ steps.device.outputs.large_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --directories-to-pull="/sdcard/Android/data/com.libredisplay/files/delivery-screenshots" \
             --results-dir="$RESULTS_DIR" \
             --timeout=15m 2>&1 | tee ftl-output.log
           FTL_EXIT=${PIPESTATUS[0]}
@@ -408,7 +409,7 @@ jobs:
           found=0
           while IFS= read -r object; do
             case "$object" in
-              */test_result*.xml|*/logcat|*/logcat.txt)
+              */test_result*.xml|*/logcat|*/logcat.txt|*/delivery-screenshots/*.png)
                 relative="${object#"$FTL_RESULTS_GCS"/}"
                 destination="ftl-results/$relative"
                 mkdir -p "$(dirname "$destination")"
