@@ -131,6 +131,47 @@ class LibreViewImportRepositoryTest {
         assertEquals(500, db.glucoseReadingDao().nearestInViewport("chart-demo", start.toEpochMilli(), end.toEpochMilli(), end.toEpochMilli())!!.valueMgDl)
         assertTrue(db.glucoseReadingDao().chartBuckets("other-person", start.toEpochMilli(), end.toEpochMilli(), 60_000L).isEmpty())
     }
+    @Test fun chartBucketsKeepTimeBoundsAveragesExtremesAndScanCounts() = runBlocking {
+        val start = Instant.parse("2020-05-01T10:00:00Z")
+        val samples = listOf(
+            Triple(0L, 90, "LibreViewScan"),
+            Triple(60_000L, 110, "DemoMode"),
+            Triple(20 * 60_000L, 180, "LibreViewScan")
+        )
+        db.glucoseReadingDao().insertIgnore(samples.mapIndexed { index, (offset, value, source) ->
+            val time = start.plusMillis(offset)
+            GlucoseReadingEntity(
+                "aggregate:$index",
+                "chart-demo",
+                time,
+                value,
+                null,
+                null,
+                source = source,
+                receivedAt = time,
+                createdAt = time
+            )
+        })
+
+        val buckets = db.glucoseReadingDao().chartBuckets(
+            "chart-demo",
+            start.toEpochMilli(),
+            start.plusSeconds(30 * 60L).toEpochMilli(),
+            10 * 60_000L
+        )
+
+        assertEquals(2, buckets.size)
+        assertEquals(start.toEpochMilli(), buckets[0].firstTime)
+        assertEquals(start.plusMinutes(1).toEpochMilli(), buckets[0].lastTime)
+        assertEquals(90, buckets[0].minimum)
+        assertEquals(110, buckets[0].maximum)
+        assertEquals(100.0, buckets[0].average, 0.0)
+        assertEquals(2, buckets[0].count)
+        assertEquals(1, buckets[0].scans)
+        assertEquals(start.plusMinutes(20).toEpochMilli(), buckets[1].firstTime)
+        assertEquals(1, buckets[1].count)
+        assertEquals(1, buckets[1].scans)
+    }
     @Test fun backupRoundTripPreservesProvenanceAndScanSource() {
         val row = BackupReadingDto("id", "local-csv-demo", "2020-05-01T00:00:00Z", 110,
             source = "LibreViewScan", receivedAtIso = "2026-10-19T00:00:00Z", createdAtIso = "2026-10-19T00:00:00Z",
@@ -139,5 +180,4 @@ class LibreViewImportRepositoryTest {
         assertEquals(row, BackupCodec.decode(BackupCodec.encode(bundle)).readings.single())
     }
 }
-
 
