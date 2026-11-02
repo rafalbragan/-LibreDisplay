@@ -162,13 +162,13 @@ class LibreViewImportRepositoryTest {
 
         assertEquals(2, buckets.size)
         assertEquals(start.toEpochMilli(), buckets[0].firstTime)
-        assertEquals(start.plusMinutes(1).toEpochMilli(), buckets[0].lastTime)
+        assertEquals(start.plusSeconds(60).toEpochMilli(), buckets[0].lastTime)
         assertEquals(90, buckets[0].minimum)
         assertEquals(110, buckets[0].maximum)
         assertEquals(100.0, buckets[0].average, 0.0)
         assertEquals(2, buckets[0].count)
         assertEquals(1, buckets[0].scans)
-        assertEquals(start.plusMinutes(20).toEpochMilli(), buckets[1].firstTime)
+        assertEquals(start.plusSeconds(20 * 60L).toEpochMilli(), buckets[1].firstTime)
         assertEquals(1, buckets[1].count)
         assertEquals(1, buckets[1].scans)
     }
@@ -180,4 +180,3 @@ class LibreViewImportRepositoryTest {
         assertEquals(row, BackupCodec.decode(BackupCodec.encode(bundle)).readings.single())
     }
 }
-
