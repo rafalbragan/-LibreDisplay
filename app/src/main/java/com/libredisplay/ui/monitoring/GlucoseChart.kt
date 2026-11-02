@@ -2,6 +2,7 @@ package com.libredisplay.ui.monitoring
 
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.gestures.detectDragGestures
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -589,32 +590,24 @@ fun GlucoseChart(
                 }
             }
             .pointerInput(renderedPoints, canvasWidth, canvasHeight, onPointSelected, onHorizontalPan) {
-                var horizontalDrag = 0f
-                var verticalDrag = 0f
-                var isHorizontalPan = false
-                detectDragGestures(
-                    onDragStart = {
-                        horizontalDrag = 0f
-                        verticalDrag = 0f
-                        isHorizontalPan = false
-                    },
-                    onDragEnd = {
-                        if (isHorizontalPan && canvasWidth > 0f) {
-                            onHorizontalPan?.invoke(horizontalDrag / canvasWidth)
-                        }
-                        onPointSelectionCleared?.invoke()
-                    },
-                    onDragCancel = {
-                        onPointSelectionCleared?.invoke()
+                if (onHorizontalPan != null) {
+                    var horizontalDrag = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { horizontalDrag = 0f },
+                        onDragEnd = {
+                            if (canvasWidth > 0f) onHorizontalPan(horizontalDrag / canvasWidth)
+                            onPointSelectionCleared?.invoke()
+                        },
+                        onDragCancel = { onPointSelectionCleared?.invoke() }
+                    ) { change, dragAmount ->
+                        horizontalDrag += dragAmount
+                        change.consume()
                     }
-                ) { change, drag ->
-                    horizontalDrag += drag.x
-                    verticalDrag += drag.y
-                    if (onHorizontalPan != null && !isHorizontalPan &&
-                        kotlin.math.abs(horizontalDrag) > 18.dp.toPx() &&
-                        kotlin.math.abs(horizontalDrag) > kotlin.math.abs(verticalDrag) * 1.5f
-                    ) isHorizontalPan = true
-                    if (!isHorizontalPan) {
+                } else {
+                    detectDragGestures(
+                        onDragEnd = { onPointSelectionCleared?.invoke() },
+                        onDragCancel = { onPointSelectionCleared?.invoke() }
+                    ) { change, _ ->
                         val selectedReading = findNearestHistoryPoint(
                             points = renderedPoints,
                             canvasWidth = canvasWidth,
@@ -628,8 +621,8 @@ fun GlucoseChart(
                             axisBottomPaddingPx = axisBottomPaddingPx
                         )
                         if (selectedReading != null) onPointSelected?.invoke(selectedReading)
+                        change.consume()
                     }
-                    change.consume()
                 }
             }
     ) {

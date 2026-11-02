@@ -4,9 +4,17 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.os.Build
 import com.libredisplay.DeliveryTestActivity
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.Modifier
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -18,6 +26,8 @@ import com.libredisplay.data.local.GlucoseReadingEntity
 import com.libredisplay.data.local.ObservedPersonEntity
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.GlucoseHistoryPoint
+import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.ui.monitoring.*
 import com.libredisplay.ui.privacy.CsvImportScreen
 import com.libredisplay.ui.privacy.CsvImportViewModel
@@ -63,6 +73,64 @@ class DeliveryInstrumentedTest {
             source = "DemoMode", receivedAt = now, createdAt = now)))
     }
     @After fun resetOrientation() { device.setOrientationNatural(); device.unfreezeRotation() }
+
+    @Test fun glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll() {
+        val firstTime = Instant.parse("2026-10-19T10:00:00Z")
+        val points = listOf(
+            GlucoseHistoryPoint(100, firstTime, GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(110, firstTime.plusSeconds(900), GlucoseTrend.FLAT)
+        )
+        var selectedTimestamp: Instant? = null
+        var horizontalPan = 0f
+        var historyOpened = false
+        rule.setContent {
+            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+                GlucoseChart(
+                    points = points,
+                    targetLow = 70,
+                    targetHigh = 180,
+                    domainStart = points.first().timestamp,
+                    domainEnd = points.last().timestamp,
+                    onPointSelected = { selectedTimestamp = it.timestamp },
+                    onChartTapped = { historyOpened = true },
+                    onHorizontalPan = { horizontalPan += it },
+                    chartHeight = 220.dp,
+                    modifier = Modifier.testTag("interactive-glucose-chart")
+                )
+                Spacer(Modifier.height(900.dp))
+            }
+        }
+
+        val chart = rule.onNodeWithTag("interactive-glucose-chart")
+        chart.performTouchInput { click(Offset(54f, 100f)) }
+        rule.runOnIdle {
+            assertEquals(firstTime, selectedTimestamp)
+            assertFalse(historyOpened)
+        }
+
+        chart.performTouchInput {
+            swipe(start = center, end = center + Offset(120f, 0f))
+        }
+        rule.runOnIdle {
+            assertTrue("Rightward drag should reveal older history", horizontalPan > 0f)
+            assertFalse(historyOpened)
+        }
+
+        chart.performTouchInput {
+            swipe(start = center, end = center + Offset(-120f, 0f))
+        }
+        rule.runOnIdle {
+            assertTrue("Leftward drag should return toward newer history", horizontalPan < 0f)
+        }
+
+        val topBeforeVerticalDrag = chart.fetchSemanticsNode().boundsInRoot.top
+        chart.performTouchInput {
+            swipe(start = center, end = center + Offset(0f, -120f))
+        }
+        rule.waitForIdle()
+        val topAfterVerticalDrag = chart.fetchSemanticsNode().boundsInRoot.top
+        assertTrue("Vertical dashboard scrolling must not be consumed by the chart", topAfterVerticalDrag < topBeforeVerticalDrag)
+    }
 
     @Test fun privacyEntryOpensRealImporter() {
         rule.setContent { LibreDisplayTheme { PrivacyDataScreen({}, {}, {}, {}) } }
@@ -269,9 +337,6 @@ class DeliveryInstrumentedTest {
     }
     companion object { private const val A = "demo-person-delivery-a"; private const val B = "demo-person-delivery-b" }
 }
-
-
-
 
 
 

@@ -94,12 +94,13 @@ class HomeChartModelsTest {
 
     @Test fun homeHistoryPan_movesInBothDirectionsByVisibleWindowFraction() {
         val hour = 3_600_000L
-        val oldest = 0L
-        val latest = 48 * hour
-        val window = 12 * hour
-        val initial = 24 * hour
-        assertEquals(18 * hour, panHomeHistoryStart(initial, 0.5f, window, oldest, latest))
-        assertEquals(30 * hour, panHomeHistoryStart(initial, -0.5f, window, oldest, latest))
+        val windows = listOf(12 * hour, 7 * 24 * hour, 30 * 24 * hour)
+        windows.forEach { window ->
+            val initial = window * 2
+            val latest = window * 4
+            assertEquals(initial - window / 2, panHomeHistoryStart(initial, 0.5f, window, 0L, latest))
+            assertEquals(initial + window / 2, panHomeHistoryStart(initial, -0.5f, window, 0L, latest))
+        }
     }
 
     @Test fun homeHistoryPan_clampsToOldestAndNewestAvailableWindows() {
@@ -128,5 +129,4 @@ class HomeChartModelsTest {
         }
     }
 }
-
 
