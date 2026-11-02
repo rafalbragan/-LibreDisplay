@@ -56,6 +56,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK 36 components
         run: |
@@ -208,10 +210,10 @@ jobs:
           # --- helpers -------------------------------------------------------
           record_for() { echo "$PHONES_TSV" | awk -F "$TAB" -v id="$1" '$1==id {print; exit}'; }
           supports() { echo ",$1," | grep -q ",$2,"; }         # supports "<csv>" "<api>"
-          # Per-model API preference: 35 -> 34 -> 33 -> 32 -> highest stable supported by THIS model.
+          # Prefer the app's target API, then fall back for models that do not support it.
           pick_version() {
             local csv="$1" v
-            for v in 35 34 33 32; do
+            for v in 36 35 34 33 32; do
               if supports "$csv" "$v"; then echo "$v"; return 0; fi
             done
             echo "$csv" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
@@ -280,13 +282,13 @@ jobs:
             set_profile LARGE "$line" "$(pick_version "$(echo "$line" | cut -f5)")" "fallback-auto"
           }
 
-          # STANDARD: widthDp closest to 384; tie-break prefers API 35 then 34.
+          # STANDARD: widthDp closest to 384; tie-break prefers API 36 then 35.
           auto_standard() {
             local line
             line=$(echo "$PHONES_TSV" | awk -F "$TAB" -v u="$USED" '
               BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1}
               $1 in used {next}
-              { d=$4-384; if(d<0)d=-d; sc=2; v=","$5","; if(index(v,",35,")>0)sc=0; else if(index(v,",34,")>0)sc=1;
+              { d=$4-384; if(d<0)d=-d; sc=2; v=","$5","; if(index(v,",36,")>0)sc=0; else if(index(v,",35,")>0)sc=1;
                 printf "%d\t%d\t%s\n", d, sc, $0 }' \
               | sort -t "$TAB" -k1,1n -k2,2n | head -n 1 | cut -f3-)
             [ -n "$line" ] || { echo "::error::STANDARD: no available phone distinct from the others."; exit 1; }
@@ -514,4 +516,3 @@ jobs:
           echo "Firebase Test Lab: SKIPPED_EXTERNAL_CONFIGURATION"
           echo "Missing repository variables: ${{ steps.firebase-config.outputs.missing_vars }}"
           echo "Build artifacts were produced; Test Lab execution was skipped (not a failure)."
-

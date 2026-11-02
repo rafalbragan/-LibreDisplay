@@ -209,6 +209,12 @@ class DeliveryInstrumentedTest {
     }
 
     @Test fun historyBackGestureAndSystemInsetsRemainCorrect() {
+        device.executeShellCommand("settings put secure navigation_mode 2")
+        assertEquals(
+            "The edge-swipe probe requires gesture navigation",
+            "2",
+            device.executeShellCommand("settings get secure navigation_mode").trim()
+        )
         var backCount = 0
         rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({ backCount++ }, A) } }
         waitForChart()
@@ -284,7 +290,6 @@ class DeliveryInstrumentedTest {
     }
     companion object { private const val A = "demo-person-delivery-a"; private const val B = "demo-person-delivery-b" }
 }
-
 
 
 
