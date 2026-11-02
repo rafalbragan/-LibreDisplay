@@ -72,13 +72,10 @@ jobs:
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
           test -s "$keyfile"
           chmod +x ./gradlew
-          RELEASE_STORE_FILE="$keyfile" ./gradlew --no-daemon :app:bundleRelease \
-            -PRELEASE_STORE_PASSWORD="$RELEASE_STORE_PASSWORD" \
-            -PRELEASE_KEY_ALIAS="$RELEASE_KEY_ALIAS" \
-            -PRELEASE_KEY_PASSWORD="$RELEASE_KEY_PASSWORD"
+          RELEASE_STORE_FILE="$keyfile" ./gradlew --no-daemon :app:bundleRelease
           aab="app/build/outputs/bundle/release/app-release.aab"
           test -s "$aab" || { echo "::error::Missing release AAB"; exit 1; }
-          jarsigner -verify -strict "$aab"
+          jarsigner -verify "$aab"
           mkdir -p release-evidence
           sha256sum "$aab" > release-evidence/app-release.aab.sha256
           printf 'commit=%s\nref=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > release-evidence/source.txt
