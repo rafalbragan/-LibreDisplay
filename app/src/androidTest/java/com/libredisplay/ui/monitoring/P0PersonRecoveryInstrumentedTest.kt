@@ -21,12 +21,15 @@ import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
+import org.junit.FixMethodOrder
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.junit.runners.MethodSorters
 import java.io.File
 
 @RunWith(AndroidJUnit4::class)
+@FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class P0PersonRecoveryInstrumentedTest {
     @get:Rule val compose = createEmptyComposeRule()
     private lateinit var app: LibreDisplayApp
@@ -44,7 +47,7 @@ class P0PersonRecoveryInstrumentedTest {
 
     @After fun closeActivity() { scenario?.close() }
 
-    @Test fun inactiveSelection_canReturnWithoutMisattribution() {
+    @Test fun test03_prepareNormalSelectionForProcessRestart() {
         fixture.seedActiveSession()
         launch()
         awaitActive()
@@ -61,7 +64,7 @@ class P0PersonRecoveryInstrumentedTest {
         marker("normal-restart")
     }
 
-    @Test fun afterProcessRestart_lastGoodSelectionStarts() {
+    @Test fun test04_afterProcessRestart_lastGoodSelectionStarts() {
         verifyNewProcess("normal-restart")
         assertNotEquals(P0RecoveryFixture.INACTIVE, app.settingsRepository.loadSettings().selectedPatientId)
         launch()
@@ -69,7 +72,7 @@ class P0PersonRecoveryInstrumentedTest {
         capture("process-restarted")
     }
 
-    @Test fun prepareLegacyInactiveSelectionForProcessRestart() {
+    @Test fun test01_prepareLegacyInactiveSelectionForProcessRestart() {
         fixture.seedActiveSession()
         launch()
         awaitActive()
@@ -80,7 +83,7 @@ class P0PersonRecoveryInstrumentedTest {
         marker("legacy-restart")
     }
 
-    @Test fun afterProcessRestart_legacyInactiveSelectionIsRecoverable() {
+    @Test fun test02_afterProcessRestart_legacyInactiveSelectionIsRecoverable() {
         verifyNewProcess("legacy-restart")
         assertEquals(P0RecoveryFixture.INACTIVE, app.settingsRepository.loadSettings().selectedPatientId)
         launch()
@@ -92,7 +95,7 @@ class P0PersonRecoveryInstrumentedTest {
         awaitActive()
     }
 
-    @Test fun stalePersonNeverDisplaysActivePersonsReading() {
+    @Test fun test05_prepareStaleSelectionForProcessRestart() {
         fixture.seedActiveSession()
         fixture.http.inactiveHasStaleReading = true
         launch()
@@ -112,7 +115,7 @@ class P0PersonRecoveryInstrumentedTest {
         compose.waitUntil(15_000) { vm.uiState.value.reading?.value == 231 && !vm.uiState.value.isLoading }
     }
 
-    @Test fun afterProcessRestart_staleSelectionDoesNotCrash() {
+    @Test fun test06_afterProcessRestart_staleSelectionDoesNotCrash() {
         verifyNewProcess("stale-restart")
         assertEquals(P0RecoveryFixture.INACTIVE, app.settingsRepository.loadSettings().selectedPatientId)
         fixture.http.inactiveHasStaleReading = true
@@ -126,7 +129,7 @@ class P0PersonRecoveryInstrumentedTest {
         awaitActive()
     }
 
-    @Test fun pendingPolling_cannotHideSwitcherOrOverwriteLatestChoice() {
+    @Test fun test07_pendingPolling_cannotHideSwitcherOrOverwriteLatestChoice() {
         fixture.seedActiveSession()
         launch()
         awaitActive()
@@ -207,7 +210,6 @@ class P0PersonRecoveryInstrumentedTest {
         bitmap.recycle()
     }
 }
-
 
 
 

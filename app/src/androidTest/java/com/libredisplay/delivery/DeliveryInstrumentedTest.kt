@@ -193,7 +193,28 @@ class DeliveryInstrumentedTest {
         rule.onNodeWithText("Import LibreView CSV").assertIsDisplayed()
     }
 
+    @Test fun historyBackHandlerRespondsToDeterministicSystemBack() {
+        var backCount = 0
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({ backCount++ }, A) } }
+        waitForChart()
+
+        // Control probe: use the platform back event, not an edge swipe whose
+        // recognition depends on the emulator navigation mode and System UI.
+        device.pressBack()
+        rule.waitUntil(10_000) { backCount == 1 }
+        rule.runOnIdle {
+            assertEquals("History BackHandler must dispatch exactly once", 1, backCount)
+            assertFalse("Activity must stay alive after the callback", rule.activity.isFinishing)
+        }
+    }
+
     @Test fun historyBackGestureAndSystemInsetsRemainCorrect() {
+        device.executeShellCommand("settings put secure navigation_mode 2")
+        assertEquals(
+            "The edge-swipe probe requires gesture navigation",
+            "2",
+            device.executeShellCommand("settings get secure navigation_mode").trim()
+        )
         var backCount = 0
         rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({ backCount++ }, A) } }
         waitForChart()
@@ -269,7 +290,6 @@ class DeliveryInstrumentedTest {
     }
     companion object { private const val A = "demo-person-delivery-a"; private const val B = "demo-person-delivery-b" }
 }
-
 
 
 

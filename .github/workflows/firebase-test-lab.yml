@@ -56,6 +56,8 @@ jobs:
 
       - name: Set up Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install Android SDK 36 components
         run: |
@@ -208,10 +210,10 @@ jobs:
           # --- helpers -------------------------------------------------------
           record_for() { echo "$PHONES_TSV" | awk -F "$TAB" -v id="$1" '$1==id {print; exit}'; }
           supports() { echo ",$1," | grep -q ",$2,"; }         # supports "<csv>" "<api>"
-          # Per-model API preference: 35 -> 34 -> 33 -> 32 -> highest stable supported by THIS model.
+          # Prefer the app's target API, then fall back for models that do not support it.
           pick_version() {
             local csv="$1" v
-            for v in 35 34 33 32; do
+            for v in 36 35 34 33 32; do
               if supports "$csv" "$v"; then echo "$v"; return 0; fi
             done
             echo "$csv" | tr ',' '\n' | grep -E '^[0-9]+$' | sort -n | tail -n 1
@@ -280,13 +282,13 @@ jobs:
             set_profile LARGE "$line" "$(pick_version "$(echo "$line" | cut -f5)")" "fallback-auto"
           }
 
-          # STANDARD: widthDp closest to 384; tie-break prefers API 35 then 34.
+          # STANDARD: widthDp closest to 384; tie-break prefers API 36 then 35.
           auto_standard() {
             local line
             line=$(echo "$PHONES_TSV" | awk -F "$TAB" -v u="$USED" '
               BEGIN{n=split(u,a," ");for(i=1;i<=n;i++)used[a[i]]=1}
               $1 in used {next}
-              { d=$4-384; if(d<0)d=-d; sc=2; v=","$5","; if(index(v,",35,")>0)sc=0; else if(index(v,",34,")>0)sc=1;
+              { d=$4-384; if(d<0)d=-d; sc=2; v=","$5","; if(index(v,",36,")>0)sc=0; else if(index(v,",35,")>0)sc=1;
                 printf "%d\t%d\t%s\n", d, sc, $0 }' \
               | sort -t "$TAB" -k1,1n -k2,2n | head -n 1 | cut -f3-)
             [ -n "$line" ] || { echo "::error::STANDARD: no available phone distinct from the others."; exit 1; }
@@ -354,7 +356,7 @@ jobs:
           echo "READY_FOR_DYNAMIC_3_DEVICE_MATRIX: YES"
 
       # ------------------------------------------------------------------
-      # RUN: instrumentation tests on Firebase Test Lab as ONE matrix that
+      # RUN: regular instrumentation tests excluding three process-restart verification\n      # phases, which require external adb process termination and are executed\n      # separately by scripts/test-p0-process-death-api36.sh. Do not count them\n      # as covered by this Firebase run.\n      # Instrumentation tests on Firebase Test Lab as ONE matrix that
       # contains all three device executions (small/standard/large).
       # A failure on ANY device fails the whole step (propagated exit code).
       # ------------------------------------------------------------------
@@ -373,9 +375,11 @@ jobs:
             --type=instrumentation \
             --app="${{ steps.apks.outputs.debug_apk }}" \
             --test="${{ steps.apks.outputs.test_apk }}" \
+            --test-targets "notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test02_afterProcessRestart_legacyInactiveSelectionIsRecoverable,notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test04_afterProcessRestart_lastGoodSelectionStarts,notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test06_afterProcessRestart_staleSelectionDoesNotCrash" \
             --device="model=${{ steps.device.outputs.small_model }},version=${{ steps.device.outputs.small_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.standard_model }},version=${{ steps.device.outputs.standard_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.large_model }},version=${{ steps.device.outputs.large_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
+            --directories-to-pull="/sdcard/Android/data/com.libredisplay/files/delivery-screenshots" \
             --results-dir="$RESULTS_DIR" \
             --timeout=15m 2>&1 | tee ftl-output.log
           FTL_EXIT=${PIPESTATUS[0]}
@@ -383,7 +387,8 @@ jobs:
 
           # Extract result links even when the run failed, so they still appear in the summary.
           RESULTS_URL=$(grep -Eo 'https://console.firebase.google.com[^ ]*' ftl-output.log | head -n 1 || true)
-          GCS_URL=$(grep -Eo 'gs://[^ ]*' ftl-output.log | head -n 1 || true)
+          RAW_RESULTS_URL=$(grep -Eo 'https://console.developers.google.com/storage/browser/[^ ]+' ftl-output.log | head -n 1 || true)
+          GCS_URL=$(printf '%s' "$RAW_RESULTS_URL" | sed 's#https://console.developers.google.com/storage/browser/#gs://#; s#\]$##; s#/$##')
           echo "results_url=${RESULTS_URL}" >> "$GITHUB_OUTPUT"
           echo "gcs_url=${GCS_URL}" >> "$GITHUB_OUTPUT"
 
@@ -391,13 +396,44 @@ jobs:
           # Propagate the exact Test Lab exit code so a failing instrumentation run fails the job.
           exit "$FTL_EXIT"
 
+      - name: Collect Test Lab test-case diagnostics
+        if: ${{ always() && steps.firebase-config.outputs.enabled == 'true' && steps.auth.outcome == 'success' && steps.ftl.outputs.gcs_url != '' }}
+        continue-on-error: true
+        shell: bash
+        env:
+          FTL_RESULTS_GCS: ${{ steps.ftl.outputs.gcs_url }}
+        run: |
+          set -euo pipefail
+          mkdir -p ftl-results
+          gcloud storage ls --recursive "$FTL_RESULTS_GCS" > ftl-result-files.txt
+
+          found=0
+          while IFS= read -r object; do
+            case "$object" in
+              */test_result*.xml|*/logcat|*/logcat.txt|*/delivery-screenshots/*.png)
+                relative="${object#"$FTL_RESULTS_GCS"/}"
+                destination="ftl-results/$relative"
+                mkdir -p "$(dirname "$destination")"
+                gcloud storage cp "$object" "$destination"
+                found=1
+                ;;
+            esac
+          done < ftl-result-files.txt
+
+          if [ "$found" -eq 0 ]; then
+            echo "::warning::No Test Lab XML result or logcat objects were found in $FTL_RESULTS_GCS"
+          fi
+
       - name: Upload Firebase Test Lab log
         if: ${{ always() && steps.firebase-config.outputs.enabled == 'true' }}
         uses: actions/upload-artifact@v4
         with:
           name: librecare-firebase-testlab-log
-          path: ftl-output.log
-          if-no-files-found: ignore
+          path: |
+            ftl-output.log
+            ftl-result-files.txt
+            ftl-results/**
+          if-no-files-found: warn
           retention-days: 14
 
       # ------------------------------------------------------------------
@@ -514,4 +550,3 @@ jobs:
           echo "Firebase Test Lab: SKIPPED_EXTERNAL_CONFIGURATION"
           echo "Missing repository variables: ${{ steps.firebase-config.outputs.missing_vars }}"
           echo "Build artifacts were produced; Test Lab execution was skipped (not a failure)."
-
