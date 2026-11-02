@@ -356,7 +356,7 @@ jobs:
           echo "READY_FOR_DYNAMIC_3_DEVICE_MATRIX: YES"
 
       # ------------------------------------------------------------------
-      # RUN: instrumentation tests on Firebase Test Lab as ONE matrix that
+      # RUN: regular instrumentation tests excluding three process-restart verification\n      # phases, which require external adb process termination and are executed\n      # separately by scripts/test-p0-process-death-api36.sh. Do not count them\n      # as covered by this Firebase run.\n      # Instrumentation tests on Firebase Test Lab as ONE matrix that
       # contains all three device executions (small/standard/large).
       # A failure on ANY device fails the whole step (propagated exit code).
       # ------------------------------------------------------------------
@@ -375,6 +375,7 @@ jobs:
             --type=instrumentation \
             --app="${{ steps.apks.outputs.debug_apk }}" \
             --test="${{ steps.apks.outputs.test_apk }}" \
+            --test-targets "notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test02_afterProcessRestart_legacyInactiveSelectionIsRecoverable,notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test04_afterProcessRestart_lastGoodSelectionStarts,notClass com.libredisplay.ui.monitoring.P0PersonRecoveryInstrumentedTest#test06_afterProcessRestart_staleSelectionDoesNotCrash" \
             --device="model=${{ steps.device.outputs.small_model }},version=${{ steps.device.outputs.small_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.standard_model }},version=${{ steps.device.outputs.standard_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
             --device="model=${{ steps.device.outputs.large_model }},version=${{ steps.device.outputs.large_version }},locale=${LOCALE},orientation=${ORIENTATION}" \
