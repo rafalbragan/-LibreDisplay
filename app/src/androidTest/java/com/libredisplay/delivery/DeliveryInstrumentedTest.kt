@@ -84,8 +84,9 @@ class DeliveryInstrumentedTest {
         var selectedTimestamp: Instant? = null
         val horizontalPans = mutableListOf<Float>()
         var historyOpened = false
+        val dashboardScroll = androidx.compose.foundation.ScrollState(0)
         rule.setContent {
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
+            Column(Modifier.fillMaxSize().verticalScroll(dashboardScroll)) {
                 GlucoseChart(
                     points = points,
                     targetLow = 70,
@@ -98,7 +99,7 @@ class DeliveryInstrumentedTest {
                     chartHeight = 220.dp,
                     modifier = Modifier.testTag("interactive-glucose-chart")
                 )
-                Spacer(Modifier.height(900.dp))
+                Spacer(Modifier.height(1800.dp))
             }
         }
 
@@ -125,13 +126,16 @@ class DeliveryInstrumentedTest {
             assertTrue("Leftward drag should return toward newer history", horizontalPans.last() < 0f)
         }
 
-        val topBeforeVerticalDrag = chart.fetchSemanticsNode().boundsInRoot.top
+        assertEquals("Dashboard should start at its top", 0, dashboardScroll.value)
         chart.performTouchInput {
-            swipe(start = center, end = center + Offset(0f, -120f))
+            swipe(
+                start = Offset(width * 0.5f, height * 0.8f),
+                end = Offset(width * 0.5f, height * 0.2f),
+                durationMillis = 500
+            )
         }
-        rule.waitForIdle()
-        val topAfterVerticalDrag = chart.fetchSemanticsNode().boundsInRoot.top
-        assertTrue("Vertical dashboard scrolling must not be consumed by the chart", topAfterVerticalDrag < topBeforeVerticalDrag)
+        rule.waitUntil(5_000) { dashboardScroll.value > 0 }
+        assertTrue("Vertical dashboard scrolling must not be consumed by the chart", dashboardScroll.value > 0)
     }
 
     @Test fun privacyEntryOpensRealImporter() {
