@@ -8,6 +8,7 @@ on:
       - feat/history-line-continuity-20261023
     paths:
       - ".github/workflows/history-visual-review-api36.yml"
+      - "app/src/androidTest/java/com/libredisplay/delivery/DeliveryInstrumentedTest.kt"
   workflow_dispatch:
 
 permissions:
@@ -68,7 +69,7 @@ jobs:
           sdkmanager "platforms;android-36" "build-tools;35.0.0"
           ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
 
-      - name: Execute only the home chart gesture test on one Firebase device
+      - name: Capture eight fullscreen history range screenshots on one Firebase device
         shell: bash
         run: |
           set -euo pipefail
