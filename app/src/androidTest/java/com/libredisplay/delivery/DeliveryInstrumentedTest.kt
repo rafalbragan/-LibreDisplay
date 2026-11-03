@@ -148,6 +148,17 @@ class DeliveryInstrumentedTest {
                 // Synchronize on the newly selected range before inspecting its buckets.
                 // Otherwise a previous range's loaded data can falsely satisfy waitForChart().
                 rule.onNodeWithTag("history-range-$range").assertIsSelected()
+                val expectedWindow = when (range) {
+                    "Dzień" -> 86_400_000L
+                    "Tydzień" -> 7 * 86_400_000L
+                    "Miesiąc" -> 30 * 86_400_000L
+                    else -> 365 * 86_400_000L
+                }
+                rule.waitUntil(15_000) {
+                    val chart = rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                    chart.config[ExplorerDurationKey] == expectedWindow &&
+                        chart.config[ExplorerBucketsKey] > 0
+                }
                 rule.waitForIdle()
                 // The DB query is asynchronous. Compose idle does not mean history has loaded.
                 try {
