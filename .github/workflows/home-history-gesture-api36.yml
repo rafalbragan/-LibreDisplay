@@ -102,6 +102,7 @@ jobs:
             exit 0
           fi
           location="${browser_url#https://console.developers.google.com/storage/browser/}"
+          location="${location%]}"
           location="${location%/}"
           if [[ "$location" != test-lab-*/* ]] || [[ "$location" == *..* ]]; then
             echo "::warning::Unexpected Firebase result location"
