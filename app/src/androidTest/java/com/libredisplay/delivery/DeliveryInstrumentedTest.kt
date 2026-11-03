@@ -144,8 +144,16 @@ class DeliveryInstrumentedTest {
             }
             for (range in ranges) {
                 rule.onNodeWithTag("history-range-$range").performClick()
-                rule.waitForIdle()
-                // Capture even an unexpectedly empty chart: the screenshot is diagnostic evidence.
+                // The DB query is asynchronous. Compose idle does not mean history has loaded.
+                try {
+                    waitForChart()
+                } catch (error: AssertionError) {
+                    screenshot("release-$name-$range-empty")
+                    throw error
+                } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                    screenshot("release-$name-$range-empty")
+                    throw error
+                }
                 screenshot("release-$name-$range")
                 assertTrue("History should have DEMO samples in $name/$range",
                     rule.onNodeWithTag("history-chart").fetchSemanticsNode()
