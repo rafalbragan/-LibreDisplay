@@ -8,6 +8,7 @@ on:
       - feat/home-history-window-navigation-20261023
     paths:
       - ".github/workflows/home-history-gesture-api36.yml"
+      - "app/src/androidTest/java/com/libredisplay/delivery/DeliveryInstrumentedTest.kt"
   workflow_dispatch:
 
 permissions:
