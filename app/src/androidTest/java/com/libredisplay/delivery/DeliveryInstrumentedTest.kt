@@ -130,7 +130,8 @@ class DeliveryInstrumentedTest {
 
     @Test fun captureGlucoseHistoryReleaseRangesInBothOrientations() {
         rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
-        val ranges = listOf("Dzień", "Tydzień", "Miesiąc", "Rok")
+        val ranges = listOf("Dzień" to "dzien", "Tydzień" to "tydzien",
+            "Miesiąc" to "miesiac", "Rok" to "rok")
         for ((orientation, name) in listOf(
             ActivityInfo.SCREEN_ORIENTATION_PORTRAIT to "portrait",
             ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE to "landscape"
@@ -142,19 +143,19 @@ class DeliveryInstrumentedTest {
             rule.waitUntil(15_000) {
                 rule.activity.resources.configuration.orientation == expected
             }
-            for (range in ranges) {
+            for ((range, fileRange) in ranges) {
                 rule.onNodeWithTag("history-range-$range").performClick()
                 // The DB query is asynchronous. Compose idle does not mean history has loaded.
                 try {
                     waitForChart()
                 } catch (error: AssertionError) {
-                    screenshot("release-$name-$range-empty")
+                    screenshot("release-$name-$fileRange-empty")
                     throw error
                 } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
-                    screenshot("release-$name-$range-empty")
+                    screenshot("release-$name-$fileRange-empty")
                     throw error
                 }
-                screenshot("release-$name-$range")
+                screenshot("release-$name-$fileRange")
                 assertTrue("History should have DEMO samples in $name/$range",
                     rule.onNodeWithTag("history-chart").fetchSemanticsNode()
                         .config[ExplorerBucketsKey] > 0)
