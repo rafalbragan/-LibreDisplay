@@ -27,7 +27,7 @@ Status: **NOT READY FOR UPLOAD** until all gates below are signed off by the Pro
 ## Signed AAB release candidate
 - [ ] PR for `.github/workflows/google-play-aab.yml` reviewed and human merged.
 - [ ] Configure repository Actions secrets: `RELEASE_KEYSTORE_BASE64`, `RELEASE_STORE_PASSWORD`, `RELEASE_KEY_ALIAS`, `RELEASE_KEY_PASSWORD`; no secret values committed, printed or sent to AI.
-- [ ] In GitHub Actions, manually run **Google Play AAB release candidate** on protected `master`.
+- [ ] In GitHub Actions, manually run **Google Play AAB release candidate** on protected `master`. Supply `highest_play_version_code` copied from Play Console and `expected_upload_cert_sha256` copied from Play Console's upload certificate. The workflow rejects non-incrementing app versions and mismatched signing certificates.
 - [ ] Record run ID and source commit SHA.
 - [ ] Verify signed `app-release.aab`, SHA256, correct package/versionCode, signing certificate, size and installability of generated APKs through bundletool if available.
 - [ ] PO reviews evidence, accepts upload to the internal test track and separately authorizes any later wider distribution.
