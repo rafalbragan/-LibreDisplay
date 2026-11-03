@@ -82,7 +82,7 @@ class DeliveryInstrumentedTest {
             GlucoseHistoryPoint(110, firstTime.plusSeconds(900), GlucoseTrend.FLAT)
         )
         var selectedTimestamp: Instant? = null
-        var horizontalPan = 0f
+        val horizontalPans = mutableListOf<Float>()
         var historyOpened = false
         rule.setContent {
             Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
@@ -94,7 +94,7 @@ class DeliveryInstrumentedTest {
                     domainEnd = points.last().timestamp,
                     onPointSelected = { selectedTimestamp = it.timestamp },
                     onChartTapped = { historyOpened = true },
-                    onHorizontalPan = { horizontalPan += it },
+                    onHorizontalPan = { horizontalPans += it },
                     chartHeight = 220.dp,
                     modifier = Modifier.testTag("interactive-glucose-chart")
                 )
@@ -113,7 +113,7 @@ class DeliveryInstrumentedTest {
             swipe(start = center, end = center + Offset(120f, 0f))
         }
         rule.runOnIdle {
-            assertTrue("Rightward drag should reveal older history", horizontalPan > 0f)
+            assertTrue("Rightward drag should reveal older history", horizontalPans.lastOrNull()?.let { it > 0f } == true)
             assertFalse(historyOpened)
         }
 
@@ -121,7 +121,8 @@ class DeliveryInstrumentedTest {
             swipe(start = center, end = center + Offset(-120f, 0f))
         }
         rule.runOnIdle {
-            assertTrue("Leftward drag should return toward newer history", horizontalPan < 0f)
+            assertEquals("Expected one callback for each completed swipe", 2, horizontalPans.size)
+            assertTrue("Leftward drag should return toward newer history", horizontalPans.last() < 0f)
         }
 
         val topBeforeVerticalDrag = chart.fetchSemanticsNode().boundsInRoot.top
