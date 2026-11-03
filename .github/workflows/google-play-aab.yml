@@ -78,10 +78,11 @@ jobs:
           # A successful jarsigner process alone is not sufficient evidence of a signed bundle.
           # Explicitly reject unsigned or damaged archives without exposing signing secrets.
           unzip -tqq "$aab"
-          unzip -Z -1 "$aab" | grep -Fxq 'BundleConfig.pb'
-          unzip -Z -1 "$aab" | grep -Fxq 'base/manifest/AndroidManifest.xml'
+          bundle_entries="$(unzip -Z -1 "$aab")"
+          grep -Fxq 'BundleConfig.pb' <<< "$bundle_entries"
+          grep -Fxq 'base/manifest/AndroidManifest.xml' <<< "$bundle_entries"
           signature_report="$(jarsigner -verify "$aab" 2>&1)"
-          printf '%s\\n' "$signature_report"
+          printf '%s\n' "$signature_report"
           if ! grep -qi 'jar verified' <<< "$signature_report" || grep -qi 'jar is unsigned' <<< "$signature_report"; then
             echo "::error::Release AAB has no verifiable JAR signature"
             exit 1
