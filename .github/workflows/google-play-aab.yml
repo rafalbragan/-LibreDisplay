@@ -2,6 +2,15 @@ name: Google Play AAB release candidate
 
 on:
   workflow_dispatch:
+    inputs:
+      highest_play_version_code:
+        description: "Highest versionCode ever uploaded in Play Console"
+        required: true
+        type: string
+      expected_upload_cert_sha256:
+        description: "SHA-256 fingerprint of the Play App Signing upload certificate"
+        required: true
+        type: string
 
 permissions:
   contents: read
@@ -57,12 +66,32 @@ jobs:
             fi
           done
 
+      - name: Verify upload versionCode against Play Console
+        env:
+          HIGHEST_PLAY_VERSION_CODE: ${{ inputs.highest_play_version_code }}
+        run: |
+          set -euo pipefail
+          [[ "$HIGHEST_PLAY_VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::Provide a numeric Play Console versionCode"; exit 1; }
+          # Fail closed when versionCode is not a single literal in Gradle.
+          mapfile -t codes < <(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\\1/p' app/build.gradle.kts)
+          if [ "${#codes[@]}" -ne 1 ]; then
+            echo "::error::Unable to verify a unique literal versionCode in app/build.gradle.kts"
+            exit 1
+          fi
+          next_code="${codes[0]}"
+          if (( next_code <= HIGHEST_PLAY_VERSION_CODE )); then
+            echo "::error::App versionCode $next_code must exceed highest Play Console code $HIGHEST_PLAY_VERSION_CODE"
+            exit 1
+          fi
+          echo "Version gate PASS: app=$next_code, previously uploaded=$HIGHEST_PLAY_VERSION_CODE"
+
       - name: Build signed release AAB
         env:
           RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
           RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
           RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
           RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          EXPECTED_UPLOAD_CERT_SHA256: ${{ inputs.expected_upload_cert_sha256 }}
         run: |
           set -euo pipefail
           umask 077
@@ -71,6 +100,17 @@ jobs:
           trap cleanup EXIT
           printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
           test -s "$keyfile"
+          expected_cert="$(printf '%s' "$EXPECTED_UPLOAD_CERT_SHA256" | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [[ ! "$expected_cert" =~ ^[0-9A-F]{64}$ ]]; then
+            echo "::error::Provide the 64-hex SHA-256 upload certificate fingerprint from Play Console"
+            exit 1
+          fi
+          actual_cert="$(keytool -list -v -keystore "$keyfile" -alias "$RELEASE_KEY_ALIAS" -storepass:env RELEASE_STORE_PASSWORD | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -n 1 | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [ "$actual_cert" != "$expected_cert" ]; then
+            echo "::error::Signing keystore certificate does not match the Play Console upload certificate"
+            exit 1
+          fi
+          echo "Upload certificate fingerprint matches Play Console."
           chmod +x ./gradlew
           RELEASE_STORE_FILE="$keyfile" ./gradlew --no-daemon :app:bundleRelease
           aab="app/build/outputs/bundle/release/app-release.aab"
