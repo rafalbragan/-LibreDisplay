@@ -1,0 +1,55 @@
+name: API 36 single-device home history gesture
+
+on:
+  push:
+    branches:
+      - feat/home-history-window-navigation-20261023
+    paths:
+      - ".github/workflows/home-history-gesture-api36.yml"
+      - "app/src/androidTest/**"
+      - "app/src/main/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  gesture-api36:
+    name: Home chart gesture on one API 36 emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+      - uses: android-actions/setup-android@v3
+      - name: Run only dashboard gesture instrumentation on Android 36
+        uses: reactivecircus/android-emulator-runner@v2
+        with:
+          api-level: 36
+          target: google_apis
+          arch: x86_64
+          profile: pixel_6
+          cores: 2
+          ram-size: 2048M
+          heap-size: 512M
+          disable-animations: true
+          emulator-boot-timeout: 900
+          script: |
+            chmod +x gradlew
+            ./gradlew --no-daemon :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.delivery.DeliveryInstrumentedTest#glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll'
+      - name: Upload instrumentation results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api36-home-gesture-results
+          path: |
+            app/build/outputs/androidTest-results/connected/**
+            app/build/reports/androidTests/connected/**
+          if-no-files-found: warn
+          retention-days: 7
