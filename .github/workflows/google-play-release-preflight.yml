@@ -45,6 +45,7 @@ jobs:
           temp_key="$(mktemp "${RUNNER_TEMP}/librecare-preflight.XXXXXX.jks")"
           cleanup() { rm -f "$temp_key"; }
           trap cleanup EXIT
+          rm -f "$temp_key"
           temp_password="$(openssl rand -hex 24)"
           keytool -genkeypair -noprompt -keystore "$temp_key" \
             -alias librecare-preflight-only -keyalg RSA -keysize 2048 \
