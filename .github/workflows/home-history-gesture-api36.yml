@@ -1,13 +1,8 @@
 name: API 36 single-device home history gesture
 
+# GitHub-hosted emulator boot has been unreliable on API 36.
+# Keep this expensive diagnostic manual; IntelliJ/Firebase are the primary device gates.
 on:
-  push:
-    branches:
-      - feat/home-history-window-navigation-20261023
-    paths:
-      - ".github/workflows/home-history-gesture-api36.yml"
-      - "app/src/androidTest/**"
-      - "app/src/main/**"
   workflow_dispatch:
 
 permissions:
@@ -43,6 +38,10 @@ jobs:
           disable-animations: true
           emulator-boot-timeout: 900
           script: |
+            set -euo pipefail
+            adb wait-for-device
+            test "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1"
+            adb shell service check package | grep -q "found"
             chmod +x gradlew
             ./gradlew --no-daemon :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.delivery.DeliveryInstrumentedTest#glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll'
       - name: Upload instrumentation results
