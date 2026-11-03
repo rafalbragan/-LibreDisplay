@@ -1,56 +1,89 @@
 name: API 36 single-device home history gesture
 
-# GitHub-hosted emulator boot has been unreliable on API 36.
-# Keep this expensive diagnostic manual; IntelliJ/Firebase are the primary device gates.
+# Manual and targeted to avoid unnecessary Test Lab matrices on every PR push.
 on:
   workflow_dispatch:
 
 permissions:
   contents: read
+  id-token: write
 
 jobs:
   gesture-api36:
-    name: Home chart gesture on one API 36 emulator
+    name: Home chart gesture on one Firebase API 36 emulator
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
     steps:
       - uses: actions/checkout@v4
         with:
           persist-credentials: false
+
       - uses: actions/setup-java@v4
         with:
           distribution: temurin
           java-version: "21"
           cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
       - uses: android-actions/setup-android@v3
         with:
           packages: platform-tools
-      - name: Run only dashboard gesture instrumentation on Android 36
-        uses: reactivecircus/android-emulator-runner@v2
+
+      - name: Verify Firebase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing repository variable $key"
+              exit 1
+            fi
+          done
+
+      - uses: google-github-actions/auth@v3
         with:
-          api-level: 36
-          target: google_apis
-          arch: x86_64
-          profile: pixel_6
-          cores: 2
-          ram-size: 2048M
-          heap-size: 512M
-          disable-animations: true
-          emulator-boot-timeout: 900
-          script: |
-            set -euo pipefail
-            adb wait-for-device
-            test "$(adb shell getprop sys.boot_completed | tr -d '\\r')" = "1"
-            adb shell service check package | grep -q "found"
-            chmod +x gradlew
-            ./gradlew --no-daemon :app:connectedDebugAndroidTest '-Pandroid.testInstrumentationRunnerArguments.class=com.libredisplay.delivery.DeliveryInstrumentedTest#glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll'
-      - name: Upload instrumentation results
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: ">= 417.0.0"
+
+      - name: Build debug and instrumentation APKs
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          yes | sdkmanager --licenses >/dev/null || true
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Execute only the home chart gesture test on one Firebase device
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          gcloud firebase test android run \
+            --project="$GCP_PROJECT_ID" \
+            --type=instrumentation \
+            --app=app/build/outputs/apk/debug/app-debug.apk \
+            --test=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            --test-targets="class com.libredisplay.delivery.DeliveryInstrumentedTest#glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll" \
+            --device="model=MediumPhone.arm,version=36,locale=pl,orientation=portrait" \
+            --results-dir="librecare-home-gesture-${GITHUB_RUN_ID}" \
+            --timeout=15m 2>&1 | tee firebase-home-gesture.log
+
+      - name: Upload Firebase execution evidence
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: api36-home-gesture-results
-          path: |
-            app/build/outputs/androidTest-results/connected/**
-            app/build/reports/androidTests/connected/**
+          name: api36-home-gesture-firebase-log
+          path: firebase-home-gesture.log
           if-no-files-found: warn
           retention-days: 7
