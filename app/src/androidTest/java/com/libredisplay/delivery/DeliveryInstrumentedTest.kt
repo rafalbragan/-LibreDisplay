@@ -145,6 +145,10 @@ class DeliveryInstrumentedTest {
             }
             for ((range, fileRange) in ranges) {
                 rule.onNodeWithTag("history-range-$range").performClick()
+                // Synchronize on the newly selected range before inspecting its buckets.
+                // Otherwise a previous range's loaded data can falsely satisfy waitForChart().
+                rule.onNodeWithTag("history-range-$range").assertIsSelected()
+                rule.waitForIdle()
                 // The DB query is asynchronous. Compose idle does not mean history has loaded.
                 try {
                     waitForChart()
