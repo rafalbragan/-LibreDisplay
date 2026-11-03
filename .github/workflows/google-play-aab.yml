@@ -73,7 +73,7 @@ jobs:
           set -euo pipefail
           [[ "$HIGHEST_PLAY_VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::Provide a numeric Play Console versionCode"; exit 1; }
           # Fail closed when versionCode is not a single literal in Gradle.
-          mapfile -t codes < <(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\\1/p' app/build.gradle.kts)
+          mapfile -t codes < <(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' app/build.gradle.kts)
           if [ "${#codes[@]}" -ne 1 ]; then
             echo "::error::Unable to verify a unique literal versionCode in app/build.gradle.kts"
             exit 1
