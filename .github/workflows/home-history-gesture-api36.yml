@@ -1,7 +1,13 @@
 name: API 36 single-device home history gesture
 
-# Manual and targeted to avoid unnecessary Test Lab matrices on every PR push.
+# A push to this workflow file permits one targeted test before merging the workflow
+# into the default branch. Other PR code changes do not retrigger this costly job.
 on:
+  push:
+    branches:
+      - feat/home-history-window-navigation-20261023
+    paths:
+      - ".github/workflows/home-history-gesture-api36.yml"
   workflow_dispatch:
 
 permissions:
