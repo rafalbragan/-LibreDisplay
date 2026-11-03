@@ -1,0 +1,141 @@
+name: API 36 history visual release review
+
+# A push to this workflow file permits one targeted test before merging the workflow
+# into the default branch. Other PR code changes do not retrigger this costly job.
+on:
+  push:
+    branches:
+      - feat/history-line-continuity-20261023
+    paths:
+      - ".github/workflows/history-visual-review-api36.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+jobs:
+  gesture-api36:
+    name: Fullscreen history visuals on one Firebase API 36 emulator
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    env:
+      GCP_PROJECT_ID: ${{ vars.GCP_PROJECT_ID }}
+      GCP_WORKLOAD_IDENTITY_PROVIDER: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+      GCP_SERVICE_ACCOUNT: ${{ vars.GCP_SERVICE_ACCOUNT }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Verify Firebase configuration
+        shell: bash
+        run: |
+          set -euo pipefail
+          for key in GCP_PROJECT_ID GCP_WORKLOAD_IDENTITY_PROVIDER GCP_SERVICE_ACCOUNT; do
+            if [ -z "${!key:-}" ]; then
+              echo "::error::Missing repository variable $key"
+              exit 1
+            fi
+          done
+
+      - uses: google-github-actions/auth@v3
+        with:
+          project_id: ${{ vars.GCP_PROJECT_ID }}
+          workload_identity_provider: ${{ vars.GCP_WORKLOAD_IDENTITY_PROVIDER }}
+          service_account: ${{ vars.GCP_SERVICE_ACCOUNT }}
+
+      - uses: google-github-actions/setup-gcloud@v3
+        with:
+          version: ">= 417.0.0"
+
+      - name: Build debug and instrumentation APKs
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          ./gradlew --no-daemon :app:assembleDebug :app:assembleDebugAndroidTest
+
+      - name: Execute only the home chart gesture test on one Firebase device
+        shell: bash
+        run: |
+          set -euo pipefail
+          test -s app/build/outputs/apk/debug/app-debug.apk
+          test -s app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk
+          gcloud firebase test android run \
+            --project="$GCP_PROJECT_ID" \
+            --type=instrumentation \
+            --app=app/build/outputs/apk/debug/app-debug.apk \
+            --test=app/build/outputs/apk/androidTest/debug/app-debug-androidTest.apk \
+            --test-targets="class com.libredisplay.delivery.DeliveryInstrumentedTest#captureGlucoseHistoryReleaseRangesInBothOrientations" \
+            --device="model=MediumPhone.arm,version=36,locale=pl,orientation=portrait" \
+            --directories-to-pull="/sdcard/Android/data/com.libredisplay/files/delivery-screenshots" \
+            --results-dir="librecare-history-visuals-${GITHUB_RUN_ID}" \
+            --timeout=15m 2>&1 | tee firebase-history-visuals.log
+
+      - name: Retrieve actual Firebase instrumentation failure evidence
+        if: always()
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p firebase-test-results
+          if [ ! -s firebase-history-visuals.log ]; then
+            echo "::warning::Firebase test log unavailable; device run likely did not start"
+            exit 0
+          fi
+          # Firebase prints the official result storage browser URL. Extract bucket and
+          # run prefix from that URL rather than guessing or hardcoding GCS destinations.
+          browser_url="$(grep -Eo 'https://console.developers.google.com/storage/browser/[^ ]+' firebase-history-visuals.log | head -n 1 || true)"
+          if [ -z "$browser_url" ]; then
+            echo "::warning::Firebase did not report its GCS result location"
+            exit 0
+          fi
+          location="${browser_url#https://console.developers.google.com/storage/browser/}"
+          location="${location%/}"
+          if [[ "$location" != test-lab-*/* ]] || [[ "$location" == *..* ]]; then
+            echo "::warning::Unexpected Firebase result location"
+            exit 0
+          fi
+          gcloud storage cp --recursive "gs://$location/" firebase-test-results/ || {
+            echo "::warning::Could not download Firebase XML evidence"
+            exit 0
+          }
+          echo "### Device test XML summary" >> "$GITHUB_STEP_SUMMARY"
+          find firebase-test-results -type f \( -name '*.xml' -o -name '*.txt' \) | head -n 40 >> "$GITHUB_STEP_SUMMARY"
+          python3 - <<'PY'
+          import pathlib, xml.etree.ElementTree as ET
+          for path in pathlib.Path("firebase-test-results").rglob("*.xml"):
+              try:
+                  tree = ET.parse(path)
+              except ET.ParseError:
+                  continue
+              for case in tree.iter("testcase"):
+                  failures = list(case.findall("failure")) + list(case.findall("error"))
+                  if failures:
+                      print(f"TEST FAILURE: {case.get('classname')}.{case.get('name')}")
+                      for failure in failures:
+                          print((failure.get("message") or failure.text or "")[:3000])
+          PY
+
+      - name: Upload Firebase execution evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: api36-history-visuals-firebase-log
+          path: |
+            firebase-history-visuals.log
+            firebase-test-results/**
+          if-no-files-found: warn
+          retention-days: 7
