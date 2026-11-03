@@ -28,6 +28,8 @@ jobs:
           java-version: "21"
           cache: gradle
       - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
       - name: Run only dashboard gesture instrumentation on Android 36
         uses: reactivecircus/android-emulator-runner@v2
         with:
