@@ -128,6 +128,35 @@ class DeliveryInstrumentedTest {
         rule.onNodeWithText("Niepoprawny-LibreView.csv").assertDoesNotExist()
     }
 
+    @Test fun captureGlucoseHistoryReleaseRangesInBothOrientations() {
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
+        val ranges = listOf("Dzień", "Tydzień", "Miesiąc", "Rok")
+        for ((orientation, name) in listOf(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT to "portrait",
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE to "landscape"
+        )) {
+            rule.activity.requestedOrientation = orientation
+            val expected = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+                android.content.res.Configuration.ORIENTATION_PORTRAIT
+            else android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            rule.waitUntil(15_000) {
+                rule.activity.resources.configuration.orientation == expected
+            }
+            for (range in ranges) {
+                rule.onNodeWithTag("history-range-$range").performClick()
+                rule.waitForIdle()
+                // Capture even an unexpectedly empty chart: the screenshot is diagnostic evidence.
+                screenshot("release-$name-$range")
+                assertTrue("History should have DEMO samples in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] > 0)
+                assertTrue("Bucket count must remain bounded in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] <= 801)
+            }
+        }
+    }
+
     @Test fun pinchPanExactPointAndMultiYearRenderingWork() {
         rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
         waitForChart()
