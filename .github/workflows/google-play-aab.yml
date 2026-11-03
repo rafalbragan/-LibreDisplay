@@ -75,7 +75,17 @@ jobs:
           RELEASE_STORE_FILE="$keyfile" ./gradlew --no-daemon :app:bundleRelease
           aab="app/build/outputs/bundle/release/app-release.aab"
           test -s "$aab" || { echo "::error::Missing release AAB"; exit 1; }
-          jarsigner -verify "$aab"
+          # A successful jarsigner process alone is not sufficient evidence of a signed bundle.
+          # Explicitly reject unsigned or damaged archives without exposing signing secrets.
+          unzip -tqq "$aab"
+          unzip -Z -1 "$aab" | grep -Fxq 'BundleConfig.pb'
+          unzip -Z -1 "$aab" | grep -Fxq 'base/manifest/AndroidManifest.xml'
+          signature_report="$(jarsigner -verify "$aab" 2>&1)"
+          printf '%s\\n' "$signature_report"
+          if ! grep -qi 'jar verified' <<< "$signature_report" || grep -qi 'jar is unsigned' <<< "$signature_report"; then
+            echo "::error::Release AAB has no verifiable JAR signature"
+            exit 1
+          fi
           mkdir -p release-evidence
           sha256sum "$aab" > release-evidence/app-release.aab.sha256
           printf 'commit=%s\nref=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > release-evidence/source.txt
