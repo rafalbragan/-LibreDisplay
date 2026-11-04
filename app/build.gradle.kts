@@ -55,8 +55,8 @@ android {
         applicationId = "com.libredisplay"
         minSdk = 26
         targetSdk = 36
-        versionCode = 53
-        versionName = "2.17.2"
+        versionCode = 54
+        versionName = "2.17.3"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
