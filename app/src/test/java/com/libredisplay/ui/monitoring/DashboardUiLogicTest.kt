@@ -7,6 +7,8 @@ import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import java.time.Duration
@@ -456,5 +458,44 @@ class DashboardUiLogicTest {
 
         assertEquals(null, trendWindowSnapshot(reading, requestedWindowMinutes = 10))
         assertEquals(null, estimateTrendRate(reading, requestedWindowMinutes = 10))
+    }
+
+    @Test
+    fun dashboardMetrics_singleStaleMeasurement_doesNotInventRangeStats() {
+        val now = Instant.parse("2026-10-17T12:00:00Z")
+        val reading = GlucoseReading.of(
+            value = 145,
+            timestamp = now.minus(Duration.ofHours(3)),
+            trend = GlucoseTrend.FLAT,
+            history = emptyList()
+        )
+
+        val metrics = buildDashboardMetrics(reading = reading, targetLow = 80, targetHigh = 180)
+
+        assertNull(metrics.belowPercent)
+        assertNull(metrics.inRangePercent)
+        assertNull(metrics.abovePercent)
+    }
+
+    @Test
+    fun dashboardMetrics_partialHistory_returnsDeterministicRangePercentages() {
+        val end = Instant.parse("2026-10-17T12:00:00Z")
+        val reading = GlucoseReading.of(
+            value = 240,
+            timestamp = end,
+            trend = GlucoseTrend.RISING,
+            history = listOf(
+                GlucoseHistoryPoint(60, end.minus(Duration.ofMinutes(30)), GlucoseTrend.FLAT),
+                GlucoseHistoryPoint(120, end.minus(Duration.ofMinutes(15)), GlucoseTrend.RISING)
+            )
+        )
+
+        val metrics = buildDashboardMetrics(reading = reading, targetLow = 80, targetHigh = 180)
+
+        assertNotNull(metrics.belowPercent)
+        assertNotNull(metrics.inRangePercent)
+        assertNotNull(metrics.abovePercent)
+        val total = (metrics.belowPercent ?: 0) + (metrics.inRangePercent ?: 0) + (metrics.abovePercent ?: 0)
+        assertTrue(total in 99..101)
     }
 }
