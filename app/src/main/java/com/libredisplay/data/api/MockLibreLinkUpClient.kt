@@ -1,10 +1,12 @@
 package com.libredisplay.data.api
 
+import com.libredisplay.BuildConfig
 import com.libredisplay.data.model.GlucoseHistoryPoint
 import com.libredisplay.data.model.GlucoseHistoryStats
 import com.libredisplay.data.model.GlucoseReading
 import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.data.model.LibreConnectionPerson
+import com.libredisplay.data.demo.MikaSyntheticProfileGenerator
 import java.time.Instant
 import kotlin.math.PI
 import kotlin.math.cos
@@ -15,7 +17,7 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
     private var loggedIn = false
     private var selectedPatientId: String? = null
 
-    private val persons = listOf(
+    private val defaultPersons = listOf(
         LibreConnectionPerson(
             patientId = "demo-person-anna",
             displayName = "Anna Kowalska",
@@ -47,6 +49,19 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
             lastName = "Wisniewska"
         )
     )
+    private val persons: List<LibreConnectionPerson>
+        get() = if (BuildConfig.ENABLE_MIKA_DEMO_PROFILE) {
+            listOf(
+                LibreConnectionPerson(
+                    patientId = MikaSyntheticProfileGenerator.MIKA_PATIENT_ID,
+                    displayName = "Mika",
+                    firstName = "Mika",
+                    lastName = "DEMO"
+                )
+            ) + defaultPersons
+        } else {
+            defaultPersons
+        }
 
     override suspend fun login(email: String, password: String) {
         loggedIn = true
@@ -66,6 +81,9 @@ class MockLibreLinkUpClient : LibreLinkUpClient {
         }
         val resolvedPatientId = patientId ?: selectedPatientId ?: persons.first().patientId
         selectedPatientId = resolvedPatientId
+        if (BuildConfig.ENABLE_MIKA_DEMO_PROFILE && resolvedPatientId == MikaSyntheticProfileGenerator.MIKA_PATIENT_ID) {
+            return MikaSyntheticProfileGenerator.generate(now = Instant.now())
+        }
         val now = Instant.now().minusSeconds(5 * 60L)
         val pointsPerDay = 96 // 15-minute interval
         val totalPoints = 60 * pointsPerDay

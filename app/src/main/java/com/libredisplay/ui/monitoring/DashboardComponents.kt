@@ -32,6 +32,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.libredisplay.R
+import com.libredisplay.data.demo.MikaSyntheticProfileGenerator
 import com.libredisplay.data.model.LibreConnectionPerson
 
 private val DashboardBackground = Color(0xFF101318)
@@ -87,6 +88,25 @@ fun CompactPersonSwitcherBar(
                 )
             }
         }
+    }
+}
+
+@Composable
+fun MikaDemoDataBanner(selectedPatientId: String?) {
+    if (selectedPatientId != MikaSyntheticProfileGenerator.MIKA_PATIENT_ID) return
+    Box(
+        modifier = Modifier
+            .fillMaxWidth()
+            .background(AccentWarning.copy(alpha = 0.15f))
+            .padding(horizontal = 10.dp, vertical = 8.dp)
+    ) {
+        Text(
+            text = "MIKA - DANE SYMULOWANE / DEMO",
+            color = AccentWarning,
+            fontWeight = FontWeight.SemiBold,
+            fontSize = 12.sp,
+            modifier = Modifier.align(Alignment.CenterStart)
+        )
     }
 }
 

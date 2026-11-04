@@ -13,6 +13,7 @@ fun String.toBuildConfigString(): String = "\"" + this.replace("\\", "\\\\").rep
 val libreApiBaseUrl = (System.getenv("LIBRE_API_BASE_URL") ?: "https://api-eu.libreview.io").trim().ifBlank { "https://api-eu.libreview.io" }
 val libreLinkUpVersion = (System.getenv("LIBRE_LINKUP_VERSION") ?: "4.17.0").trim().ifBlank { "4.17.0" }
 val librePatientId = (System.getenv("LIBRE_PATIENT_ID") ?: "").trim()
+val enableMikaDemoProfile = (System.getenv("ENABLE_MIKA_DEMO_PROFILE") ?: "false").trim().equals("true", ignoreCase = true)
 val localProperties = Properties()
 run {
     val file = rootProject.file("local.properties")
@@ -61,6 +62,7 @@ android {
         buildConfigField("String", "LIBRE_API_BASE_URL", libreApiBaseUrl.toBuildConfigString())
         buildConfigField("String", "LIBRE_LINKUP_VERSION", libreLinkUpVersion.toBuildConfigString())
         buildConfigField("String", "LIBRE_PATIENT_ID", librePatientId.toBuildConfigString())
+        buildConfigField("boolean", "ENABLE_MIKA_DEMO_PROFILE", enableMikaDemoProfile.toString())
     }
 
     signingConfigs {
