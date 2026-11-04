@@ -1,0 +1,144 @@
+name: Google Play AAB release candidate
+
+on:
+  workflow_dispatch:
+    inputs:
+      highest_play_version_code:
+        description: "Highest versionCode ever uploaded in Play Console"
+        required: true
+        type: string
+      expected_upload_cert_sha256:
+        description: "SHA-256 fingerprint of the Play App Signing upload certificate"
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  build-play-aab:
+    name: Build signed Play App Bundle
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Enforce protected release source
+        env:
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+          if [ "$REF_NAME" != "master" ]; then
+            echo "::error::Release bundles must be built from master after human merge."
+            exit 1
+          fi
+
+      - name: Checkout source
+        uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Android SDK
+        uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Install SDK components
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+
+      - name: Check release signing configuration
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for name in RELEASE_KEYSTORE_BASE64 RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD; do
+            if [ -z "${!name:-}" ]; then
+              echo "::error::Missing signing secret: $name"
+              exit 1
+            fi
+          done
+
+      - name: Verify upload versionCode against Play Console
+        env:
+          HIGHEST_PLAY_VERSION_CODE: ${{ inputs.highest_play_version_code }}
+        run: |
+          set -euo pipefail
+          [[ "$HIGHEST_PLAY_VERSION_CODE" =~ ^[0-9]+$ ]] || { echo "::error::Provide a numeric Play Console versionCode"; exit 1; }
+          # Fail closed when versionCode is not a single literal in Gradle.
+          mapfile -t codes < <(sed -nE 's/^[[:space:]]*versionCode[[:space:]]*=[[:space:]]*([0-9]+)[[:space:]]*$/\1/p' app/build.gradle.kts)
+          if [ "${#codes[@]}" -ne 1 ]; then
+            echo "::error::Unable to verify a unique literal versionCode in app/build.gradle.kts"
+            exit 1
+          fi
+          next_code="${codes[0]}"
+          if (( next_code <= HIGHEST_PLAY_VERSION_CODE )); then
+            echo "::error::App versionCode $next_code must exceed highest Play Console code $HIGHEST_PLAY_VERSION_CODE"
+            exit 1
+          fi
+          echo "Version gate PASS: app=$next_code, previously uploaded=$HIGHEST_PLAY_VERSION_CODE"
+
+      - name: Build signed release AAB
+        env:
+          RELEASE_KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 }}
+          RELEASE_STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD }}
+          RELEASE_KEY_ALIAS: ${{ secrets.RELEASE_KEY_ALIAS }}
+          RELEASE_KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD }}
+          EXPECTED_UPLOAD_CERT_SHA256: ${{ inputs.expected_upload_cert_sha256 }}
+        run: |
+          set -euo pipefail
+          umask 077
+          keyfile="$(mktemp "${RUNNER_TEMP}/librecare-upload-key.XXXXXX.jks")"
+          cleanup() { rm -f "$keyfile"; }
+          trap cleanup EXIT
+          printf '%s' "$RELEASE_KEYSTORE_BASE64" | base64 --decode > "$keyfile"
+          test -s "$keyfile"
+          expected_cert="$(printf '%s' "$EXPECTED_UPLOAD_CERT_SHA256" | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [[ ! "$expected_cert" =~ ^[0-9A-F]{64}$ ]]; then
+            echo "::error::Provide the 64-hex SHA-256 upload certificate fingerprint from Play Console"
+            exit 1
+          fi
+          actual_cert="$(keytool -list -v -keystore "$keyfile" -alias "$RELEASE_KEY_ALIAS" -storepass:env RELEASE_STORE_PASSWORD | sed -nE 's/^[[:space:]]*SHA256:[[:space:]]*//p' | head -n 1 | tr -d ':[:space:]' | tr '[:lower:]' '[:upper:]')"
+          if [ "$actual_cert" != "$expected_cert" ]; then
+            echo "::error::Signing keystore certificate does not match the Play Console upload certificate"
+            exit 1
+          fi
+          echo "Upload certificate fingerprint matches Play Console."
+          chmod +x ./gradlew
+          RELEASE_STORE_FILE="$keyfile" ./gradlew --no-daemon :app:bundleRelease
+          aab="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$aab" || { echo "::error::Missing release AAB"; exit 1; }
+          # A successful jarsigner process alone is not sufficient evidence of a signed bundle.
+          # Explicitly reject unsigned or damaged archives without exposing signing secrets.
+          unzip -tqq "$aab"
+          bundle_entries="$(unzip -Z -1 "$aab")"
+          grep -Fxq 'BundleConfig.pb' <<< "$bundle_entries"
+          grep -Fxq 'base/manifest/AndroidManifest.xml' <<< "$bundle_entries"
+          signature_report="$(jarsigner -verify "$aab" 2>&1)"
+          printf '%s\n' "$signature_report"
+          if ! grep -qi 'jar verified' <<< "$signature_report" || grep -qi 'jar is unsigned' <<< "$signature_report"; then
+            echo "::error::Release AAB has no verifiable JAR signature"
+            exit 1
+          fi
+          mkdir -p release-evidence
+          sha256sum "$aab" > release-evidence/app-release.aab.sha256
+          printf 'commit=%s\nref=%s\n' "$GITHUB_SHA" "$GITHUB_REF_NAME" > release-evidence/source.txt
+
+      - name: Upload AAB and evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: LibreCare-GooglePlay-release-AAB
+          path: |
+            app/build/outputs/bundle/release/app-release.aab
+            release-evidence/**
+          if-no-files-found: error
+          retention-days: 14

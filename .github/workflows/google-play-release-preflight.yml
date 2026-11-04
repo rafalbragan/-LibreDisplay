@@ -1,0 +1,68 @@
+name: Google Play release bundle preflight
+
+on:
+  pull_request:
+    branches: [master]
+    paths:
+      - ".github/workflows/google-play-release-preflight.yml"
+      - ".github/workflows/google-play-aab.yml"
+      - "app/build.gradle.kts"
+      - "app/proguard-rules.pro"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  unsigned-publication-preflight:
+    name: Validate release bundle with disposable test key
+    runs-on: ubuntu-latest
+    timeout-minutes: 50
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
+
+      - name: Build and verify release AAB with disposable signing material
+        shell: bash
+        run: |
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
+          umask 077
+          temp_key="$(mktemp "${RUNNER_TEMP}/librecare-preflight.XXXXXX.jks")"
+          cleanup() { rm -f "$temp_key"; }
+          trap cleanup EXIT
+          rm -f "$temp_key"
+          temp_password="$(openssl rand -hex 24)"
+          keytool -genkeypair -noprompt -keystore "$temp_key" \
+            -alias librecare-preflight-only -keyalg RSA -keysize 2048 \
+            -validity 1 -dname "CN=TEST ONLY,OU=CI,O=LibreCare,C=PL" \
+            -storepass "$temp_password" -keypass "$temp_password"
+          chmod +x gradlew
+          RELEASE_STORE_FILE="$temp_key" \
+          RELEASE_STORE_PASSWORD="$temp_password" \
+          RELEASE_KEY_ALIAS="librecare-preflight-only" \
+          RELEASE_KEY_PASSWORD="$temp_password" \
+          ./gradlew --no-daemon :app:bundleRelease
+          aab="app/build/outputs/bundle/release/app-release.aab"
+          test -s "$aab"
+          unzip -tqq "$aab"
+          entries="$(unzip -Z -1 "$aab")"
+          grep -Fxq 'BundleConfig.pb' <<< "$entries"
+          grep -Fxq 'base/manifest/AndroidManifest.xml' <<< "$entries"
+          jarsigner -verify "$aab" | grep -qi 'jar verified'
+          echo "PASS: release bundle assembled and verified with disposable test key."
+          echo "NOT FOR GOOGLE PLAY: the test certificate differs from the Play upload key."
+

@@ -95,3 +95,91 @@ Earlier failures are preserved, not counted as passes: JDK 17 cannot execute the
 | `.gitignore` excludes builds, APK/AAB, keystores, local.properties and local evidence | PASS |
 | Commit/push existing branch, remote/PR SHA and final Actions | Pending at report creation; verify in final Git/CI follow-up before declaring delivery complete |
 | Google Play acceptance/publication | NOT APPLICABLE to local validation — external acceptance remains unverified; publication prohibited |
+
+## Uzupełnienie przeglądu gotowości — 2026-11-02 (PR-y #55–#58)
+
+Uzupełnienie dotyczy aktualnych HEAD-ów PR-ów wymienionych poniżej, a nie historycznej kompilacji lokalnej i podpisanego AAB opisanego wcześniej w tym pliku. Twierdzenia wcześniejszego raportu dotyczące Play Console, wersji i artefaktów nie zostały niezależnie zweryfikowane dla tego zestawu PR-ów. **Ogólna decyzja o gotowości wydania: HOLD.** Żaden PR nie został scalony, nie włączono auto-merge ani nie opublikowano pakietu.
+
+### 1. Stan PR
+
+Zweryfikowana baza: `origin/master` `5538083662bdf42b4703bac0ca94ff5e73888363`. Wszystkie cztery PR-y są oparte na tej bazie.
+
+| PR | HEAD podczas przeglądu | Zakres / CI | Instrumentacja i blokada |
+|---|---|---|---|
+| #55 | `6e01ced00b26b3877ba5e7a90744d0bc8cade026` | Konfiguracja Test Lab dla API 36, deterministyczne sprawdzenie trybu nawigacji gestami, zbieranie wyników testów i uporządkowanie faz testów odzyskiwania procesu. Szybki zestaw testów PASS (`41454757132`); kompilacja APK i APK androidTest PASS w `41454781723`. | Testy BackHandler oraz gestów krawędziowych/insets PASS na obu modelach API 36 i API 35. Pełna macierz FAIL: trzy istniejące testy odzyskiwania procesu nie przechodzą na żadnym urządzeniu, ponieważ PID aplikacji pozostaje bez zmian; zob. tabelę testów urządzeniowych. |
+| #56 | `0a4468345859db7c32e3361a766405ca15b2d282` | Ciągłość linii wykresu pełnoekranowej historii i testy regresji agregacji. Szybki zestaw testów, debug APK i kontrole kompilacji PASS (`41444874726`, `41444874656`, `41444874746`). | Nie uruchomiono instrumentacji ani nie przeprowadzono kontroli wizualnej na tym HEAD-zie PR. Zrzuty z #55 nie weryfikują zachowania linii i agregacji wprowadzonych w tym PR-ze. |
+| #57 | `b7e70af61b82bf3e4733d22186d96bc69b5b8986` | Nawigacja po oknach historii dashboardu i obsługa wyłącznie poziomego przeciągania. Szybki zestaw testów, debug APK, opcjonalna kompilacja release APK i kontrole kompilacji PASS (`41444203964`, `41444203958`, `41444203954`). | Dodany test interakcji Compose nie został uruchomiony na tym HEAD-zie PR. Szybki zestaw testów nie obejmuje jego źródeł AndroidTest. |
+| #58 | `fb9f9dee0a2b9b393791d80585850575058def4e` | Zabezpieczony, ręcznie uruchamiany workflow podpisanego AAB i checklista wydania w Play. Składnia YAML została poprawnie sparsowana; kontrole CI PR PASS (`41426572193`, `41426572019`, `41426572383`). | Podpisany AAB nie został zbudowany; sekrety podpisujące, historia wersji w Play Console i zgodność certyfikatu uploadu nie zostały zweryfikowane. |
+
+Kontrola drzewa scalania PR56, a następnie PR57, względem zweryfikowanej bazy nie wykazała konfliktów. Osobna kontrola uwzględniająca PR55 przed PR57 wykazała konflikt treści w `app/src/androidTest/java/com/libredisplay/delivery/DeliveryInstrumentedTest.kt`; przed scaleniem PR57 należy uzgodnić z ostatecznym stanem PR55. Były to wyłącznie próbne kontrole drzewa, a nie scalenia na GitHubie.
+
+### 2. Testy urządzeniowe i zrzuty
+
+| Test / dowód | Status | Konfiguracja / wynik |
+|---|---|---|
+| `historyBackHandlerRespondsToDeterministicSystemBack` | **PASS** | Uruchomienia Firebase Test Lab `41448329224` i `41454781723`: każdy test wykonano na `MediumPhone.arm` API 36, `MediumPhone_ps16k_backcompat.arm` API 36 i `SmallPhone.arm` API 35. W dwóch macierzach z raportami XML zaliczone zostały po cztery wykonania każdego testu na API 36. |
+| `historyBackGestureAndSystemInsetsRemainCorrect` | **PASS** | Te same macierze i wyniki. Przed gestem od krawędzi test ustawia i sprawdza bezpieczne ustawienie `navigation_mode=2`; nie odnotowano błędu BackHandler, gestu systemowego ani insetów. |
+| Pełny zestaw testów instrumentacyjnych | **FAIL** | W obu macierzach raportowanych przez XML: 24/27 testów zaliczonych na każdym z trzech urządzeń. Testy `test02_afterProcessRestart_legacyInactiveSelectionIsRecoverable`, `test04_afterProcessRestart_lastGoodSelectionStarts` i `test06_afterProcessRestart_staleSelectionDoesNotCrash` kończą się błędem w `verifyNewProcess`: zapisany i bieżący PID są identyczne. Zmiana kolejności testów ujawniła, że scenariusze te faktycznie nie kończą ani nie uruchamiają ponownie procesu aplikacji. Asercje pozostawiono bez zmian; wada projektu tych testów nadal uniemożliwia uzyskanie zielonej macierzy. |
+| Generowanie APK / APK androidTest | **PASS** | Zakończone na hostowanym runnerze dla najnowszej macierzy; nie oznacza to, że testy przeszły. |
+| Zrzuty ekranu wykresów | **CZĘŚCIOWO / HOLD** | Uruchomienie `41454781723`, artefakt `librecare-firebase-testlab-log`, zawiera 21 zrzutów z danymi syntetycznymi (po 7 na urządzenie) oraz XML/logcat dla każdego urządzenia. Dostępne są zrzuty widoku dnia, całej historii, roku w orientacji poziomej oraz motywu ciemnego/dużego tekstu. Zrzut dnia ze standardowego urządzenia API 36 pokazuje **0 odczytów i pusty wykres**, podczas gdy drugi model API 36 i urządzenie API 35 pokazują 97 odczytów dla tego samego scenariusza testowego. Zrzut całej historii jest wizualnie przeładowany. Rozbieżność nie została wyjaśniona; ponadto obrazy pokazują wykres z PR55/bazowej wersji, a nie zmieniony wykres z PR56. Nie wykonano zrzutów tygodnia ani miesiąca, a roku nie uchwycono w obu orientacjach. |
+| Instrumentacja interakcji gestów dashboardu PR57 | **NOT RUN** | Nowego testu interakcji nie ma w wynikach uruchomienia PR55 i nie wykonano go na HEAD-zie PR57. |
+| Lokalnie podłączone urządzenie/emulator | **NOT RUN** | Lokalnie nie było Android SDK, `adb`, emulatora ani podłączonego urządzenia. Wszystkie wykonane testy urządzeniowe przeprowadzono na wirtualnych urządzeniach Firebase; nie użyto fizycznego Samsunga. |
+
+Wcześniejsza próba Firebase `41445759468` zatrzymała się na konfiguracji Android SDK (`sdkmanager` nie znalazł pakietu `tools`) przed uruchomieniem testów. PR55 jawnie instaluje teraz `platform-tools`, a późniejsze kompilacje dotarły do wszystkich trzech urządzeń wirtualnych. Najnowsza macierz nadal nie przechodzi z powodu opisanych wyżej testów odzyskiwania procesu, a nie z powodu któregokolwiek z dwóch wymaganych testów Back.
+
+### 3. Gotowość Google Play
+
+- Aktualna tożsamość Gradle: `applicationId=com.libredisplay`, `versionCode=53`, `versionName=2.17.2`, `targetSdk=36`; minifikacja release i zmniejszanie zasobów są włączone. Poprzednia wersja w źródłach to 2.17.1/52, ale podczas tego przeglądu nie sprawdzano Play Console.
+- Manifest deklaruje uprawnienia sieciowe i stanu, powiadomień, startu urządzenia oraz usługi pierwszoplanowej synchronizacji danych. W PR-ach #55–#58 nie zmieniono manifestu ani zachowania dotyczącego danych medycznych. Schemat Room i migracje pozostały bez zmian; istniejące testy instrumentacyjne migracji przeszły w macierzach, choć cała macierz nie uzyskała wyniku pozytywnego.
+- Workflow/YAML PR58 można uruchomić ręcznie wyłącznie z `master`; używa uprawnień repozytorium tylko do odczytu, sprawdza obecność nazw czterech sekretów podpisujących bez wypisywania ich wartości, zapisuje keystore w pliku tymczasowym usuwanym przez procedurę porządkowania, buduje `:app:bundleRelease`, weryfikuje podpis AAB, zapisuje SHA-256 i commit źródłowy, a następnie przesyła wyłącznie artefakt. Nie publikuje ani nie promuje wydania w Play. Są to kontrole statyczne/CI, a nie test podpisanego pakietu.
+- **AAB: ZABLOKOWANY / NIE ZBUDOWANO.** Nie uruchomiono poprawnej konfiguracji podpisu na chronionym `master`; w ramach tego przeglądu nie utworzono AAB ani pliku do przesłania do Play. Zaliczone opcjonalne zadanie CI budujące release APK nie stanowi dowodu zbudowania podpisanego AAB dla Play.
+- Dostęp do Play Console był niedostępny. Nie zweryfikowano najwyższego dotychczas przesłanego `versionCode`, certyfikatu klucza uploadu, relacji z Play App Signing, deklaracji Data safety/danych zdrowotnych, strony sklepu ani stanu polityki prywatności. Nie należy wyciągać tych wniosków z tego ani z wcześniejszego raportu. Nie utworzono PR-a zwiększającego wersję ani nie wygenerowano czy nie zastąpiono klucza podpisującego.
+- Test instalacji/aktualizacji z poprzedniej wersji z zachowaniem danych: **NOT RUN**. Nie zbudowano ani nie zainstalowano kandydata wydania. Nie potwierdzono deklaracji prawnych/prywatności w Play Console.
+
+### 4. Wykonane zmiany
+
+- Commity PR55: `7bf6e0d` (konfiguracja SDK API 36 i jawny tryb gestów), `30976bf` (zachowanie diagnostyki XML/logcat z Test Lab), `6e01ced` (deterministyczna kolejność faz testów odzyskiwania procesu i zrzuty syntetycznych wykresów). Ostatnia zmiana nie naprawiła bazowego błędu testu śmierci procesu; uczyniła go powtarzalnym i jawnym.
+- Commity PR56: `92ad988`, `0a44683` (pokrycie granic agregacji i poprawka API).
+- Commit PR57: `b7e70af` (obsługa poziomego przeciągania oraz testy regresji przesuwania i interakcji).
+- W tym uzupełnieniu nie zmieniono kodu workflow ani checklisty PR58. Ten raport jest jedyną proponowaną zmianą uzupełniającą dla PR58.
+- Nie zmieniono schematu Room, obliczeń medycznych, progów glikemii, dawkowania insuliny, danych pacjentów ani integracji LIVE.
+
+### 5. Co pozostaje i właściciel
+
+1. **Osoba odpowiedzialna za testy Android:** przeprojektować trzy testy P0 odzyskiwania procesu tak, aby każdy z nich wykonywał i weryfikował rzeczywiste zakończenie procesu, bez polegania na kolejności metod; ponownie uruchomić pełną macierz API 36. Nie usuwać asercji PID ani nie określać odtworzenia aktywności jako śmierci procesu.
+2. **Osoba odpowiedzialna za wykres:** odtworzyć pusty wykres dnia na `MediumPhone.arm` API 36; wykonać zrzuty dnia/tygodnia/miesiąca/roku w orientacji pionowej i poziomej na HEAD-zie PR56; ocenić na nich czas agregacji, luki, oznaczenia skanów/min/max, skalowanie etykiet i wybór punktu. Obecne zrzuty nie potwierdzają poprawności wizualnej PR56.
+3. **Osoba odpowiedzialna za dashboard:** uruchomić testy interakcji AndroidTest na HEAD-zie PR57, obejmujące kierunki nawigacji i granice, wybór punktu, otwarcie pełnego ekranu, przewijanie pionowe i powrót do najnowszych danych. Po ustaleniu kolejności scalania uzgodnić konflikt we wspólnym pliku testowym.
+4. **Product Owner / administrator Play Console:** potwierdzić najwyższy przesłany `versionCode` i odcisk certyfikatu uploadu, następnie zatwierdzić wyższą wersję i skonfigurować wymagane sekrety podpisujące GitHub bez ujawniania ich wartości.
+5. **Osoba odpowiedzialna za wydanie:** po ręcznym scaleniu PR-ów i spełnieniu wcześniejszych bramek uruchomić workflow podpisanego AAB z chronionego `master`, sprawdzić artefakt/podpis/SHA, wykonać niedestrukcyjny test aktualizacji i potwierdzić deklaracje Play. Raport nie upoważnia do przesłania ani promowania wydania.
+
+### 6. Rekomendacja doradcza dla Product Ownera
+
+| PR | Rekomendacja | Uzasadnienie |
+|---|---|---|
+| #55 | **HOLD** | Dwa testy Back przechodzą wielokrotnie, ale pełna macierz urządzeniowa nie zalicza trzech testów odzyskiwania procesu. |
+| #56 | **HOLD** | Kontrole JVM/CI przechodzą; brakuje wymaganej walidacji wizualnej/urządzeniowej na zmienionym HEAD-zie PR. |
+| #57 | **HOLD** | Kontrole JVM/CI przechodzą; nie uruchomiono instrumentacji interakcji, a integracja wspólnego pliku testowego wymaga uzgodnienia. |
+| #58 | **ACCEPT wyłącznie dla infrastruktury bramek wydania** | Statyczne kontrole workflow/checklisty przechodzą i nie ma automatycznej ścieżki publikacji. Nie oznacza to akceptacji AAB, wersji ani wydania w Play. |
+
+Są to wyłącznie rekomendacje; tylko Product Owner może podjąć decyzję ACCEPT/HOLD/REJECT.
+
+### 7. Kolejność ręcznego merge
+
+Nie rekomenduje się scalania przed rozwiązaniem wskazanych wyżej blokad HOLD. Jeśli Product Owner zaakceptuje później odpowiednie zmiany: można niezależnie scalić #58; następnie scalić #56; zaktualizować #57 względem nowego `master` i uzgodnić stan wspólnego `DeliveryInstrumentedTest.kt`; ponownie uruchomić wymagane kontrole, po czym ręcznie scalić #57. Przed scaleniem #55 uzgodnić jego wspólny plik instrumentacyjny z ostatecznym stanem #57 i ponownie uruchomić macierz API 36. Nie scalać automatycznie.
+
+### Kontrola obowiązkowa — stan tej finalizacji
+
+| Reguła | Status |
+|---|---|
+| Weryfikacja implementacji, PR HEAD i bazowego `master` | PASS |
+| Czyste, osobne worktree; checkout użytkownika nietknięty | PASS |
+| Nie zmieniono `master`, ochrony gałęzi ani nie użyto auto-merge/scalania | PASS |
+| Testy jednostkowe/lint/debug CI dla #56/#57/#58 | PASS |
+| Instrumentacja BackHandler i gestów API 36 | PASS |
+| Pełna instrumentacja urządzeniowa | FAIL — trzy testy procesu odzyskiwania |
+| Pełna wizualna kontrola zakresów dzień/tydzień/miesiąc/rok w obu orientacjach na PR56 | FAIL — dowody niepełne, jeden obraz dnia API 36 pusty |
+| Test interakcji PR57 na jego HEAD | NOT RUN |
+| Migracje Room | NOT APPLICABLE — schemat bez zmian; istniejące testy migracji uruchomiono |
+| Podpisany i zweryfikowany AAB; plik do przesłania do Google Play | FAIL — nie zbudowano; Play/klucz/versionCode niepotwierdzone |
+| Brak sekretów wydania w raporcie/logach; brak fizycznego urządzenia Samsung | PASS |
+| Pełna gotowość do wydania Google Play | FAIL — status HOLD |
