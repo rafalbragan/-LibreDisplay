@@ -45,11 +45,13 @@ jobs:
 
       - name: Android SDK
         uses: android-actions/setup-android@v3
+        with:
+          packages: platform-tools
 
       - name: Install SDK components
         run: |
-          yes | sdkmanager --licenses >/dev/null
-          sdkmanager "platform-tools" "platforms;android-36" "build-tools;35.0.0"
+          set -euo pipefail
+          sdkmanager "platforms;android-36" "build-tools;35.0.0"
 
       - name: Check release signing configuration
         env:
