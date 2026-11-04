@@ -8,6 +8,7 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createEmptyComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onFirst
+import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.lifecycle.ViewModelProvider
@@ -144,6 +145,47 @@ class P0PersonRecoveryInstrumentedTest {
         capture("rapid-switch-no-misattribution")
     }
 
+    @Test fun logout_clearsSessionBackStackAndRequiresFreshLoginAfterRestart() {
+        fixture.seedActiveSession()
+        launch()
+        awaitActive()
+
+        compose.onNodeWithTag(LibreCareTestTags.bottomNav(DashboardNavItem.USTAWIENIA))
+            .assertIsDisplayed()
+            .performClick()
+        compose.onNodeWithText("LibreLinkUp").assertIsDisplayed().performClick()
+        compose.onNodeWithTag("account-logout-open").assertIsDisplayed().performClick()
+        compose.onNodeWithText("Wylogować konto?").assertIsDisplayed()
+        compose.onNodeWithTag("account-logout-confirm").assertIsDisplayed().performClick()
+
+        compose.waitUntil(15_000) { !app.settingsRepository.hasPersistedSessionData() }
+        val cleared = app.settingsRepository.loadSettings()
+        assertFalse(cleared.hasCredentials())
+        assertNull(cleared.selectedPatientId)
+        assertEquals(com.libredisplay.data.model.AppMode.LIVE, cleared.appMode)
+
+        compose.onNodeWithText("Logowanie").assertIsDisplayed()
+        compose.onNodeWithText("Dane logowania do LibreLinkUp").assertIsDisplayed()
+        compose.onNodeWithText("Zaloguj").assertIsDisplayed()
+        compose.onAllNodesWithText("Aktywna Testowa", useUnmergedTree = true).assertCountEquals(0)
+
+        scenario?.onActivity { it.onBackPressedDispatcher.onBackPressed() }
+        compose.waitForIdle()
+        compose.onAllNodesWithText("Zaloguj", useUnmergedTree = true).assertCountEquals(0)
+        compose.onAllNodesWithText("Aktywna Testowa", useUnmergedTree = true).assertCountEquals(0)
+
+        scenario?.close()
+        launch()
+        compose.onNodeWithText("Logowanie").assertIsDisplayed()
+        compose.onNodeWithText("Dane logowania do LibreLinkUp").assertIsDisplayed()
+        compose.onAllNodesWithText("Aktywna Testowa", useUnmergedTree = true).assertCountEquals(0)
+
+        scenario?.close()
+        fixture.seedActiveSession()
+        launch()
+        awaitActive()
+    }
+
     private fun launch() {
         scenario = ActivityScenario.launch(MainActivity::class.java).also {
             it.onActivity { activity -> vm = ViewModelProvider(activity)[MonitoringViewModel::class.java] }
@@ -207,9 +249,6 @@ class P0PersonRecoveryInstrumentedTest {
         bitmap.recycle()
     }
 }
-
-
-
 
 
 

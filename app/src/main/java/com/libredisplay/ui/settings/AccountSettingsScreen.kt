@@ -34,6 +34,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.autofill.AutofillType
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
@@ -49,6 +50,7 @@ import com.libredisplay.ui.common.rememberAutofillCommit
 fun AccountSettingsScreen(
     onNavigateBack: () -> Unit,
     onSaved: () -> Unit,
+    onSessionReset: () -> Unit = {},
     viewModel: SettingsViewModel = viewModel()
 ) {
     val settings by viewModel.settings.collectAsState()
@@ -124,7 +126,7 @@ fun AccountSettingsScreen(
 
                 OutlinedButton(
                     onClick = { showLogoutConfirm = true },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().testTag("account-logout-open")
                 ) {
                     Text("Wyloguj", color = Color(0xFFEF4444))
                 }
@@ -241,7 +243,8 @@ fun AccountSettingsScreen(
                 Button(onClick = {
                     showLogoutConfirm = false
                     viewModel.resetSession()
-                }) {
+                    onSessionReset()
+                }, modifier = Modifier.testTag("account-logout-confirm")) {
                     Text("Wyloguj")
                 }
             },

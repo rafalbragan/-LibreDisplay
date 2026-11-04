@@ -1,9 +1,12 @@
 package com.libredisplay.data.repository
 
 import android.app.Application
+import com.libredisplay.data.api.PersistedLibreLinkUpSession
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -74,5 +77,39 @@ class SettingsRepositoryDiagnosticsTest {
         val loaded = repo.loadSettings()
         assertEquals(AppSettings.MAX_RETENTION_HOURS, loaded.retentionHours)
     }
-}
 
+    @Test
+    fun clearingSessionAndCredentials_requiresExplicitLoginAgain() {
+        val context = RuntimeEnvironment.getApplication()
+        val repo = SettingsRepository(context)
+        repo.clearAll()
+
+        repo.saveSettings(
+            AppSettings(
+                email = "u@example.com",
+                password = "x",
+                appMode = AppMode.LIVE
+            )
+        )
+        repo.savePersistedSession(
+            PersistedLibreLinkUpSession(
+                token = "token",
+                userId = "user",
+                accountIdHash = "account",
+                region = "EU",
+                baseUrl = "https://example.local"
+            )
+        )
+
+        assertTrue(repo.hasStoredCredentials())
+        assertTrue(repo.hasPersistedSessionData())
+
+        repo.clearSessionData()
+        repo.clearAccountCredentials()
+        repo.switchToLiveMode()
+
+        assertFalse(repo.hasStoredCredentials())
+        assertFalse(repo.hasPersistedSessionData())
+        assertTrue(repo.shouldShowLoginForm())
+    }
+}

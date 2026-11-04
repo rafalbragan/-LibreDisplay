@@ -231,14 +231,13 @@ class SettingsViewModel(application: Application) : AndroidViewModel(application
     }
 
     fun resetSession() {
-        val current = settingsRepository.loadSettings()
         authRepository.clearSession()
-        if (current.isDemoPatientSelected()) {
-            settingsRepository.clearSelectedPatientId()
-        }
+        settingsRepository.clearSessionData()
+        settingsRepository.clearAccountCredentials()
+        settingsRepository.clearSelectedPatientId()
         settingsRepository.switchToLiveMode()
         reloadFromRepository()
-        _message.value = "Zapisany token został usunięty. Zaloguj się ponownie."
+        _message.value = "Sesja została zakończona. Zaloguj się ponownie."
     }
 
     fun clearMessage() {
