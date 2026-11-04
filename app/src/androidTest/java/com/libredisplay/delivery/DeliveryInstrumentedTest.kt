@@ -202,6 +202,59 @@ class DeliveryInstrumentedTest {
         rule.onNodeWithText("Niepoprawny-LibreView.csv").assertDoesNotExist()
     }
 
+    @Test fun captureGlucoseHistoryReleaseRangesInBothOrientations() {
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
+        val ranges = listOf("Dzień" to "dzien", "Tydzień" to "tydzien",
+            "Miesiąc" to "miesiac", "Rok" to "rok")
+        for ((orientation, name) in listOf(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT to "portrait",
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE to "landscape"
+        )) {
+            rule.activity.requestedOrientation = orientation
+            val expected = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+                android.content.res.Configuration.ORIENTATION_PORTRAIT
+            else android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            rule.waitUntil(15_000) {
+                rule.activity.resources.configuration.orientation == expected
+            }
+            for ((range, fileRange) in ranges) {
+                rule.onNodeWithTag("history-range-$range").performClick()
+                // Synchronize on the newly selected range before inspecting its buckets.
+                // Otherwise a previous range's loaded data can falsely satisfy waitForChart().
+                rule.onNodeWithTag("history-range-$range").assertIsSelected()
+                val expectedWindow = when (range) {
+                    "Dzień" -> 86_400_000L
+                    "Tydzień" -> 7 * 86_400_000L
+                    "Miesiąc" -> 30 * 86_400_000L
+                    else -> 365 * 86_400_000L
+                }
+                rule.waitUntil(15_000) {
+                    val chart = rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                    chart.config[ExplorerDurationKey] == expectedWindow &&
+                        chart.config[ExplorerBucketsKey] > 0
+                }
+                rule.waitForIdle()
+                // The DB query is asynchronous. Compose idle does not mean history has loaded.
+                try {
+                    waitForChart()
+                } catch (error: AssertionError) {
+                    screenshot("release-$name-$fileRange-empty")
+                    throw error
+                } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                    screenshot("release-$name-$fileRange-empty")
+                    throw error
+                }
+                screenshot("release-$name-$fileRange")
+                assertTrue("History should have DEMO samples in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] > 0)
+                assertTrue("Bucket count must remain bounded in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] <= 801)
+            }
+        }
+    }
+
     @Test fun pinchPanExactPointAndMultiYearRenderingWork() {
         rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
         waitForChart()
