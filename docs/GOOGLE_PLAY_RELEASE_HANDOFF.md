@@ -4,11 +4,11 @@
 
 ## PR merge order and owner
 
-1. Confirm PR #56 screenshots and API 36 chart behavior, then **PO manually merges #56**.
-2. Rebase/update #57 against new master and independently rerun required checks and gesture instrumentation, then **PO manually merges #57**.
-3. Resolve integration of the shared DeliveryInstrumentedTest.kt before **PO manually merges diagnostic PR #55**. Dedicated 3-process-restart verification must remain separate from ordinary Firebase runs.
-4. Review and **PO manually merges PR #58** (release-only changes).
-5. Independently verify protected master SHA and all required checks after merges.
+1. **PO manually merges #56** after reviewing its eight screenshots. Firebase API 36 history visual review PASS: https://github.com/rafalbragan/-LibreDisplay/actions/runs/41679449818.
+2. Update #57 against the new master, resolve any overlapping test-file changes, and rerun required checks. The focused gesture instrumentation PASS on API 36: https://github.com/rafalbragan/-LibreDisplay/actions/runs/41677269389. **PO manually merges #57** after the updated checks PASS.
+3. **PO manually merges #58** after its latest release workflow/preflight checks PASS. Release workflow must remain manual and restricted to protected master.
+4. Independently verify protected master SHA and required checks after these merges.
+5. **PR #55 is diagnostic/test-only and not a production-code prerequisite for the Play AAB.** PO may merge it separately, after rebasing and reconciling the shared DeliveryInstrumentedTest.kt with the already merged #56/#57 tests. Its process-death scenarios have a separate host-orchestrated PASS reported from IntelliJ; do not present the ordinary Firebase matrix as covering real process termination.
 
 **Never run auto-merge, merge with an AI tool, or disable status checks.**
 
