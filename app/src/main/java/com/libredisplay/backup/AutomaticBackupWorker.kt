@@ -24,13 +24,23 @@ class AutomaticBackupWorker(
 
     override suspend fun doWork(): Result {
         val app = applicationContext as? LibreDisplayApp ?: return Result.success()
-        return runCatching { app.appDataBackupRepository.createAutomaticBackup(includeConfiguration = true) }
+        return runCatching {
+            val summary = app.appDataBackupRepository.createAutomaticBackup(includeConfiguration = true)
+            val info = app.appDataBackupRepository.automaticBackupInfo()
+            summary to info
+        }
             .fold(
-                onSuccess = {
+                onSuccess = { (summary, info) ->
                     DiagnosticLogger.logInfo(
                         "AutomaticBackupWorker",
-                        "AUTO BACKUP OK persons=${it.livePersons} readings=${it.liveReadings}"
+                        "AUTO BACKUP OK persons=${summary.livePersons} readings=${summary.liveReadings} restorable=${info.restorable}"
                     )
+                    if (!info.restorable) {
+                        DiagnosticLogger.logWarning(
+                            "AutomaticBackupWorker",
+                            "AUTO BACKUP NOT RESTORABLE reason=${info.validationMessage ?: "unknown"}"
+                        )
+                    }
                     Result.success()
                 },
                 onFailure = {

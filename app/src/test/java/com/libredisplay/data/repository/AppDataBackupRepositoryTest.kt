@@ -89,6 +89,37 @@ class AppDataBackupRepositoryTest {
         assertTrue(info.sizeBytes > 0L)
         assertTrue(info.absolutePath.endsWith("librecare-backup.json"))
         assertEquals(1, info.persons)
+        assertTrue(info.restorable)
+        assertNull(info.validationMessage)
+    }
+
+    @Test
+    fun automaticBackupInfo_marksEmptyBackupAsNotRestorable() = runBlocking {
+        db.glucoseReadingDao().deleteAllReadings()
+        db.observedPersonDao().deleteAllPeople()
+
+        backupRepository.createAutomaticBackup()
+        val info = backupRepository.automaticBackupInfo()
+
+        assertTrue(info.exists)
+        assertFalse(info.restorable)
+        assertNotNull(info.validationMessage)
+    }
+
+    @Test
+    fun automaticBackup_doesNotOverwriteKnownGoodFileWithEmptyState() = runBlocking {
+        backupRepository.createAutomaticBackup()
+        val before = backupRepository.automaticBackupFile().readText(Charsets.UTF_8)
+
+        db.glucoseReadingDao().deleteAllReadings()
+        db.observedPersonDao().deleteAllPeople()
+
+        val summary = backupRepository.createAutomaticBackup()
+        val after = backupRepository.automaticBackupFile().readText(Charsets.UTF_8)
+
+        assertEquals(before, after)
+        assertTrue(summary.liveReadings > 0)
+        assertTrue(backupRepository.automaticBackupInfo().restorable)
     }
 
     @Test
