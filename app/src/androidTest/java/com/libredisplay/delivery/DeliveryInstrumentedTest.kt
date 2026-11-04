@@ -4,9 +4,18 @@ import android.content.pm.ActivityInfo
 import android.graphics.Bitmap
 import android.os.Build
 import com.libredisplay.DeliveryTestActivity
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
+import androidx.compose.ui.unit.dp
 import androidx.lifecycle.ViewModelProvider
 import androidx.test.platform.app.InstrumentationRegistry
 import androidx.test.uiautomator.By
@@ -18,6 +27,8 @@ import com.libredisplay.data.local.GlucoseReadingEntity
 import com.libredisplay.data.local.ObservedPersonEntity
 import com.libredisplay.data.model.AppMode
 import com.libredisplay.data.model.AppSettings
+import com.libredisplay.data.model.GlucoseHistoryPoint
+import com.libredisplay.data.model.GlucoseTrend
 import com.libredisplay.ui.monitoring.*
 import com.libredisplay.ui.privacy.CsvImportScreen
 import com.libredisplay.ui.privacy.CsvImportViewModel
@@ -63,6 +74,69 @@ class DeliveryInstrumentedTest {
             source = "DemoMode", receivedAt = now, createdAt = now)))
     }
     @After fun resetOrientation() { device.setOrientationNatural(); device.unfreezeRotation() }
+
+    @Test fun glucoseChartSeparatesPointTapHorizontalPanAndDashboardScroll() {
+        val firstTime = Instant.parse("2026-10-19T10:00:00Z")
+        val points = listOf(
+            GlucoseHistoryPoint(100, firstTime, GlucoseTrend.FLAT),
+            GlucoseHistoryPoint(110, firstTime.plusSeconds(900), GlucoseTrend.FLAT)
+        )
+        var selectedTimestamp: Instant? = null
+        val horizontalPans = mutableListOf<Float>()
+        var historyOpened = false
+        val dashboardScroll = androidx.compose.foundation.ScrollState(0)
+        rule.setContent {
+            Column(Modifier.fillMaxSize().verticalScroll(dashboardScroll)) {
+                GlucoseChart(
+                    points = points,
+                    targetLow = 70,
+                    targetHigh = 180,
+                    domainStart = points.first().timestamp,
+                    domainEnd = points.last().timestamp,
+                    onPointSelected = { selectedTimestamp = it.timestamp },
+                    onChartTapped = { historyOpened = true },
+                    onHorizontalPan = { horizontalPans += it },
+                    chartHeight = 220.dp,
+                    modifier = Modifier.testTag("interactive-glucose-chart")
+                )
+                Spacer(Modifier.height(1800.dp))
+            }
+        }
+
+        val chart = rule.onNodeWithTag("interactive-glucose-chart")
+        chart.performTouchInput { click(Offset(54f, 100f)) }
+        rule.runOnIdle {
+            assertEquals(firstTime, selectedTimestamp)
+            assertFalse(historyOpened)
+        }
+
+        chart.performTouchInput {
+            swipe(start = center, end = center + Offset(120f, 0f))
+        }
+        rule.runOnIdle {
+            assertTrue("Rightward drag should reveal older history", horizontalPans.lastOrNull()?.let { it > 0f } == true)
+            assertFalse(historyOpened)
+        }
+
+        chart.performTouchInput {
+            swipe(start = center, end = center + Offset(-120f, 0f))
+        }
+        rule.runOnIdle {
+            assertEquals("Expected one callback for each completed swipe", 2, horizontalPans.size)
+            assertTrue("Leftward drag should return toward newer history", horizontalPans.last() < 0f)
+        }
+
+        assertEquals("Dashboard should start at its top", 0, dashboardScroll.value)
+        chart.performTouchInput {
+            swipe(
+                start = Offset(width * 0.5f, height * 0.8f),
+                end = Offset(width * 0.5f, height * 0.2f),
+                durationMillis = 500
+            )
+        }
+        rule.waitUntil(5_000) { dashboardScroll.value > 0 }
+        assertTrue("Vertical dashboard scrolling must not be consumed by the chart", dashboardScroll.value > 0)
+    }
 
     @Test fun privacyEntryOpensRealImporter() {
         rule.setContent { LibreDisplayTheme { PrivacyDataScreen({}, {}, {}, {}) } }
@@ -126,6 +200,59 @@ class DeliveryInstrumentedTest {
         assertEquals(listOf("LibreView-DEMO.csv"), model.state.value.files.map { it.name })
         assertEquals(5, model.state.value.files.single().summary.supported)
         rule.onNodeWithText("Niepoprawny-LibreView.csv").assertDoesNotExist()
+    }
+
+    @Test fun captureGlucoseHistoryReleaseRangesInBothOrientations() {
+        rule.setContent { LibreDisplayTheme { HistoryExplorerScreen({}, A) } }
+        val ranges = listOf("Dzień" to "dzien", "Tydzień" to "tydzien",
+            "Miesiąc" to "miesiac", "Rok" to "rok")
+        for ((orientation, name) in listOf(
+            ActivityInfo.SCREEN_ORIENTATION_PORTRAIT to "portrait",
+            ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE to "landscape"
+        )) {
+            rule.activity.requestedOrientation = orientation
+            val expected = if (orientation == ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
+                android.content.res.Configuration.ORIENTATION_PORTRAIT
+            else android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            rule.waitUntil(15_000) {
+                rule.activity.resources.configuration.orientation == expected
+            }
+            for ((range, fileRange) in ranges) {
+                rule.onNodeWithTag("history-range-$range").performClick()
+                // Synchronize on the newly selected range before inspecting its buckets.
+                // Otherwise a previous range's loaded data can falsely satisfy waitForChart().
+                rule.onNodeWithTag("history-range-$range").assertIsSelected()
+                val expectedWindow = when (range) {
+                    "Dzień" -> 86_400_000L
+                    "Tydzień" -> 7 * 86_400_000L
+                    "Miesiąc" -> 30 * 86_400_000L
+                    else -> 365 * 86_400_000L
+                }
+                rule.waitUntil(15_000) {
+                    val chart = rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                    chart.config[ExplorerDurationKey] == expectedWindow &&
+                        chart.config[ExplorerBucketsKey] > 0
+                }
+                rule.waitForIdle()
+                // The DB query is asynchronous. Compose idle does not mean history has loaded.
+                try {
+                    waitForChart()
+                } catch (error: AssertionError) {
+                    screenshot("release-$name-$fileRange-empty")
+                    throw error
+                } catch (error: androidx.compose.ui.test.ComposeTimeoutException) {
+                    screenshot("release-$name-$fileRange-empty")
+                    throw error
+                }
+                screenshot("release-$name-$fileRange")
+                assertTrue("History should have DEMO samples in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] > 0)
+                assertTrue("Bucket count must remain bounded in $name/$range",
+                    rule.onNodeWithTag("history-chart").fetchSemanticsNode()
+                        .config[ExplorerBucketsKey] <= 801)
+            }
+        }
     }
 
     @Test fun pinchPanExactPointAndMultiYearRenderingWork() {
@@ -269,9 +396,6 @@ class DeliveryInstrumentedTest {
     }
     companion object { private const val A = "demo-person-delivery-a"; private const val B = "demo-person-delivery-b" }
 }
-
-
-
 
 
 
