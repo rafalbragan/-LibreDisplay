@@ -1,5 +1,6 @@
 package com.libredisplay.diagnostics
 
+import android.content.ClipData
 import android.content.Context
 import android.content.Intent
 import androidx.core.content.FileProvider
@@ -134,19 +135,36 @@ object DiagnosticLogger {
     fun clear() {
         val file = getOrCreateLogFile() ?: return
         runCatching { file.writeText("", Charsets.UTF_8) }
+        runCatching { file.parentFile?.resolve("shared")?.deleteRecursively() }
     }
 
     fun logFilePath(): String = getOrCreateLogFile()?.absolutePath.orEmpty()
 
     fun createShareIntent(context: Context): Intent? {
-        val file = getOrCreateLogFile() ?: return null
-        if (!file.exists()) return null
-        val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
-        return Intent(Intent.ACTION_SEND).apply {
-            type = "text/plain"
-            putExtra(Intent.EXTRA_STREAM, uri)
-            putExtra(Intent.EXTRA_SUBJECT, "LibreCare - log diagnostyczny")
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        var snapshot: File? = null
+        return try {
+            val source = getOrCreateLogFile() ?: return null
+            // Do not use readAll(): it converts read failures into an apparent empty success.
+            val sanitized = synchronized(this) {
+                DiagnosticShareSanitizer.sanitize(source.readText(Charsets.UTF_8))
+            }.ifBlank { "Brak wpisów diagnostycznych" }
+            val directory = requireNotNull(source.parentFile).resolve("shared")
+            check(directory.isDirectory || directory.mkdirs())
+            val file = File.createTempFile("librecare-share-", ".log", directory)
+            snapshot = file
+            file.writeText(sanitized, Charsets.UTF_8)
+            val uri = FileProvider.getUriForFile(context, "${context.packageName}.fileprovider", file)
+            Intent(Intent.ACTION_SEND).apply {
+                type = "text/plain"
+                putExtra(Intent.EXTRA_STREAM, uri)
+                putExtra(Intent.EXTRA_SUBJECT, "LibreCare - log diagnostyczny")
+                clipData = ClipData.newRawUri("LibreCareLog", uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            }
+        } catch (_: Exception) {
+            // Neither a previous snapshot nor the original log is a safe fallback.
+            runCatching { snapshot?.delete() }
+            null
         }
     }
 
