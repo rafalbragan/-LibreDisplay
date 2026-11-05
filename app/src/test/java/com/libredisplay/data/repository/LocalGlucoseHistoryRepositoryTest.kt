@@ -14,6 +14,7 @@ import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -81,6 +82,8 @@ class LocalGlucoseHistoryRepositoryTest {
         assertTrue(history.any { it.value == 101 })
         assertTrue(history.any { it.value == 88 })
         assertTrue(history.none { it.value == 77 })
+        assertNull(repository.loadLatestMonitoringSnapshot(null))
+        assertNull(repository.loadLatestMonitoringSnapshot("another-patient"))
     }
 
     @Test
@@ -240,5 +243,4 @@ class LocalGlucoseHistoryRepositoryTest {
         )
     }
 }
-
 

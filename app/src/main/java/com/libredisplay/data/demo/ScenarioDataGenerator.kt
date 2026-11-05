@@ -26,6 +26,12 @@ internal object ScenarioDataGenerator {
         firstName = "Anna",
         lastName = "Kowalska"
     )
+    private val MIKA_PERSON = LibreConnectionPerson(
+        patientId = "demo-person-mika",
+        displayName = "Mika DEMO",
+        firstName = "Mika",
+        lastName = "DEMO"
+    )
 
     /** The "normal" patient in the multi-patient at-risk scenario. */
     val NORMAL_PATIENT_ID = "scenario-normal"
@@ -47,12 +53,11 @@ internal object ScenarioDataGenerator {
     )
 
     /** Returns the list of LibreConnectionPersons appropriate for [scenario]. */
-    fun personsForScenario(scenario: DemoScenario): List<LibreConnectionPerson> =
-        if (scenario == DemoScenario.MULTIPLE_PATIENTS_ONE_AT_RISK) {
-            listOf(NORMAL_PERSON, AT_RISK_PERSON)
-        } else {
-            listOf(SINGLE_PERSON)
-        }
+    fun personsForScenario(scenario: DemoScenario): List<LibreConnectionPerson> = when (scenario) {
+        DemoScenario.MULTIPLE_PATIENTS_ONE_AT_RISK -> listOf(NORMAL_PERSON, AT_RISK_PERSON)
+        DemoScenario.MIKA_DEMO -> listOf(MIKA_PERSON)
+        else -> listOf(SINGLE_PERSON)
+    }
 
     /**
      * Generate a [GlucoseReading] for [scenario].
@@ -67,6 +72,9 @@ internal object ScenarioDataGenerator {
         patientId: String?,
         now: Instant
     ): GlucoseReading? = when (scenario) {
+        DemoScenario.MIKA_DEMO ->
+            buildMikaDemo(now)
+
         DemoScenario.NORMAL ->
             buildFlat(now, glucose = 112, trend = GlucoseTrend.FLAT)
 
@@ -150,6 +158,61 @@ internal object ScenarioDataGenerator {
         return makeReading(118, latestTs, GlucoseTrend.FLAT, history)
     }
 
+    private fun buildMikaDemo(now: Instant): GlucoseReading {
+        val latestTs = now.minus(Duration.ofMinutes(5))
+        val start = latestTs.minus(Duration.ofDays(14))
+        val intervalSec = 5L * 60L
+        val gapWindows = listOf(
+            start.plus(Duration.ofHours(31)) to start.plus(Duration.ofHours(34)),
+            start.plus(Duration.ofHours(93)) to start.plus(Duration.ofHours(99)),
+            start.plus(Duration.ofHours(181)) to start.plus(Duration.ofHours(188)),
+            start.plus(Duration.ofHours(259)) to start.plus(Duration.ofHours(263))
+        )
+
+        val history = mutableListOf<GlucoseHistoryPoint>()
+        var cursor = start
+        var sampleIndex = 0
+        while (cursor.isBefore(latestTs)) {
+            val inGap = gapWindows.any { (gapStart, gapEnd) ->
+                !cursor.isBefore(gapStart) && cursor.isBefore(gapEnd)
+            }
+            if (!inGap) {
+                val cycle = sampleIndex % 288
+                val daytime = cycle.toDouble() / 288.0
+                val base = when {
+                    daytime < 0.25 -> 104
+                    daytime < 0.50 -> 124
+                    daytime < 0.75 -> 142
+                    else -> 116
+                }
+                val noise = when (sampleIndex % 12) {
+                    0 -> -6
+                    1 -> -3
+                    2 -> -1
+                    3 -> 2
+                    4 -> 4
+                    5 -> 6
+                    6 -> 5
+                    7 -> 3
+                    8 -> 1
+                    9 -> -2
+                    10 -> -4
+                    else -> -5
+                }
+                val value = (base + noise).coerceIn(54, 260)
+                history += GlucoseHistoryPoint(
+                    value = value,
+                    timestamp = cursor,
+                    trend = GlucoseTrend.FLAT
+                )
+            }
+            cursor = cursor.plusSeconds(intervalSec)
+            sampleIndex += 1
+        }
+        val currentValue = history.lastOrNull()?.value ?: 118
+        return makeReading(currentValue, latestTs, GlucoseTrend.FLAT, history)
+    }
+
     // -------------------------------------------------------------------------
     // History generators
     // -------------------------------------------------------------------------
@@ -225,4 +288,3 @@ internal object ScenarioDataGenerator {
         )
     }
 }
-

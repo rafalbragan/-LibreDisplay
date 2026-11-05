@@ -74,9 +74,29 @@ internal object PolishDateTimeFormatter {
         val totalMinutes = duration.toMinutes().coerceAtLeast(0)
         if (totalMinutes == 0L) return "0m"
 
+        val totalHours = totalMinutes / 60
         val days = totalMinutes / (24 * 60)
         val hours = (totalMinutes % (24 * 60)) / 60
         val minutes = totalMinutes % 60
+
+        if (days >= 365) {
+            val years = days / 365
+            val remainderMonths = (days % 365) / 30
+            val parts = mutableListOf("${years}l")
+            if (remainderMonths > 0) parts += "${remainderMonths}mies."
+            return parts.joinToString(" ")
+        }
+        if (days >= 30) {
+            val months = days / 30
+            val remainderDays = days % 30
+            val parts = mutableListOf("${months}mies.")
+            if (remainderDays > 0) parts += "${remainderDays}d"
+            return parts.joinToString(" ")
+        }
+        if (totalHours < 24) {
+            return if (hours > 0L && minutes > 0L) "${hours}g ${minutes}m" else if (hours > 0L) "${hours}g" else "${minutes}m"
+        }
+
         val parts = mutableListOf<String>()
 
         if (days > 0) {
@@ -161,4 +181,3 @@ internal object PolishDateTimeFormatter {
         return if (hours > 0) "$days dni $hours godz." else "$days dni"
     }
 }
-

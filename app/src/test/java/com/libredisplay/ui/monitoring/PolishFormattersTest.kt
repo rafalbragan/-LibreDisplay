@@ -51,6 +51,8 @@ class PolishFormattersTest {
         assertEquals("2g", PolishDateTimeFormatter.formatCompactDuration(Duration.ofMinutes(120)))
         assertEquals("2g 30m", PolishDateTimeFormatter.formatCompactDuration(Duration.ofMinutes(150)))
         assertEquals("1d 2g", PolishDateTimeFormatter.formatCompactDuration(Duration.ofHours(26)))
+        assertEquals("2mies. 10d", PolishDateTimeFormatter.formatCompactDuration(Duration.ofDays(70)))
+        assertEquals("6l 5mies.", PolishDateTimeFormatter.formatCompactDuration(Duration.ofDays(2369)))
     }
 
     @Test
@@ -100,4 +102,3 @@ class PolishFormattersTest {
         assertEquals("Zakres: 16.08.2026 - 18.08.2026", label)
     }
 }
-

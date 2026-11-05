@@ -73,6 +73,7 @@ internal fun HistoryExplorerScreen(onBack: () -> Unit, initialPatientId: String?
     var point by remember(patient) { mutableStateOf<GlucoseReadingEntity?>(null) }
     var queryJob by remember { mutableStateOf<Job?>(null) }
     var error by remember(patient) { mutableStateOf<String?>(null) }
+    var isLoading by remember(patient) { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         persons = withContext(Dispatchers.IO) {
             val known = if (settings.appMode == AppMode.DEMO) app.database.observedPersonDao().getAllDemoPersons()
@@ -96,17 +97,19 @@ internal fun HistoryExplorerScreen(onBack: () -> Unit, initialPatientId: String?
     val viewport = bounds?.let { full -> ExplorerWindow(start ?: (full.end - length), (start ?: (full.end - length)) + length).constrained(full) }
     val currentViewport by rememberUpdatedState(viewport)
     val currentPatient by rememberUpdatedState(patient)
-    val buckets = loaded?.takeIf { it.first == viewport }?.second.orEmpty()
+    val buckets = loaded?.second.orEmpty()
     LaunchedEffect(patient, viewport) {
         point = null
         val id = patient ?: return@LaunchedEffect
         val window = viewport ?: return@LaunchedEffect
-        delay(60) // Coalesce gesture events without blocking drawing or loading entire history.
+        isLoading = true
         try {
+            delay(60) // Coalesce gesture events without blocking drawing or loading entire history.
             val result = dao.chartBuckets(id, window.start, window.end, (window.duration / 800 + 1).coerceAtLeast(1))
             loaded = window to result; error = null
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (_: Exception) { error = "Nie można odczytać historii. Wybierz zakres ponownie." }
+        finally { isLoading = false }
     }
     fun move(window: ExplorerWindow) { start = window.start; length = window.duration; point = null }
     BackHandler(onBack = onBack)
@@ -141,6 +144,32 @@ internal fun HistoryExplorerScreen(onBack: () -> Unit, initialPatientId: String?
             Text(viewport?.let { "${formatter.format(Instant.ofEpochMilli(it.start))} — ${formatter.format(Instant.ofEpochMilli(it.end))} · ${zone.id}" }
                 ?: "Brak zapisanej historii wybranej osoby", style = MaterialTheme.typography.labelSmall, modifier = Modifier.testTag("history-range-label"))
             if (error != null) Text(error!!, color = MaterialTheme.colorScheme.error)
+            if (isLoading && buckets.isNotEmpty() && !landscape) {
+                Text(
+                    "Aktualizuję widok historii…",
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.primary
+                )
+            }
+            if (landscape) {
+                Text(
+                    point?.let { "${it.valueMgDl} mg/dL · ${formatter.format(it.timestamp)} · ${if (it.source == "LibreViewScan") "skan" else "pomiar"}" }
+                        ?: "Dotknij punktu · uszczypnij, aby przybliżyć · przeciągnij, aby przesunąć",
+                    style = MaterialTheme.typography.labelSmall,
+                    modifier = Modifier.testTag("history-tooltip")
+                )
+            } else {
+                Card(colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f))) {
+                    Text(
+                        point?.let { "${it.valueMgDl} mg/dL · ${formatter.format(it.timestamp)} · ${if (it.source == "LibreViewScan") "skan" else "pomiar"}" }
+                            ?: "Dotknij punktu · uszczypnij, aby przybliżyć · przeciągnij, aby przesunąć",
+                        style = MaterialTheme.typography.bodySmall,
+                        modifier = Modifier
+                            .padding(horizontal = 10.dp, vertical = 8.dp)
+                            .testTag("history-tooltip")
+                    )
+                }
+            }
             ExplorerCanvas(buckets, viewport, point, settings.targetLow, settings.targetHigh,
                 modifier = Modifier.weight(1f).fillMaxWidth().heightIn(min = 90.dp),
                 onTransform = { zoom, pan, anchor ->
@@ -154,9 +183,6 @@ internal fun HistoryExplorerScreen(onBack: () -> Unit, initialPatientId: String?
                         if (currentPatient == id && currentViewport == window) point = selected
                     }
                 })
-            Text(point?.let { "${it.valueMgDl} mg/dL · ${formatter.format(it.timestamp)} · ${if (it.source == "LibreViewScan") "skan" else "pomiar"}" }
-                ?: "Dotknij punktu · uszczypnij, aby przybliżyć · przeciągnij, aby przesunąć",
-                style = MaterialTheme.typography.bodySmall, modifier = Modifier.testTag("history-tooltip"))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 TextButton(onClick = { viewport?.let { w -> bounds?.let { move(ExplorerWindow(w.start - w.duration, w.start).constrained(it)) } } }, modifier = Modifier.testTag("history-previous")) { Text("← Wcześniej") }
                 TextButton(onClick = { bounds?.let { move(ExplorerWindow(it.end - length, it.end).constrained(it)) } }, modifier = Modifier.testTag("history-latest")) { Text("Najnowsze") }
@@ -251,7 +277,3 @@ private fun ExplorerCanvas(buckets: List<HistoryBucket>, viewport: ExplorerWindo
         }
     }
 }
-
-
-
-

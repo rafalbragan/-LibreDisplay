@@ -117,6 +117,8 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
         if (lastRefreshNonce == refreshNonce) return
         lastRefreshNonce = refreshNonce
         selectionGeneration += 1
+        clearHistoryFlows()
+        _uiState.value = MonitoringUiState(timeRange = _uiState.value.timeRange)
         reloadSettings()
         reconcileRateLimitState()
         bootstrapUsingPersistedTokenOnly()
@@ -238,9 +240,13 @@ class MonitoringViewModel(application: Application) : AndroidViewModel(applicati
      */
     fun selectDemoScenario(scenario: DemoScenario?) {
         if (!BuildConfig.DEBUG) return
-        DemoScenarioController.selectScenario(scenario)
         val settings = settingsRepository.loadSettings()
         if (settings.useMock) {
+            selectionGeneration += 1
+            clearHistoryFlows()
+            _uiState.value = MonitoringUiState(timeRange = _uiState.value.timeRange)
+            reloadSettings()
+            DemoScenarioController.selectScenario(scenario)
             connectManually(trigger = "scenario-changed")
         }
     }
@@ -1176,4 +1182,3 @@ private fun String?.isRateLimitMessage(): Boolean {
 }
 
 private class FetchInProgressException : RuntimeException("Fetch already in progress")
-

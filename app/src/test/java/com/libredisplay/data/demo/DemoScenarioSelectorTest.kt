@@ -47,6 +47,14 @@ class DemoScenarioSelectorTest {
     }
 
     @Test
+    fun `MIKA_DEMO produces deterministic demo profile reading`() {
+        val reading = ScenarioDataGenerator.generateReading(DemoScenario.MIKA_DEMO, null, now)
+        assertNotNull("MIKA_DEMO must produce a reading", reading)
+        assertTrue("MIKA_DEMO glucose must be plausible, was ${reading!!.value}", reading.value in 54..260)
+        assertEquals(reading, ScenarioDataGenerator.generateReading(DemoScenario.MIKA_DEMO, null, now))
+    }
+
+    @Test
     fun `RAPID_RISE produces rising trend and elevated glucose`() {
         val reading = ScenarioDataGenerator.generateReading(DemoScenario.RAPID_RISE, null, now)
         assertNotNull(reading)
@@ -124,6 +132,27 @@ class DemoScenarioSelectorTest {
         assertTrue("Must return at least 2 persons, got ${persons.size}", persons.size >= 2)
         val ids = persons.map { it.patientId }.toSet()
         assertTrue("Person IDs must be distinct: $ids", ids.size == persons.size)
+    }
+
+    @Test
+    fun `MIKA_DEMO exposes exactly one dedicated demo person`() {
+        val persons = ScenarioDataGenerator.personsForScenario(DemoScenario.MIKA_DEMO)
+        assertEquals(1, persons.size)
+        assertEquals("demo-person-mika", persons.first().patientId)
+        assertEquals("Mika DEMO", persons.first().displayName)
+    }
+
+    @Test
+    fun `MIKA_DEMO history contains real gaps without interpolation`() {
+        val reading = ScenarioDataGenerator.generateReading(DemoScenario.MIKA_DEMO, null, now)
+        assertNotNull(reading)
+        val points = reading!!.history.sortedBy { it.timestamp }
+        assertTrue("Expected enough samples for chart browsing", points.size > 500)
+        val maxGapMinutes = points
+            .zipWithNext()
+            .maxOfOrNull { Duration.between(it.first.timestamp, it.second.timestamp).toMinutes() }
+            ?: 0L
+        assertTrue("Expected at least one history gap > 60 min, got ${maxGapMinutes} min", maxGapMinutes > 60L)
     }
 
     @Test
@@ -234,4 +263,3 @@ class DemoScenarioSelectorTest {
         assertNotNull("MISSING_DATA must return a reading, not null", reading)
     }
 }
-
