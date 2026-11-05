@@ -95,6 +95,14 @@ android {
             }
             versionNameSuffix = "-debug"
         }
+        create("dev") {
+            initWith(getByName("debug"))
+            signingConfig = signingConfigs.getByName("debug")
+            applicationIdSuffix = ".dev"
+            versionNameSuffix = "-dev"
+            matchingFallbacks += listOf("debug")
+            resValue("string", "app_name", "LibreCare DEV")
+        }
     }
 
     compileOptions {

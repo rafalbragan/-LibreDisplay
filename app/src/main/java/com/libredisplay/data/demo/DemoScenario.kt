@@ -7,6 +7,7 @@ package com.libredisplay.data.demo
  * is a no-op, so production/release Live behaviour is unchanged.
  */
 enum class DemoScenario(val displayName: String) {
+    MIKA_DEMO("Mika DEMO"),
     NORMAL("Normalny"),
     RAPID_RISE("Szybki wzrost"),
     RAPID_FALL("Szybki spadek"),
@@ -17,4 +18,3 @@ enum class DemoScenario(val displayName: String) {
     MISSING_DATA("Brak danych"),
     MULTIPLE_PATIENTS_ONE_AT_RISK("Kilka osób – jedna w ryzyku")
 }
-

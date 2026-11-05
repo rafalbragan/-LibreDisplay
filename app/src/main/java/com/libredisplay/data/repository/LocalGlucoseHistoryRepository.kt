@@ -104,6 +104,7 @@ class LocalGlucoseHistoryRepository(
     }
 
     suspend fun loadLatestMonitoringSnapshot(patientId: String?): MonitoringSnapshot? {
+        if (patientId == null) return null
         val persons = observedPersonDao.getActivePersons().map {
             LibreConnectionPerson(
                 patientId = it.patientId,
@@ -114,9 +115,7 @@ class LocalGlucoseHistoryRepository(
         }
         if (persons.isEmpty()) return null
 
-        val selected = patientId?.let { requested ->
-            persons.firstOrNull { it.patientId == requested }
-        } ?: persons.first()
+        val selected = persons.firstOrNull { it.patientId == patientId } ?: return null
 
         val latest = glucoseReadingDao.getLatestByPatient(selected.patientId) ?: return null
         val historyStart = latest.timestamp.minus(HOME_HISTORY_WINDOW)
@@ -195,4 +194,3 @@ data class StoredHistoryRange(
     val oldest: Instant,
     val newest: Instant
 )
-

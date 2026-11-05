@@ -1193,6 +1193,19 @@ private fun GlucoseChartCard(
                         }
                     }
                 )
+                Text(
+                    text = buildViewportLabel(
+                        start = visibleViewport.start,
+                        end = visibleViewport.end,
+                        zoneId = DateTimeFormatterProvider.deviceZoneId()
+                    ),
+                    color = DashboardSecondaryText,
+                    fontSize = 12.sp,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(top = 4.dp)
+                        .testTag("home-chart-viewport-label")
+                )
             }
             selectedPoint?.let { point ->
                 val label = formatChartPointLabel(
@@ -1653,4 +1666,3 @@ private fun EmptyConfigurationState(onNavigateToSettings: () -> Unit) {
         }
     }
 }
-

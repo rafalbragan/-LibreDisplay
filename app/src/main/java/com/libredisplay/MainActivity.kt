@@ -462,6 +462,14 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
                                 showLoginOnly = false
                                 refreshNonce += 1
                                 navigateBack()
+                            },
+                            onSessionReset = {
+                                showLoginOnly = true
+                                refreshNonce += 1
+                                navigationState = initialNavigationState(
+                                    launchScreen = AppScreen.Settings,
+                                    showLoginOnly = true
+                                )
                             }
                         )
                     }
@@ -543,6 +551,4 @@ class MainActivity : androidx.fragment.app.FragmentActivity() {
         com.libredisplay.service.MonitoringServiceController.startIfEnabled(this)
     }
 }
-
-
 

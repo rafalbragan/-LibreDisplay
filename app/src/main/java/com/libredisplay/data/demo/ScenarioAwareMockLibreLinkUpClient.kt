@@ -33,7 +33,9 @@ class ScenarioAwareMockLibreLinkUpClient : LibreLinkUpClient {
     override suspend fun getLatestReading(patientId: String?): GlucoseReading? {
         val scenario = DemoScenarioController.currentScenario
             ?: return fallback.getLatestReading(patientId)
+        require(patientId == null || ScenarioDataGenerator.personsForScenario(scenario).any { it.patientId == patientId }) {
+            "Wybrana osoba nie należy do aktywnego scenariusza DEMO."
+        }
         return ScenarioDataGenerator.generateReading(scenario, patientId, Instant.now())
     }
 }
-

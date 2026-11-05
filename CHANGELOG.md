@@ -2,6 +2,32 @@
 
 All notable changes to LibreCare will be documented in this file.
 
+## 2.17.3-dev - 2026-11-05 (local test integration)
+
+### PL
+#### Added
+- Wariant LibreCare DEV (`com.libredisplay.dev`) z podpisem Android Debug; deterministyczna historia Mika DEMO.
+#### Changed
+- Etykiety zakresu i czasu, płynność wykresu historii oraz położenie podpowiedzi.
+#### Fixed
+- Reset sesji i nawigacji po wylogowaniu; brak wyboru przypadkowej osoby z lokalnej historii; czyszczenie starych danych po zmianie sesji/scenariusza.
+#### Tests
+- 49 ukierunkowanych testów JVM bez błędów; `:app:assembleDev` zakończone pomyślnie. Weryfikacja UI na urządzeniu odroczona.
+#### Artifacts
+- Lokalny APK, rozmiar i SHA256: `docs/release-report-2.17.3-dev.md`. Bez wydania Google Play; wersja produkcyjna 2.17.3/54 bez zmian.
+
+### EN
+#### Added
+- Android Debug-signed LibreCare DEV variant (`com.libredisplay.dev`) and deterministic Mika DEMO history.
+#### Changed
+- Viewport/time labels, history chart continuity and tooltip placement.
+#### Fixed
+- Logout session/navigation reset; no arbitrary cached-patient fallback; clear stale data on session/scenario refresh.
+#### Tests
+- 49 targeted JVM tests passed; `:app:assembleDev` passed. Device UI verification deferred.
+#### Artifacts
+- Local APK details: `docs/release-report-2.17.3-dev.md`. No Google Play release; production version 2.17.3/54 unchanged.
+
 ## 2.17.2 - 2026-10-19
 
 ### PL
